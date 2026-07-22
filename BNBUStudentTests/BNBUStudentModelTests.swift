@@ -99,7 +99,8 @@ final class BNBUStudentModelTests: XCTestCase {
         let session = try XCTUnwrap(appState.exerciseSession)
 
         let submitted = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: session.creditedHours(),
             note: "跨零点运动",
             sportType: session.sportType.rawValue,
@@ -235,7 +236,6 @@ final class BNBUStudentModelTests: XCTestCase {
             var capturedError: RepositoryError?
             do {
                 _ = try await repository.submitCheckIn(
-                    taskId: "self-general",
                     courseId: nil,
                     creditType: "other",
                     taskTitle: "running",
@@ -283,34 +283,31 @@ final class BNBUStudentModelTests: XCTestCase {
         }
     }
 
-    func testAppStateClampsHoursWhenSubmitting() async {
+    func testAppStateRejectsHoursOutsideOneOrTwoWhenSubmitting() async {
         let defaults = isolatedDefaults()
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: defaults)
         )
 
-        // Legacy 1.5h task with an unstructured deadline is no longer submittable
-        // under the strict hours enum (1h/2h) and parseable-deadline rules.
-        guard let shortTask = appState.workspace.tasks.first(where: { $0.id == "t2" }) else {
-            return XCTFail("Expected t2 in mock repository")
-        }
+        // Hours outside the 1h/2h contract are rejected instead of clamped.
         let recordCountBefore = appState.workspace.records.count
-        let legacySubmitted = await appState.submitCheckIn(
-            task: shortTask,
+        let oversized = await appState.submitCheckIn(
+            creditType: .general,
+            courseId: nil,
             hours: 4,
             note: "",
             proofAttachments: [
-                ProofAttachment(id: "proof-legacy", type: .image, fileName: "proof.jpg", byteCount: 400_000, source: "test")
+                ProofAttachment(id: "proof-oversized", type: .image, fileName: "proof.jpg", byteCount: 400_000, source: "test")
             ]
         )
-        XCTAssertFalse(legacySubmitted)
+        XCTAssertFalse(oversized)
         XCTAssertEqual(appState.workspace.records.count, recordCountBefore)
 
-        // The autonomous self-general task clamps oversized hour input to the daily limit.
         let submitted = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
-            hours: 4,
+            creditType: .general,
+            courseId: nil,
+            hours: 2,
             note: "",
             proofAttachments: [
                 ProofAttachment(id: "proof", type: .image, fileName: "proof.jpg", byteCount: 400_000, source: "test")
@@ -318,7 +315,7 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertTrue(submitted)
         XCTAssertEqual(appState.workspace.records.first?.hours, 2)
-        XCTAssertEqual(appState.workspace.records.first?.status, .pending)
+        XCTAssertEqual(appState.workspace.records.first?.validity, .valid)
         XCTAssertEqual(appState.workspace.records.first?.proofPhotoCount, 1)
         XCTAssertEqual(appState.workspace.progress.rawGeneral, 2)
         XCTAssertEqual(appState.workspace.progress.general, appState.hourRule.generalRequired)
@@ -407,7 +404,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         let originalCount = appState.workspace.records.count
         let submitted = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: String(repeating: "跑", count: 2_001),
             sportType: "running",
@@ -445,22 +443,25 @@ final class BNBUStudentModelTests: XCTestCase {
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        let shortTask = try! XCTUnwrap(appState.workspace.tasks.first(where: { $0.id == "t2" }))
-        XCTAssertEqual(appState.normalizedHours(0.5, for: shortTask), 1)
-        XCTAssertEqual(appState.normalizedHours(1.5, for: shortTask), 1)
-        XCTAssertEqual(appState.normalizedHours(2, for: appState.selfCheckInTask), 2)
 
-        let supplementRecord = try! XCTUnwrap(appState.workspace.records.first(where: { $0.status == .supplement }))
-        let submitted = await appState.submitSupplement(
-            for: supplementRecord,
-            hours: 0.5,
-            note: "补充材料",
-            proofAttachments: [
-                ProofAttachment(id: "supplement", type: .image, fileName: "proof.jpg", byteCount: 100_000, source: "test")
-            ]
+        // Only whole 1h/2h submissions produce a validated submission.
+        XCTAssertNil(appState.validatedSubmission(creditType: .general, courseId: nil, hours: 0.5))
+        XCTAssertNil(appState.validatedSubmission(creditType: .general, courseId: nil, hours: 1.5))
+        XCTAssertNil(appState.validatedSubmission(creditType: .general, courseId: nil, hours: Double.nan))
+        XCTAssertEqual(appState.validatedSubmission(creditType: .general, courseId: nil, hours: 1)?.hours, 1)
+        XCTAssertEqual(appState.validatedSubmission(creditType: .general, courseId: nil, hours: 2)?.hours, 2)
+
+        // Course-related submissions require a known course reference.
+        XCTAssertNil(appState.validatedSubmission(creditType: .courseRelated, courseId: nil, hours: 1))
+        XCTAssertNil(appState.validatedSubmission(creditType: .courseRelated, courseId: "missing-course", hours: 1))
+        let courseId = appState.workspace.courses.first?.id
+        XCTAssertEqual(
+            appState.validatedSubmission(creditType: .courseRelated, courseId: courseId, hours: 1)?.courseId,
+            courseId
         )
-        XCTAssertTrue(submitted)
-        XCTAssertEqual(appState.workspace.records.first(where: { $0.id == supplementRecord.id })?.hours, 1)
+
+        // Organization offsets can never be submitted by the student client.
+        XCTAssertNil(appState.validatedSubmission(creditType: .organizationOffset, courseId: nil, hours: 1))
     }
 
     func testCurrentBackendStudentWorkspacePayloadsDecode() throws {
@@ -486,27 +487,6 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(courses.first?.teacher, "体育教师")
         XCTAssertEqual(courses.first?.semester, "2026-2027 第一学期")
         XCTAssertEqual(courses.first?.isCurrent, true)
-
-        let tasks = try decoder.decode(StudentTasksPayload.self, from: Data(
-            """
-            {
-              "pending": [{
-                "id": "task-1",
-                "courseId": "course-1",
-                "title": "本周课程运动",
-                "description": "完成课程指定运动并上传凭证",
-                "creditType": "课程相关",
-                "requiredHours": 1,
-                "deadline": "2026-09-30T15:59:59.000Z",
-                "status": "进行中",
-                "completedAt": null
-              }],
-              "completed": []
-            }
-            """.utf8
-        )).tasks
-        XCTAssertEqual(tasks.first?.hours, 1)
-        XCTAssertEqual(tasks.first?.proof, "完成课程指定运动并上传凭证")
 
         let student = StudentProfile(
             id: "student-1",
@@ -545,255 +525,39 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertTrue(grades.missingItems.isEmpty)
     }
 
-    func testOnlyActiveIncompleteUnexpiredTasksAreSubmittable() throws {
+    func testRecordValidityMapsLegacyReviewStatesOntoValidInvalid() throws {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let payload = try decoder.decode(StudentTasksPayload.self, from: Data(
+        func decode(_ raw: String) throws -> RecordValidity {
+            try decoder.decode(RecordValidity.self, from: Data("\"\(raw)\"".utf8))
+        }
+
+        // Legacy pending/approved/supplement/offset states all read back as valid.
+        for legacy in ["待审核", "已通过", "待补充", "系统抵扣", "pending", "approved", "supplement", "offset", "有效"] {
+            XCTAssertEqual(try decode(legacy), .valid, "\(legacy) must map to valid")
+        }
+        // Only explicit invalidation (including the legacy rejected state) reads back as invalid.
+        for invalid in ["无效", "invalid", "INVALID", "rejected", "REJECTED", "被驳回", "已驳回"] {
+            XCTAssertEqual(try decode(invalid), .invalid, "\(invalid) must map to invalid")
+        }
+
+        let record = try decoder.decode(CheckInRecord.self, from: Data(
             """
             {
-              "pending": [
-                {
-                  "id": "active-future",
-                  "courseId": "course-1",
-                  "title": "可提交任务",
-                  "description": "proof",
-                  "creditType": "课程相关",
-                  "requiredHours": 1,
-                  "deadline": "2099-01-01T00:00:00.000Z",
-                  "status": "进行中",
-                  "completedAt": null
-                },
-                {
-                  "id": "draft-future",
-                  "courseId": "course-1",
-                  "title": "草稿任务",
-                  "description": "proof",
-                  "creditType": "课程相关",
-                  "requiredHours": 1,
-                  "deadline": "2099-01-01T00:00:00.000Z",
-                  "status": "草稿",
-                  "completedAt": null
-                },
-                {
-                  "id": "closed-future",
-                  "courseId": "course-1",
-                  "title": "关闭任务",
-                  "description": "proof",
-                  "creditType": "课程相关",
-                  "requiredHours": 1,
-                  "deadline": "2099-01-01T00:00:00.000Z",
-                  "status": "已关闭",
-                  "completedAt": null
-                },
-                {
-                  "id": "active-expired",
-                  "courseId": "course-1",
-                  "title": "过期任务",
-                  "description": "proof",
-                  "creditType": "课程相关",
-                  "requiredHours": 1,
-                  "deadline": "2000-01-01T00:00:00.000Z",
-                  "status": "进行中",
-                  "completedAt": null
-                },
-                {
-                  "id": "active-completed",
-                  "courseId": "course-1",
-                  "title": "已完成任务",
-                  "description": "proof",
-                  "creditType": "课程相关",
-                  "requiredHours": 1,
-                  "deadline": "2099-01-01T00:00:00.000Z",
-                  "status": "进行中",
-                  "completedAt": "2026-07-16T08:00:00.000Z"
-                },
-                {
-                  "id": "completed-bucket-wins",
-                  "courseId": "course-1",
-                  "title": "重复任务",
-                  "description": "proof",
-                  "creditType": "课程相关",
-                  "requiredHours": 1,
-                  "deadline": "2099-01-01T00:00:00.000Z",
-                  "status": "进行中",
-                  "completedAt": null
-                }
-              ],
-              "completed": [{
-                "id": "completed-bucket-wins",
-                "courseId": "course-1",
-                "title": "重复任务",
-                "description": "proof",
-                "creditType": "课程相关",
-                "requiredHours": 1,
-                "deadline": "2099-01-01T00:00:00.000Z",
-                "status": "进行中",
-                "completedAt": null
-              }]
-            }
-            """.utf8
-        ))
-        let referenceDate = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-16T00:00:00Z"))
-
-        XCTAssertEqual(
-            payload.tasks.filter { $0.isSubmittable(at: referenceDate) }.map(\.id),
-            ["active-future"]
-        )
-        XCTAssertTrue(payload.tasks.first(where: { $0.id == "completed-bucket-wins" })?.isCompleted == true)
-
-        let appState = AppState(
-            repository: MockStudentRepository(),
-            localStore: AppLocalStore(defaults: isolatedDefaults())
-        )
-        appState.workspace.tasks = payload.tasks
-        XCTAssertEqual(appState.submittableTasks(at: referenceDate).map(\.id), ["active-future"])
-        XCTAssertEqual(appState.activeTasks.map(\.id), ["active-future"])
-
-        let missingStatus = try decoder.decode(CourseTask.self, from: Data(
-            """
-            {
-              "id": "missing-status",
-              "courseId": "course-1",
-              "title": "异常任务",
+              "id": "record-invalid",
+              "creditType": "其他运动",
               "hours": 1,
-              "deadline": "2099-01-01T00:00:00.000Z"
+              "submittedAt": "2026-07-16T04:00:00.000Z",
+              "status": "rejected",
+              "teacherFeedback": "凭证与运动内容不符"
             }
             """.utf8
         ))
-        XCTAssertEqual(missingStatus.status, .draft)
-        XCTAssertFalse(missingStatus.isSubmittable(at: referenceDate))
-    }
+        XCTAssertEqual(record.validity, .invalid)
+        XCTAssertEqual(record.invalidReason, "凭证与运动内容不符")
 
-    func testMalformedServerTasksFailClosedAndCannotClaimSelfGeneral() throws {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let referenceDate = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-16T00:00:00Z"))
-        let validPayload: [String: Any] = [
-            "id": "server-task",
-            "courseId": "course-1",
-            "creditType": "general",
-            "title": "服务器任务",
-            "hours": 1,
-            "deadline": "2099-01-01T00:00:00.000Z",
-            "status": "进行中"
-        ]
-
-        func decode(_ payload: [String: Any]) throws -> CourseTask {
-            try decoder.decode(
-                CourseTask.self,
-                from: JSONSerialization.data(withJSONObject: payload)
-            )
-        }
-
-        XCTAssertTrue(try decode(validPayload).isSubmittable(at: referenceDate))
-        for missingKey in ["id", "courseId", "creditType", "hours"] {
-            var malformed = validPayload
-            malformed.removeValue(forKey: missingKey)
-            XCTAssertFalse(
-                try decode(malformed).isSubmittable(at: referenceDate),
-                "Missing \(missingKey) must fail closed"
-            )
-        }
-
-        var missingCreditPayload = validPayload
-        missingCreditPayload.removeValue(forKey: "creditType")
-        let missingCreditTask = try decode(missingCreditPayload)
-        let cachedMissingCreditTask = try decoder.decode(
-            CourseTask.self,
-            from: JSONEncoder().encode(missingCreditTask)
-        )
-        XCTAssertFalse(cachedMissingCreditTask.isSubmittable(at: referenceDate))
-
-        for (key, invalidValue) in [
-            ("id", "   "),
-            ("courseId", "   "),
-            ("creditType", "unknown-credit-type"),
-            ("hours", 0),
-            ("hours", 1.5),
-            ("deadline", "第 8 周周日 23:59")
-        ] as [(String, Any)] {
-            var malformed = validPayload
-            malformed[key] = invalidValue
-            XCTAssertFalse(
-                try decode(malformed).isSubmittable(at: referenceDate),
-                "Invalid \(key) must fail closed"
-            )
-        }
-        var paddedIdentity = validPayload
-        paddedIdentity["id"] = " server-task "
-        XCTAssertFalse(try decode(paddedIdentity).isSubmittable(at: referenceDate))
-
-        var forgedSelfGeneral = validPayload
-        forgedSelfGeneral["id"] = "self-general"
-        forgedSelfGeneral["courseId"] = "self-general"
-        let decodedForgery = try decode(forgedSelfGeneral)
-        XCTAssertFalse(decodedForgery.isSyntheticSelfGeneral)
-        XCTAssertFalse(decodedForgery.isSubmittable(at: referenceDate))
-
-        for invalidCreditType in [String?](arrayLiteral: nil, "unknown-credit-type") {
-            var taskItem: [String: Any] = [
-                "id": "task-list-malformed-credit",
-                "courseId": "course-1",
-                "title": "异常类型任务",
-                "requiredHours": 1,
-                "deadline": "2099-01-01T00:00:00.000Z",
-                "status": "进行中"
-            ]
-            if let invalidCreditType {
-                taskItem["creditType"] = invalidCreditType
-            }
-            let listData = try JSONSerialization.data(withJSONObject: [
-                "pending": [taskItem],
-                "completed": []
-            ])
-            let listTask = try XCTUnwrap(
-                decoder.decode(StudentTasksPayload.self, from: listData).tasks.first
-            )
-            XCTAssertFalse(listTask.isSubmittable(at: referenceDate))
-        }
-
-        let appState = AppState(
-            repository: MockStudentRepository(),
-            localStore: AppLocalStore(defaults: isolatedDefaults())
-        )
-        XCTAssertTrue(appState.selfCheckInTask.isSyntheticSelfGeneral)
-        XCTAssertTrue(appState.selfCheckInTask.isSubmittable(at: referenceDate))
-    }
-
-    func testDateOnlyTaskDeadlineUsesShanghaiEndOfDay() throws {
-        let task = CourseTask(
-            id: "date-only-task",
-            courseId: "course-1",
-            creditType: .courseRelated,
-            title: "当日截止任务",
-            hours: 1,
-            deadline: "2026-07-16",
-            proof: "proof",
-            status: .active,
-            updatedAt: ""
-        )
-        let beforeShanghaiMidnight = try XCTUnwrap(
-            ISO8601DateFormatter().date(from: "2026-07-16T15:59:59Z")
-        )
-        let atNextShanghaiDay = try XCTUnwrap(
-            ISO8601DateFormatter().date(from: "2026-07-16T16:00:00Z")
-        )
-
-        XCTAssertTrue(task.isSubmittable(at: beforeShanghaiMidnight))
-        XCTAssertFalse(task.isSubmittable(at: atNextShanghaiDay))
-
-        let invalidDateOnlyTask = CourseTask(
-            id: "invalid-date-only-task",
-            courseId: "course-1",
-            creditType: .courseRelated,
-            title: "无效日期任务",
-            hours: 1,
-            deadline: "2026-02-30",
-            proof: "proof",
-            status: .active,
-            updatedAt: ""
-        )
-        XCTAssertFalse(invalidDateOnlyTask.isSubmittable(at: beforeShanghaiMidnight))
+        let roundTripped = try decoder.decode(CheckInRecord.self, from: JSONEncoder().encode(record))
+        XCTAssertEqual(roundTripped.validity, .invalid)
+        XCTAssertEqual(roundTripped.invalidReason, "凭证与运动内容不符")
     }
 
     func testMutationResultsAreNotMistakenForCompleteDomainObjects() throws {
@@ -1051,7 +815,7 @@ final class BNBUStudentModelTests: XCTestCase {
         let record = try JSONDecoder().decode(CheckInRecord.self, from: json)
 
         XCTAssertEqual(record.hours, 0.5)
-        XCTAssertEqual(record.status, .pending)
+        XCTAssertEqual(record.validity, .valid)
         XCTAssertEqual(record.taskTitle, "iOS联调测试：验证学生端提交打卡写入链路")
         XCTAssertEqual(record.proofFiles.count, 1)
         XCTAssertEqual(record.proofSummary, "1 张图片")
@@ -1103,7 +867,8 @@ final class BNBUStudentModelTests: XCTestCase {
         let appState = AppState(repository: MockStudentRepository(), localStore: store)
 
         appState.saveDraft(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 2,
             note: "操场训练",
             sportType: "other",
@@ -1112,7 +877,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         let restored = AppState(repository: MockStudentRepository(), localStore: store)
-        XCTAssertEqual(restored.draft?.taskId, "self-general")
+        XCTAssertEqual(restored.draft?.creditType, .general)
+        XCTAssertNil(restored.draft?.courseId)
         XCTAssertEqual(restored.draft?.sportType, "other")
         XCTAssertEqual(restored.draft?.customSportType, "飞盘")
     }
@@ -1132,14 +898,16 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         let first = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "第一次",
             sportType: "running",
             proofAttachments: [proof]
         )
         let second = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "第二次",
             sportType: "running",
@@ -1164,12 +932,11 @@ final class BNBUStudentModelTests: XCTestCase {
                 creditType: .general,
                 hours: 1,
                 submittedAt: "2026-07-15T16:30:00.000Z",
-                status: .pending,
+                validity: .valid,
                 proofSummary: "1 张图片",
                 proofPhotoCount: 1,
                 proofVideoCount: 0,
                 proofFiles: [],
-                teacherFeedback: "",
                 note: ""
             )
         ]
@@ -1189,11 +956,14 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(result.status, .decodeFailed)
     }
 
-    func testAppStateDiscardsDraftForClosedOrMissingTask() {
+    func testAppStateDiscardsOrganizationOffsetDraft() {
         let defaults = isolatedDefaults()
+        // Organization-offset credit can never be student-submitted, so a
+        // persisted draft claiming it is stale and must be discarded on boot.
         let staleDraft = CheckInDraft(
             id: "stale",
-            taskId: "closed-or-missing",
+            creditType: .organizationOffset,
+            courseId: nil,
             hours: 2,
             note: "old",
             proofAttachments: [],
@@ -1345,7 +1115,6 @@ final class BNBUStudentModelTests: XCTestCase {
 
         XCTAssertFalse(appState.submittedCheckInRecords.isEmpty)
         XCTAssertTrue(appState.submittedCheckInRecords.allSatisfy { $0.creditType != .organizationOffset })
-        XCTAssertTrue(appState.submittedCheckInRecords.allSatisfy { $0.status != .offset })
         XCTAssertLessThan(appState.submittedCheckInRecords.count, appState.workspace.records.count)
     }
 
@@ -1447,7 +1216,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(try credentialStore.data(forKey: RemoteStudentRepository.accessTokenKey(for: StudentServerConfig.testBaseURL)))
     }
 
-    func testGeneralServerTaskKeepsReferencesWhileSelfGeneralOmitsThem() async throws {
+    func testCourseRelatedSubmissionKeepsCourseReferenceWhileGeneralOmitsIt() async throws {
         RecordingSportRecordURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RecordingSportRecordURLProtocol.self]
@@ -1464,15 +1233,13 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         _ = try await repository.submitCheckIn(
-            taskId: "server-general-task",
             courseId: "course-1",
-            creditType: "其他运动",
-            taskTitle: "服务器其他运动任务",
+            creditType: "课程相关",
+            taskTitle: "课程相关运动打卡",
             hours: 1,
-            note: "server task"
+            note: "course related"
         )
         _ = try await repository.submitCheckIn(
-            taskId: "self-general",
             courseId: nil,
             creditType: "其他运动",
             taskTitle: "自主运动打卡",
@@ -1482,16 +1249,16 @@ final class BNBUStudentModelTests: XCTestCase {
 
         let bodies = RecordingSportRecordURLProtocol.recordedBodies
         XCTAssertEqual(bodies.count, 2)
-        let serverTaskBody = try XCTUnwrap(
+        let courseRelatedBody = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try XCTUnwrap(bodies.first)) as? [String: Any]
         )
-        let selfGeneralBody = try XCTUnwrap(
+        let generalBody = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try XCTUnwrap(bodies.last)) as? [String: Any]
         )
-        XCTAssertEqual(serverTaskBody["taskId"] as? String, "server-general-task")
-        XCTAssertEqual(serverTaskBody["courseId"] as? String, "course-1")
-        XCTAssertNil(selfGeneralBody["taskId"])
-        XCTAssertNil(selfGeneralBody["courseId"])
+        XCTAssertEqual(courseRelatedBody["courseId"] as? String, "course-1")
+        XCTAssertNil(courseRelatedBody["taskId"], "The legacy task reference must never be sent")
+        XCTAssertNil(generalBody["taskId"])
+        XCTAssertNil(generalBody["courseId"])
     }
 
     func testProofUploadUsesOnlyFrozenV1EndpointAndCleansTemporaryBody() async throws {
@@ -1575,7 +1342,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         appState.demoLogin()
         appState.saveDraft(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "private draft",
             proofAttachments: []
@@ -1644,7 +1412,7 @@ final class BNBUStudentModelTests: XCTestCase {
         ))
     }
 
-    func testAllFourPendingMutationScopesRoundTripWithoutRawBytesThumbnailsOrSignedURLs() throws {
+    func testAllPendingMutationScopesRoundTripWithoutRawBytesThumbnailsOrSignedURLs() throws {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
         let original = ProofAttachment(
@@ -1670,7 +1438,6 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         let scopes = [
             "sport-record:create",
-            "sport-record:supplement:r1",
             "exemption:create:physical-test",
             "exemption:supplement:ex1"
         ]
@@ -1724,7 +1491,6 @@ final class BNBUStudentModelTests: XCTestCase {
         let store = AppLocalStore(defaults: defaults)
         let scopes = [
             "sport-record:create",
-            "sport-record:supplement:r1",
             "exemption:create:physical-test",
             "exemption:supplement:ex1"
         ]
@@ -1785,7 +1551,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         let first = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "same logical attempt",
             sportType: "running",
@@ -1813,7 +1580,8 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(restoredProofs[0].isValidForUpload)
         await restoredState.login(account: "s1", password: "test-password")
         XCTAssertTrue(restoredState.canResumePendingCheckIn(
-            task: restoredState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "same logical attempt",
             sportType: "running",
@@ -1842,7 +1610,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: AppLocalStore.pendingMutationStorageKey))
     }
 
-    func testThreeSecondaryMutationsRecoverSamePayloadKeyAndUploadedReferencesAfterRestart() async throws {
+    func testExemptionMutationsRecoverSamePayloadKeyAndUploadedReferencesAfterRestart() async throws {
         AllMutationRetryURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AllMutationRetryURLProtocol.self]
@@ -1870,15 +1638,8 @@ final class BNBUStudentModelTests: XCTestCase {
             uploadData: Data([0xFF, 0xD8, 0xFF, 0xD9]),
             source: "相册"
         )
-        let record = try XCTUnwrap(firstState.workspace.records.first(where: { $0.id == "r1" }))
         let exemption = try XCTUnwrap(firstState.workspace.exemptions.first(where: { $0.id == "ex1" }))
 
-        let firstRecordResult = await firstState.submitSupplement(
-            for: record,
-            hours: 2,
-            note: "same record supplement",
-            proofAttachments: [proof]
-        )
         let firstCreateExemptionResult = await firstState.submitExemption(
             item: .run800m,
             reason: "膝关节损伤",
@@ -1891,14 +1652,12 @@ final class BNBUStudentModelTests: XCTestCase {
             detail: "追加医院盖章证明。",
             proofAttachments: [proof]
         )
-        XCTAssertFalse(firstRecordResult)
         XCTAssertFalse(firstCreateExemptionResult)
         XCTAssertFalse(firstSupplementExemptionResult)
-        XCTAssertEqual(AllMutationRetryURLProtocol.uploadCount, 3)
-        XCTAssertEqual(firstState.pendingRemoteMutationSummaries.count, 3)
+        XCTAssertEqual(AllMutationRetryURLProtocol.uploadCount, 2)
+        XCTAssertEqual(firstState.pendingRemoteMutationSummaries.count, 2)
 
         let persisted = try XCTUnwrap(localStore.readPendingRemoteMutations().value)
-        XCTAssertEqual(persisted["sport-record:supplement:r1"]?.uploadedProofs.count, 1)
         XCTAssertEqual(persisted["exemption:create:physical-test"]?.uploadedProofs.count, 1)
         XCTAssertEqual(persisted["exemption:supplement:ex1"]?.uploadedProofs.count, 1)
 
@@ -1914,13 +1673,7 @@ final class BNBUStudentModelTests: XCTestCase {
             remoteRepo: restoredRepository
         )
         await restoredState.login(account: "s1", password: "test-password")
-        let restoredRecord = try XCTUnwrap(restoredState.workspace.records.first(where: { $0.id == "r1" }))
         let restoredExemption = try XCTUnwrap(restoredState.workspace.exemptions.first(where: { $0.id == "ex1" }))
-        let recordProofs = try XCTUnwrap(
-            localStore.readPendingRemoteMutations().value?["sport-record:supplement:r1"]?.sourceProofs
-        )
-        XCTAssertEqual(restoredRecord.id, "r1")
-        XCTAssertEqual(recordProofs.count, 1)
         let createRecovery = try XCTUnwrap(restoredState.pendingExemptionFormRecovery(applicationID: nil))
         let supplementRecovery = try XCTUnwrap(
             restoredState.pendingExemptionFormRecovery(applicationID: restoredExemption.id)
@@ -1935,23 +1688,18 @@ final class BNBUStudentModelTests: XCTestCase {
             proofAttachments: createRecovery.sourceProofs
         ))
 
-        XCTAssertTrue(restoredState.canRetryPendingRemoteMutation(scope: "sport-record:supplement:r1"))
         XCTAssertTrue(restoredState.canRetryPendingRemoteMutation(scope: "exemption:create:physical-test"))
         XCTAssertTrue(restoredState.canRetryPendingRemoteMutation(scope: "exemption:supplement:ex1"))
-        let restoredRecordResult = await restoredState.retryPendingRemoteMutation(
-            scope: "sport-record:supplement:r1"
-        )
         let restoredCreateExemptionResult = await restoredState.retryPendingRemoteMutation(
             scope: "exemption:create:physical-test"
         )
         let restoredSupplementExemptionResult = await restoredState.retryPendingRemoteMutation(
             scope: "exemption:supplement:ex1"
         )
-        XCTAssertTrue(restoredRecordResult)
         XCTAssertTrue(restoredCreateExemptionResult)
         XCTAssertTrue(restoredSupplementExemptionResult)
 
-        XCTAssertEqual(AllMutationRetryURLProtocol.uploadCount, 3, "Restart retries must reuse uploaded COS references")
+        XCTAssertEqual(AllMutationRetryURLProtocol.uploadCount, 2, "Restart retries must reuse uploaded COS references")
         for path in AllMutationRetryURLProtocol.mutationPaths {
             let bodies = AllMutationRetryURLProtocol.bodies[path] ?? []
             let keys = AllMutationRetryURLProtocol.keys[path] ?? []
@@ -2176,13 +1924,15 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         _ = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "payload A",
             proofAttachments: [proof]
         )
         _ = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "payload B",
             proofAttachments: [proof]
@@ -2222,7 +1972,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         let result = await appState.submitCheckIn(
-            task: appState.selfCheckInTask,
+            creditType: .general,
+            courseId: nil,
             hours: 1,
             note: "invalid deterministic payload",
             proofAttachments: [proof]
@@ -2261,12 +2012,12 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(RemoteMutationJournalPolicy.shouldRetain(after: RepositoryError.unauthorized))
     }
 
-    func testUploadStageDeterministicClientErrorClearsEachOfFourMutationScopes() async throws {
+    func testUploadStageDeterministicClientErrorClearsEachMutationScope() async throws {
         for flow in FailClosedMutationFlow.allCases {
             MutationFailClosedURLProtocol.reset(uploadFailure: .http(422))
             let defaults = isolatedDefaults()
             let localStore = AppLocalStore(defaults: defaults)
-            let siblingScope = "sport-record:supplement:sibling-\(flow.scope)"
+            let siblingScope = "journal-sibling:\(flow.scope)"
             let sibling = PendingRemoteMutationAttempt.create(
                 scope: siblingScope,
                 fingerprint: "sibling-fingerprint-\(flow.scope)",
@@ -2293,7 +2044,7 @@ final class BNBUStudentModelTests: XCTestCase {
         }
     }
 
-    func testUploadStageAmbiguousNetworkErrorRetainsEachOfFourMutationScopes() async throws {
+    func testUploadStageAmbiguousNetworkErrorRetainsEachMutationScope() async throws {
         for flow in FailClosedMutationFlow.allCases {
             MutationFailClosedURLProtocol.reset(uploadFailure: .network)
             let defaults = isolatedDefaults()
@@ -2313,7 +2064,7 @@ final class BNBUStudentModelTests: XCTestCase {
         }
     }
 
-    func testInitialJournalWriteFailureBlocksUploadAndFinalMutationForAllFourFlows() async throws {
+    func testInitialJournalWriteFailureBlocksUploadAndFinalMutationForAllFlows() async throws {
         for flow in FailClosedMutationFlow.allCases {
             MutationFailClosedURLProtocol.reset(uploadFailure: .none)
             let defaults = isolatedDefaults()
@@ -2334,7 +2085,7 @@ final class BNBUStudentModelTests: XCTestCase {
         }
     }
 
-    func testUploadedProofReferenceWriteFailureBlocksFinalMutationForAllFourFlows() async throws {
+    func testUploadedProofReferenceWriteFailureBlocksFinalMutationForAllFlows() async throws {
         for flow in FailClosedMutationFlow.allCases {
             MutationFailClosedURLProtocol.reset(uploadFailure: .none)
             let defaults = isolatedDefaults()
@@ -2364,7 +2115,7 @@ final class BNBUStudentModelTests: XCTestCase {
         }
     }
 
-    func testServerConfirmedCleanupFailureNeverResubmitsAndClearsOnNextLoginForAllFourFlows() async throws {
+    func testServerConfirmedCleanupFailureNeverResubmitsAndClearsOnNextLoginForAllFlows() async throws {
         for flow in FailClosedMutationFlow.allCases {
             MutationFailClosedURLProtocol.reset(uploadFailure: .none)
             let defaults = isolatedDefaults()
@@ -2464,7 +2215,6 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         _ = try await repository.submitCheckIn(
-            taskId: "self-general",
             courseId: nil,
             creditType: "其他运动",
             taskTitle: "自主运动",
@@ -2472,13 +2222,6 @@ final class BNBUStudentModelTests: XCTestCase {
             note: "record",
             proofFiles: [uploadedProof],
             idempotencyKey: "ios-record-0001"
-        )
-        _ = try await repository.supplementCheckIn(
-            recordId: "record-1",
-            note: "supplement record",
-            hours: 1,
-            proofFiles: [uploadedProof],
-            idempotencyKey: "ios-record-supplement-0001"
         )
         _ = try await repository.submitExemption(
             item: "800m",
@@ -2496,13 +2239,11 @@ final class BNBUStudentModelTests: XCTestCase {
 
         XCTAssertEqual(CanonicalMutationURLProtocol.paths, [
             "/api/v1/sport/records",
-            "/api/v1/sport/records/record-1/supplements",
             "/api/v1/student/physical-test-exemptions",
             "/api/v1/student/physical-test-exemptions/exemption-1/supplements"
         ])
         XCTAssertEqual(CanonicalMutationURLProtocol.keys, [
             "ios-record-0001",
-            "ios-record-supplement-0001",
             "ios-exemption-0001",
             "ios-exemption-supplement-0001"
         ])
@@ -2570,7 +2311,6 @@ final class BNBUStudentModelTests: XCTestCase {
 
     private enum FailClosedMutationFlow: CaseIterable {
         case createRecord
-        case supplementRecord
         case createExemption
         case supplementExemption
 
@@ -2578,8 +2318,6 @@ final class BNBUStudentModelTests: XCTestCase {
             switch self {
             case .createRecord:
                 return "sport-record:create"
-            case .supplementRecord:
-                return "sport-record:supplement:r1"
             case .createExemption:
                 return "exemption:create:physical-test"
             case .supplementExemption:
@@ -2626,18 +2364,11 @@ final class BNBUStudentModelTests: XCTestCase {
         switch flow {
         case .createRecord:
             return await appState.submitCheckIn(
-                task: appState.selfCheckInTask,
+                creditType: .general,
+                courseId: nil,
                 hours: 1,
                 note: "fail-closed record",
                 sportType: "running",
-                proofAttachments: [proof]
-            )
-        case .supplementRecord:
-            let record = try XCTUnwrap(appState.workspace.records.first(where: { $0.id == "r1" }))
-            return await appState.submitSupplement(
-                for: record,
-                hours: 2,
-                note: "fail-closed record supplement",
                 proofAttachments: [proof]
             )
         case .createExemption:
@@ -3151,12 +2882,11 @@ private final class IdempotencyRetryURLProtocol: URLProtocol, @unchecked Sendabl
                         creditType: .general,
                         hours: 1,
                         submittedAt: "2026-07-16T08:00:00.000Z",
-                        status: .pending,
+                        validity: .valid,
                         proofSummary: "1 image",
                         proofPhotoCount: 1,
                         proofVideoCount: 0,
                         proofFiles: [signedProof],
-                        teacherFeedback: "",
                         note: "same logical attempt",
                         sportType: "running"
                     )
@@ -3207,7 +2937,6 @@ private final class IdempotencyRetryURLProtocol: URLProtocol, @unchecked Sendabl
 
 private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendable {
     static let mutationPaths = [
-        "/api/v1/sport/records/r1/supplements",
         "/api/v1/student/physical-test-exemptions",
         "/api/v1/student/physical-test-exemptions/ex1/supplements"
     ]
@@ -3308,8 +3037,6 @@ private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendabl
             Self.lock.unlock()
             if shouldFail {
                 client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
-            } else if path == "/api/v1/sport/records/r1/supplements" {
-                send(statusCode: 201, data: Data("{\"id\":\"r1\"}".utf8))
             } else if path == "/api/v1/student/physical-test-exemptions" {
                 send(statusCode: 201, data: Data("{\"id\":\"ex-new\"}".utf8))
             } else {

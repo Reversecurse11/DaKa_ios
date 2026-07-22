@@ -384,7 +384,6 @@ struct StudentWorkspace: Codable {
     var student: StudentProfile
     var courses: [Course]
     var progress: StudentProgress
-    var tasks: [CourseTask]
     var records: [CheckInRecord]
     var grades: GradeRow
     var memberships: [Membership]
@@ -396,7 +395,6 @@ struct StudentWorkspace: Codable {
         student: StudentProfile,
         courses: [Course],
         progress: StudentProgress,
-        tasks: [CourseTask],
         records: [CheckInRecord],
         grades: GradeRow,
         memberships: [Membership],
@@ -407,7 +405,6 @@ struct StudentWorkspace: Codable {
         self.student = student
         self.courses = courses
         self.progress = progress
-        self.tasks = tasks
         self.records = records
         self.grades = grades
         self.memberships = memberships
@@ -420,7 +417,6 @@ struct StudentWorkspace: Codable {
         case student
         case courses
         case progress
-        case tasks
         case records
         case grades
         case memberships
@@ -434,7 +430,6 @@ struct StudentWorkspace: Codable {
         student = try container.decode(StudentProfile.self, forKey: .student)
         courses = try container.decode([Course].self, forKey: .courses)
         progress = try container.decode(StudentProgress.self, forKey: .progress)
-        tasks = try container.decode([CourseTask].self, forKey: .tasks)
         records = try container.decode([CheckInRecord].self, forKey: .records)
         grades = try container.decode(GradeRow.self, forKey: .grades)
         memberships = try container.decode([Membership].self, forKey: .memberships)
@@ -446,7 +441,6 @@ struct StudentWorkspace: Codable {
 
 enum SyncOperationType: String, CaseIterable, Identifiable, Hashable, Codable {
     case submitRecord = "提交打卡"
-    case supplementRecord = "补交材料"
     case submitExemption = "提交免测申请"
     case supplementExemption = "补充免测材料"
     case markNoticeRead = "通知已读"
@@ -458,8 +452,6 @@ enum SyncOperationType: String, CaseIterable, Identifiable, Hashable, Codable {
         switch self {
         case .submitRecord:
             return "paperplane.fill"
-        case .supplementRecord:
-            return "arrow.up.doc.fill"
         case .submitExemption:
             return "cross.case.fill"
         case .supplementExemption:
@@ -780,10 +772,12 @@ enum CreditType: String, CaseIterable, Identifiable, Hashable, Codable {
     }
 }
 
-enum TaskStatus: String, CaseIterable, Identifiable, Hashable, Codable {
-    case draft = "草稿"
-    case active = "进行中"
-    case closed = "已关闭"
+/// New business model: a submitted record is immediately valid. Teachers can
+/// only mark a record invalid afterwards; there is no pending-review,
+/// rejected-resubmit or supplement-material state anymore.
+enum RecordValidity: String, CaseIterable, Identifiable, Hashable, Codable {
+    case valid = "有效"
+    case invalid = "无效"
 
     var id: String { rawValue }
 
@@ -791,235 +785,13 @@ enum TaskStatus: String, CaseIterable, Identifiable, Hashable, Codable {
         let container = try decoder.singleValueContainer()
         let value = try container.decode(String.self)
         switch value {
-        case "draft", "DRAFT", "草稿":
-            self = .draft
-        case "active", "ACTIVE", "open", "OPEN", "进行中":
-            self = .active
-        case "closed", "CLOSED", "已关闭":
-            self = .closed
+        case "invalid", "INVALID", "无效", "rejected", "REJECTED", "被驳回", "已驳回":
+            self = .invalid
         default:
-            self = .draft
-        }
-    }
-}
-
-struct CourseTask: Identifiable, Hashable, Codable {
-    let id: String
-    let courseId: String
-    let creditType: CreditType
-    let title: String
-    let hours: Double
-    let deadline: String
-    let proof: String
-    let status: TaskStatus
-    let updatedAt: String
-    let completedAt: String?
-    let isSyntheticSelfGeneral: Bool
-    private let hasValidCreditType: Bool
-
-    init(
-        id: String,
-        courseId: String,
-        creditType: CreditType,
-        title: String,
-        hours: Double,
-        deadline: String,
-        proof: String,
-        status: TaskStatus,
-        updatedAt: String,
-        completedAt: String? = nil,
-        isSyntheticSelfGeneral: Bool = false,
-        validCreditType: Bool = true
-    ) {
-        self.id = id
-        self.courseId = courseId
-        self.creditType = creditType
-        self.title = title
-        self.hours = hours
-        self.deadline = deadline
-        self.proof = proof
-        self.status = status
-        self.updatedAt = updatedAt
-        self.completedAt = completedAt
-        self.isSyntheticSelfGeneral = isSyntheticSelfGeneral
-        hasValidCreditType = validCreditType
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case taskId
-        case courseId
-        case creditType
-        case type
-        case title
-        case hours
-        case deadline
-        case proof
-        case proofRequirement
-        case status
-        case updatedAt
-        case completedAt
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(String.self, forKey: .id)
-            ?? container.decodeIfPresent(String.self, forKey: .taskId)
-            ?? ""
-        courseId = try container.decodeIfPresent(String.self, forKey: .courseId) ?? ""
-        let rawCreditType = try container.decodeIfPresent(String.self, forKey: .creditType)
-            ?? container.decodeIfPresent(String.self, forKey: .type)
-        let decodedCreditType = rawCreditType.flatMap { CreditType(contractValue: $0) }
-        creditType = decodedCreditType ?? .general
-        hasValidCreditType = decodedCreditType != nil
-        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "体育打卡任务"
-        hours = try container.decodeIfPresent(Double.self, forKey: .hours) ?? 0
-        deadline = try container.decodeIfPresent(String.self, forKey: .deadline) ?? ""
-        proof = try container.decodeIfPresent(String.self, forKey: .proof)
-            ?? container.decodeIfPresent(String.self, forKey: .proofRequirement)
-            ?? "按任务要求上传凭证"
-        // Missing or unknown task state must fail closed. Old caches and
-        // malformed payloads must never turn into a student-submittable task.
-        status = try container.decodeIfPresent(TaskStatus.self, forKey: .status) ?? .draft
-        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
-        completedAt = try container.decodeIfPresent(String.self, forKey: .completedAt)
-        // JSON and cached data can never grant the autonomous-task exception.
-        isSyntheticSelfGeneral = false
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(courseId, forKey: .courseId)
-        // Preserve a fail-closed credit-type state across protected-cache
-        // round trips without exposing a decoder flag that server JSON could
-        // forge. The sentinel remains unknown to contractValue on decode.
-        if hasValidCreditType {
-            try container.encode(creditType, forKey: .creditType)
-        } else {
-            try container.encode("__invalid_credit_type__", forKey: .creditType)
-        }
-        try container.encode(title, forKey: .title)
-        try container.encode(hours, forKey: .hours)
-        try container.encode(deadline, forKey: .deadline)
-        try container.encode(proof, forKey: .proof)
-        try container.encode(status, forKey: .status)
-        try container.encode(updatedAt, forKey: .updatedAt)
-        try container.encodeIfPresent(completedAt, forKey: .completedAt)
-    }
-
-    var isCompleted: Bool {
-        completedAt != nil
-    }
-
-    /// Defense-in-depth eligibility check for UI and submission paths.
-    ///
-    /// Frozen v1 already excludes malformed, draft, closed, completed and
-    /// expired tasks, but cached data or an older server may still contain them.
-    /// Server task validation therefore fails closed. Only the in-memory,
-    /// non-Codable autonomous task may omit server identity and deadline fields.
-    func isSubmittable(at date: Date = Date()) -> Bool {
-        guard status == .active, !isCompleted else { return false }
-        if isSyntheticSelfGeneral {
-            return id == "self-general" &&
-                courseId == "self-general" &&
-                creditType == .general &&
-                hours.isFinite && [1.0, 2.0].contains(hours)
-        }
-        let normalizedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCourseID = courseId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedID.isEmpty,
-              id == normalizedID,
-              normalizedID != "self-general",
-              !normalizedCourseID.isEmpty,
-              courseId == normalizedCourseID,
-              normalizedCourseID != "self-general",
-              hasValidCreditType,
-              creditType != .organizationOffset,
-              hours.isFinite,
-              [1.0, 2.0].contains(hours),
-              let parsedDeadline else {
-            return false
-        }
-        return parsedDeadline >= date
-    }
-
-    private var parsedDeadline: Date? {
-        let value = deadline.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return nil }
-
-        let fractionalISO = ISO8601DateFormatter()
-        fractionalISO.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let parsed = fractionalISO.date(from: value) {
-            return parsed
-        }
-
-        let standardISO = ISO8601DateFormatter()
-        standardISO.formatOptions = [.withInternetDateTime]
-        if let parsed = standardISO.date(from: value) {
-            return parsed
-        }
-
-        if value.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil {
-            var shanghaiCalendar = Calendar(identifier: .gregorian)
-            shanghaiCalendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-            let dateOnlyFormatter = DateFormatter()
-            dateOnlyFormatter.calendar = shanghaiCalendar
-            dateOnlyFormatter.locale = Locale(identifier: "en_US_POSIX")
-            dateOnlyFormatter.timeZone = shanghaiCalendar.timeZone
-            dateOnlyFormatter.dateFormat = "yyyy-MM-dd"
-            dateOnlyFormatter.isLenient = false
-            guard let startOfDay = dateOnlyFormatter.date(from: value),
-                  let nextDay = shanghaiCalendar.date(byAdding: .day, value: 1, to: startOfDay) else {
-                return nil
-            }
-            return nextDay.addingTimeInterval(-0.001)
-        }
-
-        for format in [
-            "yyyy-MM-dd HH:mm:ss.SSS",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy.MM.dd HH:mm",
-            "yyyy-MM-dd HH:mm"
-        ] {
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            formatter.dateFormat = format
-            if let parsed = formatter.date(from: value) {
-                return parsed
-            }
-        }
-        return nil
-    }
-}
-
-enum ReviewStatus: String, CaseIterable, Identifiable, Hashable, Codable {
-    case pending = "待审核"
-    case approved = "已通过"
-    case rejected = "被驳回"
-    case supplement = "需补材料"
-    case offset = "系统抵扣"
-
-    var id: String { rawValue }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let value = try container.decode(String.self)
-        switch value {
-        case "pending", "PENDING", "待审核":
-            self = .pending
-        case "approved", "APPROVED", "已通过":
-            self = .approved
-        case "rejected", "REJECTED", "被驳回", "已驳回":
-            self = .rejected
-        case "supplement", "SUPPLEMENT", "needsSupplement", "needs_supplement", "NEEDS_SUPPLEMENT", "需补材料", "补材料", "补充材料":
-            self = .supplement
-        case "offset", "OFFSET", "系统抵扣":
-            self = .offset
-        default:
-            self = .pending
+            // Legacy pending/approved/supplement/offset states and any unknown
+            // value all map to valid; only an explicit server invalidation
+            // downgrades a record.
+            self = .valid
         }
     }
 }
@@ -1031,12 +803,12 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
     let creditType: CreditType
     var hours: Double
     var submittedAt: String
-    var status: ReviewStatus
+    var validity: RecordValidity
+    var invalidReason: String?
     var proofSummary: String
     var proofPhotoCount: Int
     var proofVideoCount: Int
     var proofFiles: [ProofAttachment]
-    var teacherFeedback: String
     var note: String
     var sportType: String?
 
@@ -1051,12 +823,12 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         creditType: CreditType,
         hours: Double,
         submittedAt: String,
-        status: ReviewStatus,
+        validity: RecordValidity = .valid,
+        invalidReason: String? = nil,
         proofSummary: String,
         proofPhotoCount: Int,
         proofVideoCount: Int,
         proofFiles: [ProofAttachment],
-        teacherFeedback: String,
         note: String,
         sportType: String? = nil
     ) {
@@ -1066,12 +838,12 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         self.creditType = creditType
         self.hours = hours
         self.submittedAt = submittedAt
-        self.status = status
+        self.validity = validity
+        self.invalidReason = invalidReason
         self.proofSummary = proofSummary
         self.proofPhotoCount = proofPhotoCount
         self.proofVideoCount = proofVideoCount
         self.proofFiles = proofFiles
-        self.teacherFeedback = teacherFeedback
         self.note = note
         self.sportType = sportType
     }
@@ -1089,16 +861,18 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         case submittedAt
         case createdAt
         case updatedAt
+        case validity
         case status
         case reviewStatus
-        case proofSummary
-        case proofPhotoCount
-        case proofVideoCount
-        case proofFiles
+        case invalidReason
         case teacherFeedback
         case feedback
         case comment
         case reviewComment
+        case proofSummary
+        case proofPhotoCount
+        case proofVideoCount
+        case proofFiles
         case note
         case description
     }
@@ -1122,24 +896,36 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent(String.self, forKey: .createdAt)
             ?? container.decodeIfPresent(String.self, forKey: .updatedAt)
             ?? ""
-        status = try container.decodeIfPresent(ReviewStatus.self, forKey: .status)
-            ?? container.decodeIfPresent(ReviewStatus.self, forKey: .reviewStatus)
-            ?? .pending
+        // Legacy caches / older servers may still send review states under
+        // `status`; RecordValidity's decoder maps them onto valid/invalid.
+        validity = try container.decodeIfPresent(RecordValidity.self, forKey: .validity)
+            ?? container.decodeIfPresent(RecordValidity.self, forKey: .status)
+            ?? container.decodeIfPresent(RecordValidity.self, forKey: .reviewStatus)
+            ?? .valid
+        var decodedInvalidReason = try container.decodeIfPresent(String.self, forKey: .invalidReason)
+        if decodedInvalidReason == nil {
+            decodedInvalidReason = try container.decodeIfPresent(String.self, forKey: .teacherFeedback)
+        }
+        if decodedInvalidReason == nil {
+            decodedInvalidReason = try container.decodeIfPresent(String.self, forKey: .feedback)
+        }
+        if decodedInvalidReason == nil {
+            decodedInvalidReason = try container.decodeIfPresent(String.self, forKey: .comment)
+        }
+        if decodedInvalidReason == nil {
+            decodedInvalidReason = try container.decodeIfPresent(String.self, forKey: .reviewComment)
+        }
         proofFiles = (try? container.decodeIfPresent([ProofAttachment].self, forKey: .proofFiles))
             ?? proofAttachments(from: ((try? container.decodeIfPresent([String].self, forKey: .proofFiles)) ?? []))
         proofSummary = try container.decodeIfPresent(String.self, forKey: .proofSummary)
             ?? CheckInRecord.proofSummary(for: proofFiles)
         proofPhotoCount = try container.decodeIfPresent(Int.self, forKey: .proofPhotoCount) ?? proofFiles.filter { $0.type == .image }.count
         proofVideoCount = try container.decodeIfPresent(Int.self, forKey: .proofVideoCount) ?? proofFiles.filter { $0.type == .video }.count
-        teacherFeedback = try container.decodeIfPresent(String.self, forKey: .teacherFeedback)
-            ?? container.decodeIfPresent(String.self, forKey: .feedback)
-            ?? container.decodeIfPresent(String.self, forKey: .comment)
-            ?? container.decodeIfPresent(String.self, forKey: .reviewComment)
-            ?? "等待老师审核。"
         note = try container.decodeIfPresent(String.self, forKey: .note)
             ?? container.decodeIfPresent(String.self, forKey: .description)
             ?? ""
         sportType = try container.decodeIfPresent(String.self, forKey: .sportType)
+        invalidReason = decodedInvalidReason?.isEmpty == false ? decodedInvalidReason : nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1150,12 +936,12 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         try container.encode(creditType, forKey: .creditType)
         try container.encode(hours, forKey: .hours)
         try container.encode(submittedAt, forKey: .submittedAt)
-        try container.encode(status, forKey: .status)
+        try container.encode(validity, forKey: .validity)
+        try container.encodeIfPresent(invalidReason, forKey: .invalidReason)
         try container.encode(proofSummary, forKey: .proofSummary)
         try container.encode(proofPhotoCount, forKey: .proofPhotoCount)
         try container.encode(proofVideoCount, forKey: .proofVideoCount)
         try container.encode(proofFiles, forKey: .proofFiles)
-        try container.encode(teacherFeedback, forKey: .teacherFeedback)
         try container.encode(note, forKey: .note)
         try container.encodeIfPresent(sportType, forKey: .sportType)
     }
@@ -1225,8 +1011,6 @@ enum ProofUploadRule {
             totalByteCount(in: attachments) <= maxRequestBytes
     }
 
-    /// Existing server proofs count toward the record limit but are not part of
-    /// a supplement upload request's byte total.
     static func acceptsAttachmentCounts(_ attachments: [ProofAttachment]) -> Bool {
         attachments.count <= maxAttachmentCount &&
             imageCount(in: attachments) <= maxImageCount &&
@@ -1896,9 +1680,6 @@ struct PendingRemoteMutationSummary: Identifiable, Hashable {
         if attempt.scope == "sport-record:create" {
             title = attempt.isServerConfirmed ? "打卡记录已提交，待本地清理" : "打卡记录待重试"
             target = attempt.requestFields["taskTitle"]
-        } else if attempt.scope.hasPrefix("sport-record:supplement:") {
-            title = attempt.isServerConfirmed ? "打卡补充材料已提交，待本地清理" : "打卡补充材料待重试"
-            target = attempt.requestFields["recordId"]
         } else if attempt.scope == "exemption:create:physical-test" {
             title = attempt.isServerConfirmed ? "免测申请已提交，待本地清理" : "免测申请待重试"
             target = attempt.requestFields["type"]
@@ -1931,9 +1712,23 @@ private extension Digest {
     }
 }
 
+/// A validated, ready-to-send check-in under the new exercise-session model.
+struct CheckInSubmission: Hashable {
+    let creditType: CreditType
+    let courseId: String?
+    let hours: Double
+
+    var title: String {
+        creditType == .courseRelated ? "课程相关运动打卡" : "自主运动打卡"
+    }
+}
+
 struct CheckInDraft: Identifiable, Hashable, Codable {
     let id: String
-    var taskId: String
+    /// The credit bucket this draft belongs to. Replaces the legacy `taskId`;
+    /// old persisted drafts fail decode and are cleared by the store-health path.
+    var creditType: CreditType
+    var courseId: String?
     var hours: Double
     var note: String
     var proofAttachments: [ProofAttachment]

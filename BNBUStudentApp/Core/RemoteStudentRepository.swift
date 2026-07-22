@@ -86,7 +86,6 @@ struct WorkspacePayload: Decodable {
     let student: StudentProfile
     let courses: [Course]
     let progress: StudentProgress
-    let tasks: [CourseTask]
     let records: [CheckInRecord]
     let grades: GradeRow?
     let memberships: [Membership]
@@ -99,7 +98,6 @@ struct WorkspacePayload: Decodable {
             student: student,
             courses: courses,
             progress: progress,
-            tasks: tasks,
             records: records,
             grades: grades ?? GradeRow(
                 studentId: student.id,
@@ -135,7 +133,6 @@ struct SportSummaryPayload: Decodable {
     let student: StudentProfile?
     let progress: StudentProgress?
     let courses: [Course]
-    let tasks: [CourseTask]
     let records: [CheckInRecord]
     let grades: GradeRow?
     let memberships: [Membership]
@@ -149,7 +146,6 @@ struct SportSummaryPayload: Decodable {
         case progress
         case summary
         case courses
-        case tasks
         case records
         case grades
         case memberships
@@ -170,7 +166,6 @@ struct SportSummaryPayload: Decodable {
             ?? container.decodeIfPresent(StudentProgress.self, forKey: .summary)
             ?? (try? StudentProgress(from: decoder))
         courses = (try? container.decodeIfPresent([Course].self, forKey: .courses)) ?? []
-        tasks = (try? container.decodeIfPresent([CourseTask].self, forKey: .tasks)) ?? []
         records = (try? container.decodeIfPresent([CheckInRecord].self, forKey: .records)) ?? []
         grades = try container.decodeIfPresent(GradeRow.self, forKey: .grades)
         var decodedMemberships = (try? container.decodeIfPresent([Membership].self, forKey: .memberships)) ?? []
@@ -336,61 +331,6 @@ struct StudentCoursesPayload: Decodable {
                 isCurrent: item.isCurrent ?? true
             )
         }
-    }
-}
-
-struct StudentTasksPayload: Decodable {
-    struct Item: Decodable {
-        let id: String?
-        let courseId: String?
-        let title: String?
-        let description: String?
-        let creditType: String?
-        let requiredHours: Double?
-        let deadline: String?
-        let status: TaskStatus?
-        let completedAt: String?
-
-        func model(completedBucket: Bool) -> CourseTask {
-            let resolvedCreditType = creditType.flatMap { CreditType(contractValue: $0) }
-            return CourseTask(
-                id: id ?? "",
-                courseId: courseId ?? "",
-                creditType: resolvedCreditType ?? .general,
-                title: title ?? "体育打卡任务",
-                hours: requiredHours ?? 0,
-                deadline: deadline ?? "",
-                proof: description ?? "按任务要求上传凭证",
-                status: status ?? .draft,
-                updatedAt: completedAt ?? "",
-                // The response bucket is authoritative even if an old or
-                // malformed server omitted the completion timestamp.
-                completedAt: completedAt ?? (completedBucket ? "" : nil),
-                validCreditType: resolvedCreditType != nil
-            )
-        }
-    }
-
-    let pending: [Item]
-    let completed: [Item]
-
-    var tasks: [CourseTask] {
-        let completedIDs = Set(completed.compactMap(\.id))
-        var seen = Set<String>()
-        let pendingModels = pending.compactMap { item -> CourseTask? in
-            guard let itemID = item.id?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !itemID.isEmpty,
-                  !completedIDs.contains(itemID),
-                  seen.insert(itemID).inserted else { return nil }
-            return item.model(completedBucket: false)
-        }
-        let completedModels = completed.compactMap { item -> CourseTask? in
-            guard let itemID = item.id?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !itemID.isEmpty,
-                  seen.insert(itemID).inserted else { return nil }
-            return item.model(completedBucket: true)
-        }
-        return pendingModels + completedModels
     }
 }
 
@@ -675,7 +615,6 @@ actor RemoteStudentRepository {
     }
 
     func submitCheckIn(
-        taskId: String,
         courseId: String?,
         creditType: String,
         taskTitle: String,
@@ -695,12 +634,8 @@ actor RemoteStudentRepository {
             "description": note,
             "proofFiles": proofReferences
         ]
-        // Task identity is independent from its credit category. A server-issued
-        // general-sport task must keep both references so the backend can mark it
-        // completed; only the synthetic autonomous task intentionally has none.
-        if taskId != "self-general", let courseId, !courseId.isEmpty {
+        if let courseId, !courseId.isEmpty {
             body["courseId"] = courseId
-            body["taskId"] = taskId
         }
         if let sportType, !sportType.isEmpty {
             body["sportType"] = sportType
@@ -722,12 +657,11 @@ actor RemoteStudentRepository {
             creditType: resolvedCreditType(from: creditType),
             hours: hours,
             submittedAt: "刚刚",
-            status: .pending,
+            validity: .valid,
             proofSummary: proofFiles.isEmpty ? "未添加凭证" : "\(proofFiles.count) 个凭证",
             proofPhotoCount: 0,
             proofVideoCount: 0,
             proofFiles: [],
-            teacherFeedback: "已提交到服务器，等待老师审核。",
             note: note,
             sportType: sportType
         )
@@ -791,48 +725,6 @@ actor RemoteStudentRepository {
             return uploadedAttachment
         }
         throw RepositoryError.apiError("服务器上传响应缺少文件 URL")
-    }
-
-    func supplementCheckIn(
-        recordId: String,
-        note: String?,
-        hours: Double?,
-        proofFiles: [ProofAttachment] = [],
-        idempotencyKey: String? = nil
-    ) async throws -> CheckInRecord {
-        if let inputMessage = CheckInInputRule.validationMessage(note: note ?? "") {
-            throw RepositoryError.apiError(inputMessage)
-        }
-        let body: [String: Any] = [
-            "description": note ?? "补充证明材料",
-            "hours": hours ?? 1,
-            "proofFiles": try proofFiles.map(canonicalProofReference)
-        ]
-
-        let data = try await post(
-            "sport/records/\(recordId)/supplements",
-            body: try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
-            idempotencyKey: idempotencyKey
-        )
-        if let record = try? decodeFlexible(CheckInRecord.self, from: data),
-           record.representsCompleteServerRecord {
-            return record
-        }
-        return CheckInRecord(
-            id: recordId,
-            courseId: nil,
-            taskTitle: "补充材料",
-            creditType: .general,
-            hours: hours ?? 0,
-            submittedAt: "刚刚补交",
-            status: .pending,
-            proofSummary: "补充材料已提交",
-            proofPhotoCount: 0,
-            proofVideoCount: 0,
-            proofFiles: [],
-            teacherFeedback: "补充材料已提交到服务器，等待老师复审。",
-            note: note ?? ""
-        )
     }
 
     func submitExemption(
@@ -952,21 +844,18 @@ actor RemoteStudentRepository {
         async let summaryRequest = getIfBusinessReady("sport/summary")
         async let profileRequest = get("student/profile")
         async let coursesRequest = get("student/courses")
-        async let tasksRequest = getIfBusinessReady("student/tasks")
         async let gradesRequest = getIfBusinessReady("student/grades")
         async let recordsRequest = get("sport/records")
 
-        let (summaryData, profileData, coursesData, tasksData, gradesData, recordsData) = try await (
+        let (summaryData, profileData, coursesData, gradesData, recordsData) = try await (
             summaryRequest,
             profileRequest,
             coursesRequest,
-            tasksRequest,
             gradesRequest,
             recordsRequest
         )
         let summary = try summaryData.map { try decodeFlexible(SportSummaryPayload.self, from: $0) }
         let student = try decodeFlexible(StudentProfile.self, from: profileData)
-        let tasks = try tasksData.map { try decodeFlexible(StudentTasksPayload.self, from: $0).tasks } ?? []
         var courses = try decodeFlexible(StudentCoursesPayload.self, from: coursesData).models()
         let grades = try gradesData.map { try decodeFlexible(StudentGradesPayload.self, from: $0).model(for: student) }
             ?? GradeRow(
@@ -987,11 +876,6 @@ actor RemoteStudentRepository {
                let summaryCourse = summary?.courses.first(where: { $0.id == courses[index].id }) {
                 courses[index].teacher = summaryCourse.teacher
             }
-            courses[index].deadline = tasks
-                .filter { $0.courseId == courses[index].id && $0.isSubmittable() && !$0.deadline.isEmpty }
-                .map(\.deadline)
-                .sorted()
-                .first ?? "暂无截止任务"
         }
 
         var memberships = summary?.memberships ?? []
@@ -1016,7 +900,6 @@ actor RemoteStudentRepository {
             summary: summary,
             student: student,
             courses: courses,
-            tasks: tasks,
             grades: grades,
             records: records,
             memberships: memberships,
@@ -1035,7 +918,6 @@ actor RemoteStudentRepository {
         summary: SportSummaryPayload?,
         student: StudentProfile,
         courses: [Course],
-        tasks: [CourseTask],
         grades: GradeRow,
         records: [CheckInRecord],
         memberships: [Membership],
@@ -1081,7 +963,6 @@ actor RemoteStudentRepository {
             student: student,
             courses: courses,
             progress: progress,
-            tasks: tasks,
             records: records,
             grades: grades,
             memberships: memberships,

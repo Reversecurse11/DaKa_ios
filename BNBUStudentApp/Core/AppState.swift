@@ -88,12 +88,11 @@ final class AppState: ObservableObject {
         var bootEvent = Self.bootEvent(workspaceStatus: workspaceRead.status, draftStatus: draftRead.status)
         var restoredDraft: CheckInDraft?
 
-        if let savedDraft,
-           savedDraft.taskId == "self-general" || workspace.tasks.contains(where: { $0.id == savedDraft.taskId && $0.isSubmittable() }) {
+        if let savedDraft, savedDraft.creditType != .organizationOffset {
             restoredDraft = savedDraft
         } else if savedDraft != nil {
             draftReadStatus = .discarded
-            bootEvent = "草稿任务已失效，已自动清理。"
+            bootEvent = "草稿数据已失效，已自动清理。"
             localStore.clearDraft()
         }
 
@@ -146,29 +145,6 @@ final class AppState: ObservableObject {
 
     var unreadNoticeCount: Int {
         workspace.notices.filter(\.isUnread).count
-    }
-
-    var activeTasks: [CourseTask] {
-        submittableTasks()
-    }
-
-    func submittableTasks(at date: Date = Date()) -> [CourseTask] {
-        workspace.tasks.filter { $0.isSubmittable(at: date) }
-    }
-
-    var selfCheckInTask: CourseTask {
-        CourseTask(
-            id: "self-general",
-            courseId: "self-general",
-            creditType: .general,
-            title: "自主运动打卡",
-            hours: hourRule.dailyLimit,
-            deadline: "",
-            proof: ProofUploadRule.summaryText,
-            status: .active,
-            updatedAt: "",
-            isSyntheticSelfGeneral: true
-        )
     }
 
     var currentExerciseCourse: Course? {
@@ -266,12 +242,38 @@ final class AppState: ObservableObject {
         errorMessage = nil
     }
 
-    func submissionTask(for session: ExerciseSession) -> CourseTask? {
-        if session.category == .general {
-            return selfCheckInTask
+    /// The credit bucket a completed session's record belongs to. Course-related
+    /// sessions must still reference a course that exists in the workspace.
+    func submissionContext(for session: ExerciseSession) -> (creditType: CreditType, courseId: String?)? {
+        switch session.category {
+        case .general:
+            return (.general, nil)
+        case .courseRelated:
+            guard let courseID = session.courseID,
+                  workspace.courses.contains(where: { $0.id == courseID }) else { return nil }
+            return (.courseRelated, courseID)
         }
-        guard let courseID = session.courseID else { return nil }
-        return submittableTasks().first { $0.courseId == courseID && $0.creditType == .courseRelated }
+    }
+
+    /// Fail-closed validation of a check-in submission under the new model:
+    /// timer-derived 1h/2h only, course-related must reference a live course.
+    func validatedSubmission(creditType: CreditType, courseId: String?, hours: Double) -> CheckInSubmission? {
+        guard creditType != .organizationOffset else { return nil }
+        guard hours.isFinite, hours == 1 || hours == 2 else { return nil }
+        if creditType == .courseRelated {
+            guard let courseId, workspace.courses.contains(where: { $0.id == courseId }) else { return nil }
+            return CheckInSubmission(creditType: .courseRelated, courseId: courseId, hours: hours)
+        }
+        return CheckInSubmission(creditType: .general, courseId: nil, hours: hours)
+    }
+
+    /// Rebuilds a submission from a persisted retry journal entry.
+    private func submission(fromRequestFields fields: [String: String]) -> CheckInSubmission? {
+        guard let creditValue = fields["creditType"],
+              let creditType = CreditType(contractValue: creditValue) else { return nil }
+        let courseId = fields["courseId"].flatMap { $0.isEmpty ? nil : $0 }
+        let hours = Double(fields["hours"] ?? "") ?? 0
+        return validatedSubmission(creditType: creditType, courseId: courseId, hours: hours)
     }
 
     func markExerciseSessionSubmitted() {
@@ -328,24 +330,16 @@ final class AppState: ObservableObject {
 
     var submittedCheckInRecords: [CheckInRecord] {
         workspace.records.filter {
-            $0.creditType != .organizationOffset && $0.status != .offset
+            $0.creditType != .organizationOffset
         }
     }
 
-    var pendingRecordCount: Int {
-        workspace.records.filter { $0.status == .pending }.count
-    }
-
-    var supplementRecordCount: Int {
-        workspace.records.filter { $0.status == .supplement }.count
+    var invalidRecordCount: Int {
+        workspace.records.filter { $0.validity == .invalid }.count
     }
 
     var actionableExemptionCount: Int {
         workspace.exemptions.filter { $0.status == .pending }.count
-    }
-
-    var actionableRecordCount: Int {
-        pendingRecordCount + supplementRecordCount + actionableExemptionCount
     }
 
     var queuedSyncCount: Int {
@@ -375,21 +369,11 @@ final class AppState: ObservableObject {
         if containsDuplicates(workspace.courses.map(\.id)) {
             issues.append("课程 ID 重复")
         }
-        if containsDuplicates(workspace.tasks.map(\.id)) {
-            issues.append("任务 ID 重复")
-        }
         if containsDuplicates(workspace.records.map(\.id)) {
             issues.append("记录 ID 重复")
         }
         if containsDuplicates(workspace.exemptions.map(\.id)) {
             issues.append("免测申请 ID 重复")
-        }
-
-        let invalidTaskCount = workspace.tasks.filter { task in
-            task.courseId != "self-general" && !courseIds.contains(task.courseId)
-        }.count
-        if invalidTaskCount > 0 {
-            issues.append("任务课程引用 \(invalidTaskCount)")
         }
 
         let invalidRecordCount = workspace.records.filter { record in
@@ -401,9 +385,10 @@ final class AppState: ObservableObject {
         }
 
         if let draft,
-           draft.taskId != "self-general",
-           !workspace.tasks.contains(where: { $0.id == draft.taskId && $0.isSubmittable() }) {
-            issues.append("草稿任务失效")
+           draft.creditType == .courseRelated,
+           let draftCourseId = draft.courseId,
+           !courseIds.contains(draftCourseId) {
+            issues.append("草稿课程引用失效")
         }
 
         return issues.isEmpty ? "正常" : issues.joined(separator: " / ")
@@ -418,8 +403,7 @@ final class AppState: ObservableObject {
         workspace = localWorkspace
         restoreExerciseSession(for: workspace.student.id)
         let localDraft = localStore.readDraft().value
-        if let localDraft,
-           localDraft.taskId == "self-general" || workspace.tasks.contains(where: { $0.id == localDraft.taskId && $0.isSubmittable() }) {
+        if let localDraft, localDraft.creditType != .organizationOffset {
             draft = localDraft
         } else {
             draft = nil
@@ -543,9 +527,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func tasks(for course: Course) -> [CourseTask] {
-        workspace.tasks.filter { $0.courseId == course.id }
-    }
 
     func records(for course: Course) -> [CheckInRecord] {
         workspace.records.filter { $0.courseId == course.id }
@@ -599,7 +580,8 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func submitCheckIn(
-        task: CourseTask,
+        creditType: CreditType,
+        courseId: String?,
         hours: Double,
         note: String,
         sportType: String? = nil,
@@ -616,16 +598,15 @@ final class AppState: ObservableObject {
             return false
         }
 
-        guard let task = currentSubmittableTask(matching: task) else {
-            errorMessage = "当前任务不可提交，请刷新任务列表。"
+        guard let submission = validatedSubmission(creditType: creditType, courseId: courseId, hours: hours) else {
+            errorMessage = "本次运动数据不完整，无法提交。请结束运动后重试。"
             return false
         }
 
         if isRemoteMode {
             let submissionEpoch = sessionEpoch
             return await submitCheckInRemote(
-                task: task,
-                hours: hours,
+                submission: submission,
                 note: note,
                 sportType: sportType,
                 proofAttachments: proofAttachments,
@@ -639,22 +620,20 @@ final class AppState: ObservableObject {
         }
         guard !proofAttachments.isEmpty, ProofUploadRule.accepts(proofAttachments) else { return false }
         guard proofAttachments.allSatisfy(\.isValidForUpload) else { return false }
-        let submittedHours = normalizedHours(hours, for: task)
         let photoCount = proofAttachments.filter { $0.type == .image }.count
         let videoCount = proofAttachments.filter { $0.type == .video }.count
         let record = CheckInRecord(
             id: UUID().uuidString,
-            courseId: task.isSyntheticSelfGeneral ? nil : task.courseId,
-            taskTitle: task.title,
-            creditType: task.creditType,
-            hours: submittedHours,
+            courseId: submission.courseId,
+            taskTitle: submission.title,
+            creditType: submission.creditType,
+            hours: submission.hours,
             submittedAt: "刚刚",
-            status: .pending,
+            validity: .valid,
             proofSummary: proofSummary(proofAttachments: proofAttachments),
             proofPhotoCount: photoCount,
             proofVideoCount: videoCount,
             proofFiles: proofAttachments,
-            teacherFeedback: "记录已提交。",
             note: note.isEmpty ? "学生未填写补充说明。" : note,
             sportType: sportType
         )
@@ -662,12 +641,12 @@ final class AppState: ObservableObject {
         if let exerciseSession {
             saveExerciseSubmissionDate(exerciseSession.startTime, recordID: record.id)
         }
-        creditSubmittedExercise(hours: submittedHours, creditType: task.creditType)
+        creditSubmittedExercise(hours: submission.hours, creditType: submission.creditType)
         workspace.notices.insert(
             StudentNotice(
                 id: UUID().uuidString,
                 title: "打卡已提交",
-                message: "\(task.title) 已成功提交，可在打卡记录中查看。",
+                message: "\(submission.title) 已成功提交，可在打卡记录中查看。",
                 time: "刚刚",
                 category: .system,
                 isUnread: true
@@ -677,74 +656,10 @@ final class AppState: ObservableObject {
         enqueueSyncOperation(
             .submitRecord,
             title: "提交打卡记录",
-            detail: "\(task.title) · \(submittedHours.hourText) · \(proofAttachments.count) 个凭证"
+            detail: "\(submission.title) · \(submission.hours.hourText) · \(proofAttachments.count) 个凭证"
         )
         clearDraft()
         saveWorkspace(event: "打卡提交已保存")
-        return true
-    }
-
-    @discardableResult
-    func submitSupplement(for record: CheckInRecord, hours: Double, note: String, proofAttachments: [ProofAttachment]) async -> Bool {
-        let mutationKey = "supplement:\(record.id)"
-        guard beginMutation(mutationKey) else {
-            errorMessage = "补充材料正在提交，请勿重复操作。"
-            return false
-        }
-        defer { endMutation(mutationKey) }
-        if let inputMessage = CheckInInputRule.validationMessage(note: note) {
-            errorMessage = inputMessage
-            return false
-        }
-        if isRemoteMode {
-            return await supplementRemote(
-                for: record,
-                hours: hours,
-                note: note,
-                proofAttachments: proofAttachments,
-                expectedSessionEpoch: sessionEpoch
-            )
-        }
-        guard let index = workspace.records.firstIndex(where: { $0.id == record.id }) else { return false }
-        guard workspace.records[index].status == .supplement || workspace.records[index].status == .rejected else { return false }
-        guard !proofAttachments.isEmpty,
-              ProofUploadRule.accepts(proofAttachments),
-              proofAttachments.allSatisfy(\.isValidForUpload) else { return false }
-
-        let submittedHours = normalizedSubmissionHours(hours)
-        let mergedProofs = workspace.records[index].proofFiles + proofAttachments
-        guard ProofUploadRule.acceptsAttachmentCounts(mergedProofs) else { return false }
-        let photoCount = mergedProofs.filter { $0.type == .image }.count
-        let videoCount = mergedProofs.filter { $0.type == .video }.count
-
-        workspace.records[index].hours = submittedHours
-        workspace.records[index].submittedAt = "刚刚补交"
-        workspace.records[index].status = .pending
-        workspace.records[index].proofSummary = proofSummary(proofAttachments: mergedProofs)
-        workspace.records[index].proofPhotoCount = photoCount
-        workspace.records[index].proofVideoCount = videoCount
-        workspace.records[index].proofFiles = mergedProofs
-        workspace.records[index].teacherFeedback = "补充材料已提交，等待老师复审。"
-        workspace.records[index].note = note.isEmpty ? "学生已按反馈补交材料。" : note
-
-        workspace.notices.insert(
-            StudentNotice(
-                id: UUID().uuidString,
-                title: "补充材料已提交",
-                message: "\(record.taskTitle) 的补充材料已进入复审队列。",
-                time: "刚刚",
-                category: .review,
-                isUnread: true
-            ),
-            at: 0
-        )
-        enqueueSyncOperation(
-            .supplementRecord,
-            title: "提交补充材料",
-            detail: "\(record.taskTitle) · 新增 \(proofAttachments.count) 个凭证"
-        )
-
-        saveWorkspace(event: "补充材料已保存")
         return true
     }
 
@@ -868,25 +783,24 @@ final class AppState: ObservableObject {
     }
 
     func saveDraft(
-        task requestedTask: CourseTask,
+        creditType: CreditType,
+        courseId: String?,
         hours: Double,
         note: String,
         sportType: String? = nil,
         customSportType: String? = nil,
         proofAttachments: [ProofAttachment]
     ) {
-        guard let task = currentSubmittableTask(matching: requestedTask) else {
+        guard let submission = validatedSubmission(creditType: creditType, courseId: courseId, hours: hours) else {
             clearDraft()
             return
         }
-        let submittedHours = normalizedHours(hours, for: task)
         let resolvedSportType = sportType == "other"
             ? customSportType?.trimmingCharacters(in: .whitespacesAndNewlines)
             : sportType
         let existingAttempt = draft?.pendingRemoteMutation
         let fingerprint = checkInFingerprint(
-            task: task,
-            hours: submittedHours,
+            submission: submission,
             note: note,
             sportType: resolvedSportType,
             proofAttachments: proofAttachments
@@ -909,8 +823,9 @@ final class AppState: ObservableObject {
         }
         let draft = CheckInDraft(
             id: draft?.id ?? UUID().uuidString,
-            taskId: task.id,
-            hours: submittedHours,
+            creditType: submission.creditType,
+            courseId: submission.courseId,
+            hours: submission.hours,
             note: note,
             proofAttachments: proofAttachments,
             updatedAt: "刚刚",
@@ -922,18 +837,9 @@ final class AppState: ObservableObject {
         saveDraft(draft, event: "打卡草稿已保存")
     }
 
-    func hourLimit(for task: CourseTask) -> Double {
-        min(task.hours, hourRule.dailyLimit)
-    }
-
-    func normalizedHours(_ hours: Double, for task: CourseTask) -> Double {
-        let allowedHours = [1.0, 2.0].filter { $0 <= hourLimit(for: task) }
-        guard let minimum = allowedHours.first else { return 1 }
-        return hours >= 1.5 ? (allowedHours.last ?? minimum) : minimum
-    }
-
     func canResumePendingCheckIn(
-        task: CourseTask,
+        creditType: CreditType,
+        courseId: String?,
         hours: Double,
         note: String,
         sportType: String?,
@@ -944,12 +850,12 @@ final class AppState: ObservableObject {
               let attempt = draft?.pendingRemoteMutation,
               attempt.uploadedProofs.count == proofAttachments.count,
               !proofAttachments.isEmpty,
-              attempt.uploadedProofs.allSatisfy({ $0.cosKey?.isEmpty == false }) else {
+              attempt.uploadedProofs.allSatisfy({ $0.cosKey?.isEmpty == false }),
+              let submission = validatedSubmission(creditType: creditType, courseId: courseId, hours: hours) else {
             return false
         }
         let fingerprint = checkInFingerprint(
-            task: task,
-            hours: normalizedHours(hours, for: task),
+            submission: submission,
             note: note,
             sportType: sportType,
             proofAttachments: proofAttachments
@@ -962,10 +868,6 @@ final class AppState: ObservableObject {
         )
     }
 
-    private func normalizedSubmissionHours(_ hours: Double) -> Double {
-        hours >= 1.5 && hourRule.dailyLimit >= 2 ? 2 : 1
-    }
-
     func clearDraft() {
         removePendingRemoteMutation(scope: "sport-record:create")
         draft = nil
@@ -973,10 +875,6 @@ final class AppState: ObservableObject {
         storeHealth.draftReadStatus = .missing
         storeHealth.lastWriteStatus = .cleared
         storeHealth.lastEvent = "打卡草稿已清理"
-    }
-
-    func discardCheckInSupplementAttempt(recordID: String) {
-        discardPendingRemoteMutation(scope: "sport-record:supplement:\(recordID)")
     }
 
     func discardExemptionCreationAttempt() {
@@ -1038,20 +936,9 @@ final class AppState: ObservableObject {
         }
 
         if scope == "sport-record:create" {
-            let taskID = attempt.requestFields["taskId"] ?? ""
-            let task = taskID.isEmpty
-                ? selfCheckInTask
-                : workspace.tasks.first(where: { $0.id == taskID && $0.isSubmittable() })
-            guard let task else { return false }
+            guard let submission = submission(fromRequestFields: attempt.requestFields) else { return false }
             return !hasSubmittedCheckInToday() &&
-                attempt.requestFields["courseId"] == (task.isSyntheticSelfGeneral ? "" : task.courseId) &&
-                attempt.requestFields["creditType"] == task.creditType.apiValue
-        }
-        if scope.hasPrefix("sport-record:supplement:") {
-            guard let recordID = attempt.requestFields["recordId"] else { return false }
-            return workspace.records.contains(where: {
-                $0.id == recordID && ($0.status == .supplement || $0.status == .rejected)
-            })
+                attempt.requestFields["creditType"] == submission.creditType.apiValue
         }
         if scope == "exemption:create:physical-test" {
             guard let type = attempt.requestFields["type"] else { return false }
@@ -1091,27 +978,14 @@ final class AppState: ObservableObject {
         }
         let fields = attempt.requestFields
         if scope == "sport-record:create" {
-            let taskID = fields["taskId"] ?? ""
-            let task = taskID.isEmpty
-                ? selfCheckInTask
-                : workspace.tasks.first(where: { $0.id == taskID })
-            guard let task else { return false }
+            guard let submission = submission(fromRequestFields: fields) else { return false }
             let sportType = fields["sportType"].flatMap { $0.isEmpty ? nil : $0 }
             return await submitCheckIn(
-                task: task,
-                hours: Double(fields["hours"] ?? "") ?? 1,
+                creditType: submission.creditType,
+                courseId: submission.courseId,
+                hours: submission.hours,
                 note: fields["description"] ?? "",
                 sportType: sportType,
-                proofAttachments: attempt.sourceProofs
-            )
-        }
-        if scope.hasPrefix("sport-record:supplement:"),
-           let recordID = fields["recordId"],
-           let record = workspace.records.first(where: { $0.id == recordID }) {
-            return await submitSupplement(
-                for: record,
-                hours: Double(fields["hours"] ?? "") ?? 1,
-                note: fields["description"] ?? "",
                 proofAttachments: attempt.sourceProofs
             )
         }
@@ -1264,8 +1138,7 @@ final class AppState: ObservableObject {
     }
 
     private func submitCheckInRemote(
-        task: CourseTask,
-        hours: Double,
+        submission: CheckInSubmission,
         note: String,
         sportType: String?,
         proofAttachments: [ProofAttachment],
@@ -1277,14 +1150,11 @@ final class AppState: ObservableObject {
             errorMessage = "今日已打卡，每天只能提交一次。"
             return false
         }
-        guard task.isSubmittable() else { return false }
         guard !proofAttachments.isEmpty, ProofUploadRule.accepts(proofAttachments) else { return false }
-        let submittedHours = normalizedHours(hours, for: task)
         let submittedNote = note.isEmpty ? "学生未填写补充说明。" : note
         let scope = "sport-record:create"
         let fingerprint = checkInFingerprint(
-            task: task,
-            hours: submittedHours,
+            submission: submission,
             note: note,
             sportType: sportType,
             proofAttachments: proofAttachments
@@ -1292,8 +1162,7 @@ final class AppState: ObservableObject {
         var attempt = resolveCheckInAttempt(
             scope: scope,
             fingerprint: fingerprint,
-            task: task,
-            hours: submittedHours,
+            submission: submission,
             note: note,
             sportType: sportType,
             proofAttachments: proofAttachments
@@ -1309,8 +1178,7 @@ final class AppState: ObservableObject {
         do {
             try persistCheckInAttempt(
                 attempt,
-                task: task,
-                hours: submittedHours,
+                submission: submission,
                 note: note,
                 sportType: sportType,
                 proofAttachments: proofAttachments
@@ -1321,16 +1189,14 @@ final class AppState: ObservableObject {
                 attempt = replaceCheckInAttempt(
                     scope: scope,
                     fingerprint: fingerprint,
-                    task: task,
-                    hours: submittedHours,
+                    submission: submission,
                     note: note,
                     sportType: sportType,
                     proofAttachments: proofAttachments
                 )
                 try persistCheckInAttempt(
                     attempt,
-                    task: task,
-                    hours: submittedHours,
+                    submission: submission,
                     note: note,
                     sportType: sportType,
                     proofAttachments: proofAttachments
@@ -1365,8 +1231,7 @@ final class AppState: ObservableObject {
                     attempt.uploadedProofs.append(uploaded)
                     try persistCheckInAttempt(
                         attempt,
-                        task: task,
-                        hours: submittedHours,
+                        submission: submission,
                         note: note,
                         sportType: sportType,
                         proofAttachments: proofAttachments
@@ -1383,19 +1248,17 @@ final class AppState: ObservableObject {
             attempt.markFinalMutationPrepared()
             try persistCheckInAttempt(
                 attempt,
-                task: task,
-                hours: submittedHours,
+                submission: submission,
                 note: note,
                 sportType: sportType,
                 proofAttachments: proofAttachments
             )
             checkInSubmissionPhase = .submitting
             var submittedRecord = try await remoteRepo.submitCheckIn(
-                taskId: task.id,
-                courseId: task.isSyntheticSelfGeneral ? nil : task.courseId,
-                creditType: task.creditType.apiValue,
-                taskTitle: task.title,
-                hours: submittedHours,
+                courseId: submission.courseId,
+                creditType: submission.creditType.apiValue,
+                taskTitle: submission.title,
+                hours: submission.hours,
                 note: submittedNote,
                 sportType: sportType,
                 proofFiles: attempt.uploadedProofs,
@@ -1411,8 +1274,7 @@ final class AppState: ObservableObject {
             do {
                 try persistCheckInAttempt(
                     attempt,
-                    task: task,
-                    hours: submittedHours,
+                    submission: submission,
                     note: note,
                     sportType: sportType,
                     proofAttachments: proofAttachments
@@ -1450,13 +1312,13 @@ final class AppState: ObservableObject {
 
             if !refreshedSubmittedRecord {
                 upsertCheckInRecord(submittedRecord)
-                creditSubmittedExercise(hours: submittedHours, creditType: task.creditType)
+                creditSubmittedExercise(hours: submission.hours, creditType: submission.creditType)
             }
             workspace.notices.insert(
                 StudentNotice(
                     id: UUID().uuidString,
                     title: "打卡已提交",
-                    message: "\(task.title) 已成功提交，可在打卡记录中查看。",
+                    message: "\(submission.title) 已成功提交，可在打卡记录中查看。",
                     time: "刚刚",
                     category: .system,
                     isUnread: true
@@ -1484,8 +1346,7 @@ final class AppState: ObservableObject {
                 if shouldRetainAttempt {
                     try persistCheckInAttempt(
                         attempt,
-                        task: task,
-                        hours: submittedHours,
+                        submission: submission,
                         note: note,
                         sportType: sportType,
                         proofAttachments: proofAttachments
@@ -1497,160 +1358,6 @@ final class AppState: ObservableObject {
                 journalError = error
             }
             canSafelyRetryCheckIn = shouldRetainAttempt
-            await handleRemoteError(error, expectedSessionEpoch: expectedSessionEpoch)
-            if let journalError, !isUnauthorized(error) {
-                errorMessage = journalError.localizedDescription
-            }
-            return false
-        }
-    }
-
-    private func supplementRemote(
-        for record: CheckInRecord,
-        hours: Double,
-        note: String,
-        proofAttachments: [ProofAttachment],
-        expectedSessionEpoch: UInt64
-    ) async -> Bool {
-        guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
-        guard record.status == .supplement || record.status == .rejected else { return false }
-        guard !proofAttachments.isEmpty,
-              ProofUploadRule.accepts(proofAttachments),
-              ProofUploadRule.acceptsAttachmentCounts(record.proofFiles + proofAttachments) else { return false }
-
-        let submittedHours = normalizedSubmissionHours(hours)
-        let submittedNote = note.isEmpty ? "学生已按反馈补交材料。" : note
-        let scope = "sport-record:supplement:\(record.id)"
-        let requestFields = [
-            "recordId": record.id,
-            "hours": String(format: "%.1f", submittedHours),
-            "description": submittedNote
-        ]
-        let fingerprint = RemoteMutationFingerprint.make(
-            scope: scope,
-            fields: requestFields,
-            attachments: proofAttachments
-        )
-        var attempt = resolvePersistentAttempt(
-            scope: scope,
-            fingerprint: fingerprint,
-            requestFields: requestFields,
-            sourceProofs: proofAttachments
-        )
-        guard !attempt.isServerConfirmed else {
-            retainServerConfirmedAttemptInMemory(attempt)
-            errorMessage = serverConfirmedCleanupWarning
-            return false
-        }
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            try storePendingRemoteMutation(attempt)
-            if attempt.uploadedProofs.count > proofAttachments.count ||
-                !attempt.uploadedProofs.allSatisfy({ $0.cosKey?.isEmpty == false }) {
-                attempt = replacePersistentAttempt(
-                    scope: scope,
-                    fingerprint: fingerprint,
-                    requestFields: requestFields,
-                    sourceProofs: proofAttachments
-                )
-                try storePendingRemoteMutation(attempt)
-            }
-            guard proofAttachments.dropFirst(attempt.uploadedProofs.count).allSatisfy(\.isValidForUpload) else {
-                errorMessage = "尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。"
-                return false
-            }
-            for index in attempt.uploadedProofs.count..<proofAttachments.count {
-                let attachment = proofAttachments[index]
-                if let uploaded = try await remoteRepo.uploadProof(attachment: attachment) {
-                    guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
-                    attempt.uploadedProofs.append(uploaded)
-                    try storePendingRemoteMutation(attempt)
-                }
-            }
-
-            attempt.markFinalMutationPrepared()
-            try storePendingRemoteMutation(attempt)
-            let supplementedRecord = try await remoteRepo.supplementCheckIn(
-                recordId: record.id,
-                note: submittedNote,
-                hours: submittedHours,
-                proofFiles: attempt.uploadedProofs,
-                idempotencyKey: attempt.idempotencyKey
-            )
-            guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
-
-            attempt.markServerConfirmed(resultID: supplementedRecord.id)
-            var localJournalWarning: String?
-            do {
-                try storePendingRemoteMutation(attempt)
-                try removePendingRemoteMutationStrict(scope: scope)
-            } catch {
-                retainServerConfirmedAttemptInMemory(attempt)
-                localJournalWarning = "补充材料已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。"
-            }
-
-            var refreshedRecord = false
-            var refreshWarning = localJournalWarning
-            do {
-                let remoteWorkspace = try await remoteRepo.loadWorkspace()
-                guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
-                refreshedRecord = remoteWorkspace.records.contains { $0.id == record.id }
-                applyRemoteWorkspace(remoteWorkspace, event: "补充材料已提交到服务器")
-            } catch {
-                if isUnauthorized(error) {
-                    await handleRemoteError(error, expectedSessionEpoch: expectedSessionEpoch)
-                    return true
-                }
-                refreshWarning = combinedWarning(
-                    refreshWarning,
-                    "补充材料已提交，但最新列表暂未同步。请稍后下拉刷新，不要重复提交。"
-                )
-            }
-            if !refreshedRecord,
-               let index = workspace.records.firstIndex(where: { $0.id == record.id }) {
-                let mergedProofs = workspace.records[index].proofFiles + attempt.uploadedProofs
-                workspace.records[index].hours = submittedHours
-                workspace.records[index].note = submittedNote
-                workspace.records[index].status = .pending
-                workspace.records[index].proofFiles = mergedProofs
-                workspace.records[index].proofPhotoCount = mergedProofs.filter { $0.type == .image }.count
-                workspace.records[index].proofVideoCount = mergedProofs.filter { $0.type == .video }.count
-                workspace.records[index].proofSummary = proofSummary(proofAttachments: mergedProofs)
-            }
-            workspace.notices.insert(
-                StudentNotice(
-                    id: UUID().uuidString,
-                    title: "补充材料已提交",
-                    message: "\(record.taskTitle) 的补充材料已进入复审队列。",
-                    time: "刚刚",
-                    category: .review,
-                    isUnread: true
-                ),
-                at: 0
-            )
-            proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
-            saveWorkspace(event: "补充材料已提交到服务器")
-            errorMessage = refreshWarning
-            return true
-        } catch {
-            guard expectedSessionEpoch == sessionEpoch else { return false }
-            if error is RemoteMutationJournalError {
-                errorMessage = error.localizedDescription
-                return false
-            }
-            let shouldRetainAttempt = RemoteMutationJournalPolicy.shouldRetain(after: error)
-            var journalError: Error?
-            do {
-                if shouldRetainAttempt {
-                    try storePendingRemoteMutation(attempt)
-                } else {
-                    try removePendingRemoteMutationStrict(scope: scope)
-                }
-            } catch {
-                journalError = error
-            }
             await handleRemoteError(error, expectedSessionEpoch: expectedSessionEpoch)
             if let journalError, !isUnauthorized(error) {
                 errorMessage = journalError.localizedDescription
@@ -2058,8 +1765,9 @@ final class AppState: ObservableObject {
             ]
         }
         if let currentDraft = draft,
-           currentDraft.taskId != "self-general",
-           !workspace.tasks.contains(where: { $0.id == currentDraft.taskId && $0.isSubmittable() }) {
+           currentDraft.creditType == .courseRelated,
+           let draftCourseId = currentDraft.courseId,
+           !workspace.courses.contains(where: { $0.id == draftCourseId }) {
             clearDraft()
         }
         saveWorkspace(event: event)
@@ -2205,13 +1913,12 @@ final class AppState: ObservableObject {
     }
 
     private func checkInFingerprint(
-        task: CourseTask,
-        hours: Double,
+        submission: CheckInSubmission,
         note: String,
         sportType: String?,
         proofAttachments: [ProofAttachment]
     ) -> String {
-        var fields = checkInRequestFields(task: task, hours: hours, note: note, sportType: sportType)
+        var fields = checkInRequestFields(submission: submission, note: note, sportType: sportType)
         fields.removeValue(forKey: "taskTitle")
         return RemoteMutationFingerprint.make(
             scope: "sport-record:create",
@@ -2221,17 +1928,15 @@ final class AppState: ObservableObject {
     }
 
     private func checkInRequestFields(
-        task: CourseTask,
-        hours: Double,
+        submission: CheckInSubmission,
         note: String,
         sportType: String?
     ) -> [String: String] {
         [
-            "taskId": task.isSyntheticSelfGeneral ? "" : task.id,
-            "taskTitle": task.title,
-            "courseId": task.isSyntheticSelfGeneral ? "" : task.courseId,
-            "creditType": task.creditType.apiValue,
-            "hours": String(format: "%.1f", hours),
+            "taskTitle": submission.title,
+            "courseId": submission.courseId ?? "",
+            "creditType": submission.creditType.apiValue,
+            "hours": String(format: "%.1f", submission.hours),
             "description": note.isEmpty ? "学生未填写补充说明。" : note,
             "sportType": sportType ?? ""
         ]
@@ -2240,8 +1945,7 @@ final class AppState: ObservableObject {
     private func resolveCheckInAttempt(
         scope: String,
         fingerprint: String,
-        task: CourseTask,
-        hours: Double,
+        submission: CheckInSubmission,
         note: String,
         sportType: String?,
         proofAttachments: [ProofAttachment]
@@ -2268,8 +1972,7 @@ final class AppState: ObservableObject {
         return replaceCheckInAttempt(
             scope: scope,
             fingerprint: fingerprint,
-            task: task,
-            hours: hours,
+            submission: submission,
             note: note,
             sportType: sportType,
             proofAttachments: proofAttachments
@@ -2279,8 +1982,7 @@ final class AppState: ObservableObject {
     private func replaceCheckInAttempt(
         scope: String,
         fingerprint: String,
-        task: CourseTask,
-        hours: Double,
+        submission: CheckInSubmission,
         note: String,
         sportType: String?,
         proofAttachments: [ProofAttachment]
@@ -2291,8 +1993,7 @@ final class AppState: ObservableObject {
             serverIdentity: remoteMutationServerIdentity,
             studentID: remoteCacheStudentID ?? workspace.student.id,
             requestFields: checkInRequestFields(
-                task: task,
-                hours: hours,
+                submission: submission,
                 note: note,
                 sportType: sportType
             ),
@@ -2303,8 +2004,7 @@ final class AppState: ObservableObject {
 
     private func persistCheckInAttempt(
         _ attempt: PendingRemoteMutationAttempt,
-        task: CourseTask,
-        hours: Double,
+        submission: CheckInSubmission,
         note: String,
         sportType: String?,
         proofAttachments: [ProofAttachment]
@@ -2327,8 +2027,9 @@ final class AppState: ObservableObject {
         }
         let updatedDraft = CheckInDraft(
             id: draft?.id ?? UUID().uuidString,
-            taskId: task.id,
-            hours: hours,
+            creditType: submission.creditType,
+            courseId: submission.courseId,
+            hours: submission.hours,
             note: note,
             proofAttachments: proofAttachments,
             updatedAt: "刚刚",
@@ -2531,15 +2232,6 @@ final class AppState: ObservableObject {
 
     private func beginMutation(_ key: String) -> Bool {
         mutationGate.begin(key)
-    }
-
-    private func currentSubmittableTask(matching task: CourseTask, at date: Date = Date()) -> CourseTask? {
-        if task.isSyntheticSelfGeneral {
-            return selfCheckInTask.isSubmittable(at: date) ? selfCheckInTask : nil
-        }
-        return workspace.tasks.first { candidate in
-            candidate.id == task.id && candidate.isSubmittable(at: date)
-        }
     }
 
     private func endMutation(_ key: String) {

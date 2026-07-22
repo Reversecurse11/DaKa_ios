@@ -374,15 +374,15 @@ struct CheckInView: View {
         }
     }
 
-    private var selectedTask: CourseTask? {
+    private var submissionContext: (creditType: CreditType, courseId: String?)? {
         guard let session = appState.exerciseSession else { return nil }
-        return appState.submissionTask(for: session)
+        return appState.submissionContext(for: session)
     }
 
     private var canSubmit: Bool {
         guard let session = appState.exerciseSession,
               session.status == .completed,
-              selectedTask != nil else { return false }
+              submissionContext != nil else { return false }
         let creditedHours = session.creditedHours()
         return !appState.hasSubmittedCheckInToday() &&
             (creditedHours == 1 || creditedHours == 2) &&
@@ -397,8 +397,8 @@ struct CheckInView: View {
         if appState.hasSubmittedCheckInToday() {
             return "今日已打卡，每天只能提交一次。"
         }
-        if selectedTask == nil {
-            return "当前课程暂未开放运动提交，请刷新课程后重试。"
+        if submissionContext == nil {
+            return "本次运动关联的课程已失效，请刷新课程后重试。"
         }
         if session.creditedHours() != 1 && session.creditedHours() != 2 {
             return "运动不足 1 小时，不能提交。"
@@ -420,16 +420,17 @@ struct CheckInView: View {
     }
 
     private var submitConfirmationMessage: String {
-        guard let session = appState.exerciseSession, let selectedTask else {
-            return "请先完成运动并确认可提交任务。"
+        guard let session = appState.exerciseSession, submissionContext != nil else {
+            return "请先完成运动后再提交。"
         }
-        return "\(selectedTask.title) · \(session.creditedHours().hourText) · \(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
+        return "\(session.category.title) · \(session.creditedHours().hourText) · \(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
     }
 
     private var canResumePendingUpload: Bool {
-        guard let selectedTask, let session = appState.exerciseSession else { return false }
+        guard let submissionContext, let session = appState.exerciseSession else { return false }
         return appState.canResumePendingCheckIn(
-            task: selectedTask,
+            creditType: submissionContext.creditType,
+            courseId: submissionContext.courseId,
             hours: session.creditedHours(),
             note: note,
             sportType: resolvedSportType,
@@ -461,9 +462,9 @@ struct CheckInView: View {
         }
         switch appState.storeHealth.draftReadStatus {
         case .decodeFailed:
-            return "本地草稿损坏，已自动忽略；可以重新选择任务并保存草稿。"
+            return "本地草稿损坏，已自动忽略；可以重新填写并保存草稿。"
         case .discarded:
-            return "本地草稿关联的任务已失效，已自动清理。"
+            return "本地草稿已失效，已自动清理。"
         default:
             return nil
         }
@@ -478,7 +479,9 @@ struct CheckInView: View {
     }
 
     private func restoreDraft(_ draft: CheckInDraft) {
-        guard let selectedTask, draft.taskId == selectedTask.id else {
+        guard let submissionContext,
+              draft.creditType == submissionContext.creditType,
+              draft.courseId == submissionContext.courseId else {
             clearDraftAndForm()
             return
         }
@@ -490,9 +493,10 @@ struct CheckInView: View {
     }
 
     private func saveDraft() {
-        guard let selectedTask, let session = appState.exerciseSession else { return }
+        guard let submissionContext, let session = appState.exerciseSession else { return }
         appState.saveDraft(
-            task: selectedTask,
+            creditType: submissionContext.creditType,
+            courseId: submissionContext.courseId,
             hours: session.creditedHours(),
             note: note,
             sportType: session.sportType.rawValue,
@@ -523,11 +527,12 @@ struct CheckInView: View {
     private func performSubmit() {
         guard canSubmit,
               !appState.isSubmittingCheckIn,
-              let selectedTask,
+              let submissionContext,
               let session = appState.exerciseSession else { return }
         Task {
             let success = await appState.submitCheckIn(
-                task: selectedTask,
+                creditType: submissionContext.creditType,
+                courseId: submissionContext.courseId,
                 hours: session.creditedHours(),
                 note: note,
                 sportType: resolvedSportType,
@@ -808,74 +813,6 @@ private struct LocalRecoveryBanner: View {
                         .foregroundStyle(BNBUTheme.muted)
                         .lineSpacing(2)
                 }
-            }
-        }
-    }
-}
-
-private struct TaskActionCard: View {
-    let task: CourseTask
-    let course: Course?
-    let submitAction: () -> Void
-
-    private var isSubmittable: Bool {
-        task.isSubmittable()
-    }
-
-    var body: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    Label(task.creditType.rawValue, systemImage: task.creditType.symbolName)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(BNBUTheme.blue)
-                    Spacer()
-                    StatusBadge(text: task.status.rawValue, filled: isSubmittable)
-                }
-
-                Text(task.title)
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(BNBUTheme.ink)
-
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("可获小时")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(BNBUTheme.muted)
-                        Text(task.hours.hourText)
-                            .font(.headline.weight(.medium))
-                    }
-                    Spacer()
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("截止时间")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(BNBUTheme.muted)
-                        Text(task.deadline)
-                            .font(.subheadline.weight(.medium))
-                            .multilineTextAlignment(.leading)
-                    }
-                }
-
-                Text("证明要求：\(task.proof)")
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(BNBUTheme.muted)
-
-                DisabledAwareButton(
-                    title: isSubmittable ? "提交这个任务" : "任务不可提交",
-                    systemImage: isSubmittable ? "square.and.pencil" : "lock",
-                    isDisabled: !isSubmittable,
-                    action: submitAction
-                )
-
-                NavigationLink {
-                    TaskDetailView(task: task, course: course)
-                } label: {
-                    Label("查看任务详情", systemImage: "info.circle")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(BNBUTheme.blue)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
             }
         }
     }

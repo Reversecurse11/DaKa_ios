@@ -92,62 +92,15 @@ struct MockStudentRepository: StudentRepository {
             organizationCredit: teamCredit
         )
 
-        let tasks = [
-            CourseTask(
-                id: "t1",
-                courseId: "gepe-1004",
-                creditType: .courseRelated,
-                title: "课外跑步训练 Week 08",
-                hours: 2,
-                deadline: "第 8 周周日 23:59",
-                proof: "运动 App 截图 + 场地照片",
-                status: .active,
-                updatedAt: "2026.06.10 09:30"
-            ),
-            CourseTask(
-                id: "t2",
-                courseId: "gepe-1004",
-                creditType: .courseRelated,
-                title: "体能练习补交任务",
-                hours: 1.5,
-                deadline: "第 9 周周三 18:00",
-                proof: "训练视频 10 秒 + 运动记录截图",
-                status: .active,
-                updatedAt: "2026.06.11 15:20"
-            ),
-            CourseTask(
-                id: "t3",
-                courseId: "self-general",
-                creditType: .general,
-                title: "自主运动打卡",
-                hours: 2,
-                deadline: "学期统一截止：第 16 周周日 23:59",
-                proof: "运动 App 截图 / 手环记录 / 场地照片",
-                status: .active,
-                updatedAt: "2026.06.01 08:00"
-            ),
-            CourseTask(
-                id: "t4",
-                courseId: "gepe-1005",
-                creditType: .courseRelated,
-                title: "Section 1005 Week 03 已关闭任务",
-                hours: 2,
-                deadline: "第 3 周周日 23:59",
-                proof: "运动 App 截图 + 场地照片",
-                status: .closed,
-                updatedAt: "2026.05.12 09:00"
-            )
-        ]
-
         let records = [
             CheckInRecord(
                 id: "r1",
                 courseId: "gepe-1004",
-                taskTitle: "课外跑步训练 Week 06",
+                taskTitle: "课程相关运动打卡",
                 creditType: .courseRelated,
                 hours: 2,
                 submittedAt: "2026.06.08 20:10",
-                status: .supplement,
+                validity: .valid,
                 proofSummary: "2 张图片，1 个短视频",
                 proofPhotoCount: 2,
                 proofVideoCount: 1,
@@ -156,17 +109,17 @@ struct MockStudentRepository: StudentRepository {
                     ProofAttachment(id: "pf-r1-2", type: .image, fileName: "run-week06-photo-2.jpg", byteCount: 790_000, source: "mock"),
                     ProofAttachment(id: "pf-r1-3", type: .video, fileName: "run-week06-video.mov", byteCount: 5_800_000, source: "mock")
                 ],
-                teacherFeedback: "视频时长不足，请补充包含完整运动过程的短视频。",
-                note: "操场跑步 40 分钟，配速截图已上传。"
+                note: "操场跑步 40 分钟，配速截图已上传。",
+                sportType: "running"
             ),
             CheckInRecord(
                 id: "r2",
                 courseId: "gepe-1004",
-                taskTitle: "课外跑步训练 Week 05",
+                taskTitle: "课程相关运动打卡",
                 creditType: .courseRelated,
                 hours: 2,
                 submittedAt: "2026.06.01 19:40",
-                status: .approved,
+                validity: .valid,
                 proofSummary: "运动截图 + 场地照片",
                 proofPhotoCount: 2,
                 proofVideoCount: 0,
@@ -174,8 +127,8 @@ struct MockStudentRepository: StudentRepository {
                     ProofAttachment(id: "pf-r2-1", type: .image, fileName: "gym-workout-screen.jpg", byteCount: 680_000, source: "mock"),
                     ProofAttachment(id: "pf-r2-2", type: .image, fileName: "gym-location.jpg", byteCount: 730_000, source: "mock")
                 ],
-                teacherFeedback: "凭证通过，按 2 小时计入。",
-                note: "体育馆力量训练。"
+                note: "体育馆力量训练。",
+                sportType: "fitness"
             ),
             CheckInRecord(
                 id: "r3",
@@ -184,30 +137,30 @@ struct MockStudentRepository: StudentRepository {
                 creditType: .organizationOffset,
                 hours: 10,
                 submittedAt: "2026.06.01 10:30",
-                status: .offset,
+                validity: .valid,
                 proofSummary: "羽毛球队官方名单",
                 proofPhotoCount: 0,
                 proofVideoCount: 0,
                 proofFiles: [],
-                teacherFeedback: "系统已自动计入其他运动 10 小时。",
                 note: "组织认证抵扣，B 类最多计 10 小时。"
             ),
             CheckInRecord(
                 id: "r4",
                 courseId: "gepe-1004",
-                taskTitle: "课外跑步训练 Week 04",
+                taskTitle: "课程相关运动打卡",
                 creditType: .courseRelated,
                 hours: 2,
                 submittedAt: "2026.05.25 20:20",
-                status: .rejected,
+                validity: .invalid,
+                invalidReason: "图片哈希命中历史记录，本次不计入有效学时。",
                 proofSummary: "运动截图",
                 proofPhotoCount: 1,
                 proofVideoCount: 0,
                 proofFiles: [
                     ProofAttachment(id: "pf-r4-1", type: .image, fileName: "duplicate-run-screen.jpg", byteCount: 640_000, source: "mock")
                 ],
-                teacherFeedback: "图片哈希命中历史记录，本次不计入有效学时。",
-                note: "补交跑步记录。"
+                note: "补交跑步记录。",
+                sportType: "running"
             )
         ]
 
@@ -244,8 +197,8 @@ struct MockStudentRepository: StudentRepository {
         let notices = [
             StudentNotice(
                 id: "n1",
-                title: "课程相关任务即将截止",
-                message: "GEPE101 / Section 1004 的 Week 08 任务将在第 8 周周日 23:59 截止。",
+                title: "本学期学时提醒",
+                message: "课程相关学时还差 4 小时，请尽早安排运动打卡。",
                 time: "今天 09:00",
                 category: .deadline,
                 isUnread: true
@@ -253,7 +206,7 @@ struct MockStudentRepository: StudentRepository {
             StudentNotice(
                 id: "n2",
                 title: "运动记录已提交",
-                message: "课外跑步训练 Week 06 已成功提交，可在打卡记录中查看。",
+                message: "课程相关运动打卡已成功提交，可在打卡记录中查看。",
                 time: "昨天 18:20",
                 category: .system,
                 isUnread: true
@@ -283,7 +236,6 @@ struct MockStudentRepository: StudentRepository {
             student: student,
             courses: courses,
             progress: progress,
-            tasks: tasks,
             records: records,
             grades: grades,
             memberships: [teamCredit, clubPending],
@@ -323,7 +275,6 @@ struct EmptyStudentRepository: StudentRepository {
                 source: "empty-ui-test",
                 organizationCredit: nil
             ),
-            tasks: [],
             records: [],
             grades: GradeRow(
                 studentId: student.id,

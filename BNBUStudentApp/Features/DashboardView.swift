@@ -22,7 +22,7 @@ struct DashboardView: View {
                     progressPanel
                     riskPanel
                     focusPlan
-                    nextTasks
+                    recentRecords
                 }
                 .padding(BNBUSpacing.screen)
             }
@@ -134,14 +134,19 @@ struct DashboardView: View {
         }
     }
 
-    private var nextTasks: some View {
+    private var recentRecords: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(eyebrow: "Deadline", title: "近期任务")
-            if appState.activeTasks.isEmpty {
-                EmptyPlaceholder(title: "暂无近期任务", message: "当前没有进行中的打卡任务；新任务发布后会在这里显示。")
+            SectionTitle(eyebrow: "Recent", title: "最近打卡")
+            if appState.submittedCheckInRecords.isEmpty {
+                EmptyPlaceholder(title: "暂无打卡记录", message: "完成一次不少于 1 小时的运动并提交后，记录会显示在这里。")
             } else {
-                ForEach(appState.activeTasks.prefix(2)) { task in
-                    TaskRow(task: task)
+                ForEach(appState.submittedCheckInRecords.prefix(2)) { record in
+                    NavigationLink {
+                        RecordDetailView(record: record)
+                    } label: {
+                        RecordCard(record: record)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -167,7 +172,7 @@ struct DashboardView: View {
             items.append(
                 FocusPlanItem(
                     title: "优先补齐课程相关 \(appState.courseRemaining.hourText)",
-                    detail: appState.activeTasks.isEmpty ? "课程相关不能被组织抵扣替代；当前暂无可提交任务，请等待老师发布。" : "课程相关不能被组织抵扣替代，建议先完成 GEPE101 相关任务。",
+                    detail: "课程相关不能被组织抵扣替代，建议在课程相关运动中完成计时打卡。",
                     systemImage: "target",
                     status: "高优先级"
                 )
@@ -298,35 +303,6 @@ private struct ProgressLine: View {
                 StatusBadge(text: detail)
             }
             HourProgressBar(value: value, total: total)
-        }
-    }
-}
-
-struct TaskRow: View {
-    let task: CourseTask
-
-    var body: some View {
-        SwissPanel {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: task.creditType.symbolName)
-                    .font(.title2.weight(.medium))
-                    .frame(width: 32)
-                    .foregroundStyle(BNBUTheme.blue)
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(task.title)
-                            .font(.headline.weight(.medium))
-                        Spacer()
-                        StatusBadge(text: task.creditType.rawValue)
-                    }
-                    Text("截止：\(task.deadline)")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BNBUTheme.ink)
-                    Text("证明：\(task.proof)")
-                        .font(.caption.weight(.regular))
-                        .foregroundStyle(BNBUTheme.muted)
-                }
-            }
         }
     }
 }

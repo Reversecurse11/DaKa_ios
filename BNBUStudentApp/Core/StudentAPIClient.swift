@@ -34,14 +34,13 @@ enum StudentEndpoint {
     case sportSummary
     case sportRecords
     case sportRecordDetail(id: String)
-    case supplementSportRecord(id: String)
     case sportIdentity
     case notifications
     case markNotificationRead(id: String)
 
     var method: HTTPMethod {
         switch self {
-        case .login, .sportRecords, .supplementSportRecord:
+        case .login, .sportRecords:
             return .post
         case .markNotificationRead:
             return .put
@@ -60,8 +59,6 @@ enum StudentEndpoint {
             return "/sport/records"
         case .sportRecordDetail(let id):
             return "/sport/records/\(id)"
-        case .supplementSportRecord(let id):
-            return "/sport/records/\(id)/supplements"
         case .sportIdentity:
             return "/sport/identity"
         case .notifications:
@@ -75,13 +72,6 @@ enum StudentEndpoint {
 struct SubmitSportRecordRequest: Encodable {
     let creditType: String
     let courseId: String?
-    let taskId: String
-    let hours: Double
-    let description: String
-    let proofFiles: [ProofFileReference]
-}
-
-struct SupplementSportRecordRequest: Encodable {
     let hours: Double
     let description: String
     let proofFiles: [ProofFileReference]

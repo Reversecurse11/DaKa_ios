@@ -32,22 +32,6 @@ struct CourseDetailView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionTitle(eyebrow: "Class Tasks", title: "本教学班任务")
-                        if appState.tasks(for: course).isEmpty {
-                            EmptyPlaceholder(title: "暂无教学班任务", message: "当前教学班还没有可展示任务。老师发布后会在这里同步。")
-                        } else {
-                            ForEach(appState.tasks(for: course)) { task in
-                                NavigationLink {
-                                    TaskDetailView(task: task, course: course)
-                                } label: {
-                                    TaskRow(task: task)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
                         SectionTitle(eyebrow: "Trace", title: "相关记录")
                         if appState.records(for: course).isEmpty {
                             EmptyPlaceholder(title: "暂无相关记录", message: "当前教学班还没有课程相关打卡记录。")
@@ -71,54 +55,6 @@ struct CourseDetailView: View {
     }
 }
 
-struct TaskDetailView: View {
-    let task: CourseTask
-    let course: Course?
-
-    var body: some View {
-        ZStack {
-            BNBUPageBackground()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: task.creditType.rawValue, title: task.title)
-
-                    SwissPanel {
-                        VStack(alignment: .leading, spacing: 14) {
-                            DetailFactRow(label: "状态", value: task.status.rawValue)
-                            DetailFactRow(label: "可获得小时", value: task.hours.hourText)
-                            DetailFactRow(label: "截止时间", value: task.deadline)
-                            DetailFactRow(label: "更新时间", value: task.updatedAt)
-                            if let course {
-                                DetailFactRow(label: "教学班", value: course.displayTitle)
-                            }
-                        }
-                    }
-
-                    SwissPanel {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("证明要求")
-                                .font(.headline.weight(.medium))
-                            Text(task.proof)
-                                .font(.subheadline.weight(.regular))
-                                .foregroundStyle(BNBUTheme.muted)
-                                .lineSpacing(3)
-                        }
-                    }
-
-                    EmptyPlaceholder(
-                        title: task.creditType == .courseRelated ? "计入课程相关学时" : "计入其他运动学时",
-                        message: task.creditType == .courseRelated ? "这类任务不能被校队或社团认证完全替代。" : "其他运动不能替代课程相关学时，B 类最多计 10 小时。"
-                    )
-                }
-                .padding(BNBUSpacing.screen)
-            }
-        }
-        .navigationTitle("任务详情")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 struct RecordDetailView: View {
     let record: CheckInRecord
 
@@ -134,6 +70,7 @@ struct RecordDetailView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
                                 StatusBadge(text: "已提交", filled: true)
+                                StatusBadge(text: record.validity.rawValue, filled: record.validity == .valid)
                                 Spacer()
                                 Text(record.hours.hourText)
                                     .font(.title2.weight(.medium))
@@ -145,6 +82,19 @@ struct RecordDetailView: View {
                             DetailFactRow(label: "图片凭证", value: "\(record.proofPhotoCount)")
                             DetailFactRow(label: "视频凭证", value: "\(record.proofVideoCount)")
                             DetailFactRow(label: "凭证摘要", value: record.proofSummary)
+                        }
+                    }
+
+                    if record.validity == .invalid {
+                        SwissPanel {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("记录已被判定无效")
+                                    .font(.headline.weight(.medium))
+                                Text(record.invalidReason ?? "老师已将该记录标记为无效，本次学时不计入。")
+                                    .font(.subheadline.weight(.regular))
+                                    .foregroundStyle(BNBUTheme.muted)
+                                    .lineSpacing(3)
+                            }
                         }
                     }
 
@@ -266,7 +216,10 @@ struct RecordCard: View {
                             .foregroundStyle(BNBUTheme.muted)
                     }
                     Spacer()
-                    StatusBadge(text: "已提交", filled: true)
+                    StatusBadge(
+                        text: record.validity == .invalid ? "无效" : "已提交",
+                        filled: record.validity == .valid
+                    )
                 }
 
                 HStack {

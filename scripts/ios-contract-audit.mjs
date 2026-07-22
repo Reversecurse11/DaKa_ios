@@ -175,7 +175,6 @@ const workspaceEndpoints = [
   "sport/summary",
   "student/profile",
   "student/courses",
-  "student/tasks",
   "student/grades",
   "sport/records",
   "sport/identity",
@@ -198,40 +197,32 @@ for (const endpoint of ["/auth/login:", "/scoring/convert-endurance:", "/upload/
 }
 
 requireText(remote, "StudentCoursesPayload", "Course-list response has a dedicated decoder");
-requireText(remote, "StudentTasksPayload", "Task-list response has a dedicated decoder");
 requireText(remote, "StudentGradesPayload", "Grades response has a dedicated decoder");
-requireText(models, "guard status == .active, !isCompleted", "Task eligibility requires Active and incomplete state");
-requireText(models, "return parsedDeadline >= date", "Task eligibility rejects a parseable expired deadline");
-requireText(models, 'normalizedID != "self-general"', "Server task IDs cannot claim the autonomous-task identity");
-requireText(models, "id == normalizedID", "Server task IDs reject hidden surrounding whitespace");
-requireText(models, 'normalizedCourseID != "self-general"', "Server course IDs cannot claim the autonomous-task identity");
-requireText(models, "hasValidCreditType", "Task eligibility tracks explicit valid credit type input");
-requireText(models, '"__invalid_credit_type__"', "Invalid credit type remains fail-closed across cache round trips");
-requireText(remote, "validCreditType: resolvedCreditType != nil", "Dedicated task-list decoding preserves invalid credit-type state");
-requireText(models, "hours.isFinite", "Task eligibility rejects missing or non-finite hours");
-requireText(models, "[1.0, 2.0].contains(hours)", "Task eligibility enforces the backend 1h/2h enum");
-requireText(models, "let parsedDeadline else", "Server task eligibility requires a parseable deadline");
-rejectText(models, "guard let parsedDeadline = parsedDeadline else { return true }", "Unparseable server deadlines never fail open");
-requireText(models, 'TimeZone(identifier: "Asia/Shanghai")', "Date-only task deadlines use the backend business timezone");
-requireText(models, "dateOnlyFormatter.isLenient = false", "Invalid date-only deadlines cannot be calendar-normalized");
-requireText(models, "return nextDay.addingTimeInterval(-0.001)", "Date-only task deadlines last through Shanghai end-of-day");
-requireText(models, "isSyntheticSelfGeneral = false", "Decoded server data cannot grant the autonomous-task exception");
-requireText(appState, "isSyntheticSelfGeneral: true", "Only the in-memory autonomous task receives the local exception");
-requireText(appState, "task requestedTask: CourseTask", "Draft saving preserves trusted task origin instead of accepting a bare ID");
-requireText(remote, "let completedIDs = Set(completed.compactMap(\\.id))", "Completed task bucket wins over an inconsistent pending duplicate");
-requireText(remote, 'completedAt: completedAt ?? (completedBucket ? "" : nil)', "Completed bucket remains non-submittable without a timestamp");
-requireText(appState, "workspace.tasks.filter { $0.isSubmittable(at: date) }", "Dashboard task source uses defensive eligibility filtering");
-requireText(appState, "currentSubmittableTask(matching: task)", "Check-in submission resolves the current eligible task");
-rejectText(appState, "workspace.tasks.filter { $0.status == .active }", "Dashboard does not treat every Active task as pending");
-requireText(remote, 'if taskId != "self-general", let courseId, !courseId.isEmpty', "Every server task keeps task and course references");
-rejectText(remote, "resolvedCreditType(from: creditType) == .courseRelated", "General server tasks do not lose completion references");
+
+// New business model: no task publishing, no review states. The legacy
+// CourseTask/ReviewStatus chain and the check-in supplement flow are removed.
+rejectText(appSources, "struct CourseTask", "Legacy CourseTask model is removed");
+rejectText(appSources, "enum TaskStatus", "Legacy TaskStatus model is removed");
+rejectText(appSources, "enum ReviewStatus", "Legacy ReviewStatus model is removed");
+rejectText(appSources, "submissionTask(for", "Legacy submissionTask API is removed");
+rejectText(appSources, 'get("student/tasks")', "iOS no longer requests the removed task list");
+rejectText(appSources, 'getIfBusinessReady("student/tasks")', "iOS no longer requests the removed task list defensively");
+rejectText(remote, '"taskId"', "Check-in submission no longer sends a task reference");
+rejectText(remote, "supplementCheckIn", "The check-in supplement route is removed");
+requireText(models, "enum RecordValidity", "Records use the valid/invalid model");
+requireText(models, "case \"invalid\", \"INVALID\", \"无效\", \"rejected\", \"REJECTED\", \"被驳回\", \"已驳回\":", "Legacy review states map deterministically onto validity");
+requireText(models, "var invalidReason: String?", "Invalid records surface the teacher-provided reason");
+requireText(models, "struct CheckInSubmission", "Check-in submissions have a validated value type");
+requireText(appState, "func validatedSubmission(creditType: CreditType, courseId: String?, hours: Double)", "Submission validation is centralized and fail-closed");
+requireText(appState, "guard creditType != .organizationOffset else { return nil }", "Organization offsets can never be student-submitted");
+requireText(appState, "func submissionContext(for session: ExerciseSession)", "Submission context derives from the completed exercise session");
 requireText(remote, "record.representsCompleteServerRecord", "MutationResult cannot masquerade as a complete record");
 requireText(remote, "application.representsCompleteServerApplication", "MutationResult cannot masquerade as a complete exemption");
 requireText(coursesView, ".filter(\\.isCurrent)", "Current courses use the backend scope flag");
 rejectText(coursesView, "currentSemesterKey", "Course scope no longer depends on an English semester label");
 
 rejectText(appState, "max(hours, 0.5)", "Submission hours cannot produce backend-invalid 0.5h values");
-requireText(appState, "let allowedHours = [1.0, 2.0]", "Submission hours are normalized to the 1h/2h API enum");
+requireText(appState, "hours == 1 || hours == 2", "Submission hours are restricted to the 1h/2h API enum");
 requireText(appState, 'TimeZone(identifier: "Asia/Shanghai")', "Daily submission guard uses the backend business timezone");
 requireText(appState, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
 requireText(models, "static let maxRequestBytes = 120_000_000", "Check-in proof batch enforces the 120MB request limit");
@@ -269,7 +260,6 @@ requireText(appState, "@MainActor\nfinal class AppState", "Observable UI state i
 requireText(remote, "actor RemoteStudentRepository", "Network session mutation is actor isolated");
 requireText(appState, "isRefreshingWorkspace", "Workspace refreshes are single-flight guarded");
 requireText(appState, "InFlightMutationGate", "Mutation requests have a reusable duplicate-submission gate");
-requireText(appState, 'let mutationKey = "supplement:', "Supplement submissions have an identity-scoped guard");
 requireText(appState, 'let mutationKey = "submit-exemption"', "Exemption submissions have a single-flight guard");
 requireText(appState, 'let mutationKey = "supplement-exemption:', "Exemption supplements have an identity-scoped guard");
 requireText(models, "enum IdempotencyKeyPolicy", "iOS defines the backend idempotency-key policy");
@@ -311,11 +301,10 @@ requireText(models, "var sourceFileURL: URL? = nil", "Large proof uploads keep a
 rejectText(models, "case sourceFileURL", "Transient proof file URLs are never Codable persistence fields");
 requireText(models, "var pendingRemoteMutation: PendingRemoteMutationAttempt?", "Check-in drafts persist ambiguous mutation attempts");
 requireText(appState, 'let scope = "sport-record:create"', "Check-in creation resolves a stable logical attempt");
-requireText(appState, 'let scope = "sport-record:supplement:', "Check-in supplements resolve a stable logical attempt");
 requireText(appState, 'let scope = "exemption:create:physical-test"', "Exemption creation resolves a stable logical attempt");
 requireText(appState, 'let scope = "exemption:supplement:', "Exemption supplements resolve a stable logical attempt");
 requireText(appState, "for index in attempt.uploadedProofs.count..<sourceProofs.count", "Check-in retry skips proofs already uploaded to COS");
-requireCount(appState, "idempotencyKey: attempt.idempotencyKey", 4, "AppState passes its stable key to all four remote mutations");
+requireCount(appState, "idempotencyKey: attempt.idempotencyKey", 3, "AppState passes its stable key to all three remote mutations");
 requireText(localStore, 'pendingMutationStorageKey = "bnbu.student.remote.mutations.v1"', "Pending attempts have a dedicated protected journal");
 requireText(localStore, "readPendingRemoteMutations", "Pending attempt journal is restored on launch");
 requireText(localStore, "savePendingRemoteMutations", "Pending attempt journal is durably updated");
@@ -328,11 +317,11 @@ requireText(appState, "clearAllPendingRemoteMutations()", "Session boundaries di
 requireText(appState, "sanitizePersistedRemoteMutations", "Persisted mutation attempts are validated after login");
 requireText(appState, "attempt.serverIdentity == remoteMutationServerIdentity", "Restored attempts reject another server");
 requireText(appState, "attempt.studentID == studentID", "Restored attempts reject another account");
-requireText(appState, "RemoteMutationJournalPolicy.shouldRetain(after: error)", "All four flows use one phase-independent journal error policy");
+requireText(appState, "RemoteMutationJournalPolicy.shouldRetain(after: error)", "All three flows use one phase-independent journal error policy");
 requireText(appState, "try storePendingRemoteMutation(attempt)", "Remote writes require a confirmed durable attempt");
 requireText(appState, "throw RemoteMutationJournalError.writeFailed", "Journal persistence fails closed before further network writes");
 requireText(appState, "if attempt.isServerConfirmed", "Server-confirmed entries dispatch to cleanup-only recovery");
-requireCount(appState, "guard !attempt.isServerConfirmed else {", 4, "All four original forms block a server-confirmed mutation before network work");
+requireCount(appState, "guard !attempt.isServerConfirmed else {", 3, "All three original forms block a server-confirmed mutation before network work");
 requireText(appState, "retainServerConfirmedAttemptInMemory(attempt)", "Failed success-marker cleanup remains visibly server-confirmed");
 requireText(appState, "pendingRemoteMutations[attempt.scope] = previous", "Failed journal writes roll back the published in-memory attempt");
 requireText(models, "case finalMutationPrepared", "The journal records preparation immediately before a final mutation");
@@ -472,9 +461,7 @@ for (const sourceName of [
 requireText(project, "PrivacyInfo.xcprivacy in Resources", "Xcode copies the privacy manifest into the app");
 
 requireText(modelTests, "testCurrentBackendStudentWorkspacePayloadsDecode", "XCTest covers current workspace payload shapes");
-requireText(modelTests, "testOnlyActiveIncompleteUnexpiredTasksAreSubmittable", "XCTest covers draft, closed, completed and expired task rejection");
-requireText(modelTests, "testMalformedServerTasksFailClosedAndCannotClaimSelfGeneral", "XCTest covers malformed task fields and self-general forgery rejection");
-requireText(modelTests, "testDateOnlyTaskDeadlineUsesShanghaiEndOfDay", "XCTest covers Shanghai date-only deadline semantics");
+requireText(modelTests, "testRecordValidityMapsLegacyReviewStatesOntoValidInvalid", "XCTest covers legacy review-state mapping onto validity");
 requireText(modelTests, "testMutationResultsAreNotMistakenForCompleteDomainObjects", "XCTest covers mutation-result classification");
 requireText(modelTests, "testStudentProgressWithoutIdentityFailsClosedToEmptyIdentifier", "XCTest covers missing progress identity without a hard-coded student fallback");
 requireText(modelTests, "testSubmissionHoursAlwaysMatchBackendOneOrTwoHourContract", "XCTest covers the hours enum");
@@ -489,21 +476,21 @@ requireText(modelTests, "testMutationGateRejectsDuplicateInFlightOperationUntilC
 requireText(modelTests, "testAccessTokenMigratesFromDefaultsToDeviceCredentialStore", "XCTest covers plaintext-token migration");
 requireText(modelTests, "testLogoutIsLocalAndClearsSecureCredentialWithoutServerEndpoint", "XCTest covers local-only logout");
 requireText(modelTests, "testLogoutInvalidatesLoginResponseThatFinishesLater", "XCTest covers logout-versus-login race handling");
-requireText(modelTests, "testGeneralServerTaskKeepsReferencesWhileSelfGeneralOmitsThem", "XCTest covers general-task references and autonomous-task omission");
+requireText(modelTests, "testCourseRelatedSubmissionKeepsCourseReferenceWhileGeneralOmitsIt", "XCTest covers course references and taskId-free submission bodies");
 requireText(modelTests, "testProofUploadUsesOnlyFrozenV1EndpointAndCleansTemporaryBody", "XCTest covers the sole v1 upload path and temporary-file cleanup");
 requireText(modelTests, "testProtectedLocalStoreUsesFilesExcludedFromBackup", "XCTest covers protected file persistence");
 requireText(modelTests, "testAppStateLogoutClearsDraftAndPersistedLocalState", "XCTest covers logout cleanup of drafts and caches");
 requireText(modelTests, "testIdempotencyAttemptMatchesOnlySamePayloadAccountAndServer", "XCTest covers payload/account/server attempt isolation");
 requireText(modelTests, "testCheckInAmbiguousRetryReusesUploadedProofBodyAndIdempotencyKey", "XCTest covers restart-safe same-key, same-body retry without re-upload");
-requireText(modelTests, "testThreeSecondaryMutationsRecoverSamePayloadKeyAndUploadedReferencesAfterRestart", "XCTest covers restart-safe recovery for all three secondary mutations");
-requireText(modelTests, "testAllFourPendingMutationScopesRoundTripWithoutRawBytesThumbnailsOrSignedURLs", "XCTest covers the safe four-scope journal representation");
+requireText(modelTests, "testExemptionMutationsRecoverSamePayloadKeyAndUploadedReferencesAfterRestart", "XCTest covers restart-safe recovery for both exemption mutations");
+requireText(modelTests, "testAllPendingMutationScopesRoundTripWithoutRawBytesThumbnailsOrSignedURLs", "XCTest covers the safe journal representation for every scope");
 requireText(modelTests, "testPendingMutationSummariesAllowPerScopeDiscardAndLogoutCleanup", "XCTest covers per-scope discard and logout cleanup");
 requireText(modelTests, "testDeterministicClientErrorDiscardsCheckInAttemptJournal", "XCTest covers deterministic 4xx journal cleanup");
-requireText(modelTests, "testUploadStageDeterministicClientErrorClearsEachOfFourMutationScopes", "XCTest covers upload-stage deterministic cleanup in all four flows");
-requireText(modelTests, "testUploadStageAmbiguousNetworkErrorRetainsEachOfFourMutationScopes", "XCTest covers upload-stage ambiguous retention in all four flows");
-requireText(modelTests, "testInitialJournalWriteFailureBlocksUploadAndFinalMutationForAllFourFlows", "XCTest covers fail-closed initial journal persistence in all four flows");
-requireText(modelTests, "testUploadedProofReferenceWriteFailureBlocksFinalMutationForAllFourFlows", "XCTest covers fail-closed proof-reference persistence in all four flows");
-requireText(modelTests, "testServerConfirmedCleanupFailureNeverResubmitsAndClearsOnNextLoginForAllFourFlows", "XCTest covers cleanup failure, no-resubmit and later cleanup in all four flows");
+requireText(modelTests, "testUploadStageDeterministicClientErrorClearsEachMutationScope", "XCTest covers upload-stage deterministic cleanup in all flows");
+requireText(modelTests, "testUploadStageAmbiguousNetworkErrorRetainsEachMutationScope", "XCTest covers upload-stage ambiguous retention in all flows");
+requireText(modelTests, "testInitialJournalWriteFailureBlocksUploadAndFinalMutationForAllFlows", "XCTest covers fail-closed initial journal persistence in all flows");
+requireText(modelTests, "testUploadedProofReferenceWriteFailureBlocksFinalMutationForAllFlows", "XCTest covers fail-closed proof-reference persistence in all flows");
+requireText(modelTests, "testServerConfirmedCleanupFailureNeverResubmitsAndClearsOnNextLoginForAllFlows", "XCTest covers cleanup failure, no-resubmit and later cleanup in all flows");
 requireText(modelTests, 'XCTAssertTrue(authoritativeProof.source.hasPrefix("https://"))', "XCTest verifies the authoritative signed proof URL is reloaded after restart retry success");
 requireText(modelTests, "testProofContentDigestSurvivesDraftRoundTripWithoutPersistingOriginalBytes", "XCTest covers proof fingerprint persistence and changed-byte detection");
 requireText(modelTests, "testRemoteMutationFingerprintReusesIdentityWhenSameContentIsRenamed", "XCTest covers same-content rename and metadata-stable attempt identity");
