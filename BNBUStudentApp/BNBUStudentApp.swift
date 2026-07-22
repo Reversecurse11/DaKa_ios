@@ -15,6 +15,11 @@ struct BNBUStudentApp: App {
         if arguments.contains("-ui-testing-authenticated") {
             state.demoLogin()
         }
+#if DEBUG
+        if arguments.contains("-ui-testing-completed-exercise") {
+            state.installCompletedExerciseSessionForUITesting()
+        }
+#endif
         _appState = StateObject(wrappedValue: state)
     }
 

@@ -47,6 +47,7 @@ final class AppState: ObservableObject {
     @Published var isAuthenticated = false
     @Published var workspace: StudentWorkspace
     @Published var draft: CheckInDraft?
+    @Published private(set) var exerciseSession: ExerciseSession?
     @Published var storeHealth: LocalStoreHealth
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -76,6 +77,7 @@ final class AppState: ObservableObject {
         self.remoteRepo = remoteRepo
         let workspaceRead = localStore.readWorkspace()
         let draftRead = localStore.readDraft()
+        let exerciseSessionRead = localStore.readExerciseSession()
         let pendingMutationRead = localStore.readPendingRemoteMutations()
         var workspace = workspaceRead.value ?? repository.loadWorkspace()
         if workspace.syncOperations.isEmpty {
@@ -97,6 +99,7 @@ final class AppState: ObservableObject {
 
         self.workspace = workspace
         self.draft = restoredDraft
+        self.exerciseSession = exerciseSessionRead.value?.reconciled()
         var restoredMutations = pendingMutationRead.value ?? [:]
         if let draftAttempt = restoredDraft?.pendingRemoteMutation {
             restoredMutations[draftAttempt.scope] = draftAttempt
@@ -168,14 +171,140 @@ final class AppState: ObservableObject {
         )
     }
 
+    var currentExerciseCourse: Course? {
+        workspace.courses
+            .filter(\.isCurrent)
+            .sorted { $0.displayTitle < $1.displayTitle }
+            .first
+    }
+
+    func startExerciseSession(
+        category: ExerciseCategory,
+        sportType: ExerciseSportType?,
+        customSportName: String,
+        at startTime: Date = Date(),
+        location: (latitude: Double, longitude: Double)? = nil
+    ) -> Bool {
+        guard exerciseSession == nil else {
+            errorMessage = "已有进行中或待提交的运动，请先完成当前记录。"
+            return false
+        }
+        if let validationMessage = ExerciseSessionInputRule.validationMessage(
+            sportType: sportType,
+            customSportName: customSportName
+        ) {
+            errorMessage = validationMessage
+            return false
+        }
+        guard !hasSubmittedCheckInToday(at: startTime) else {
+            errorMessage = "今日已打卡，不能再次开始运动。"
+            return false
+        }
+        guard let currentCourse = currentExerciseCourse else {
+            errorMessage = "当前学期没有在读体育课程，请先完成选课或联系体育部。"
+            return false
+        }
+        guard let sportType else { return false }
+        let normalizedCustomName = customSportName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let session = ExerciseSession(
+            id: UUID().uuidString,
+            studentID: workspace.student.id,
+            category: category,
+            sportType: sportType,
+            customSportName: sportType == .other ? normalizedCustomName : nil,
+            courseID: category == .courseRelated ? currentCourse.id : nil,
+            startTime: startTime,
+            endTime: nil,
+            status: .active,
+            locationStatus: location == nil ? .unavailable : .available,
+            latitude: location?.latitude,
+            longitude: location?.longitude
+        )
+        guard localStore.saveExerciseSession(session) else {
+            errorMessage = "无法安全保存运动开始时间，请确认设备存储空间后重试。"
+            return false
+        }
+        exerciseSession = session
+        errorMessage = nil
+        return true
+    }
+
+    func reconcileExerciseSession(at date: Date = Date()) {
+        guard let session = exerciseSession else { return }
+        guard session.studentID == workspace.student.id else {
+            exerciseSession = nil
+            _ = localStore.clearExerciseSession()
+            return
+        }
+        let reconciled = session.reconciled(at: date)
+        guard reconciled != session else { return }
+        guard localStore.saveExerciseSession(reconciled) else {
+            errorMessage = "运动已达到 2 小时，但自动结束状态未能安全保存。请保持 App 打开并重试。"
+            return
+        }
+        exerciseSession = reconciled
+    }
+
+    func endExerciseSession(at date: Date = Date()) -> Bool {
+        guard let session = exerciseSession, session.status == .active else { return false }
+        let ended = session.ended(at: date)
+        guard localStore.saveExerciseSession(ended) else {
+            errorMessage = "无法安全保存运动结束时间，请释放存储空间后重试。"
+            return false
+        }
+        exerciseSession = ended
+        errorMessage = nil
+        return true
+    }
+
+    func discardExerciseSession() {
+        guard localStore.clearExerciseSession() else {
+            errorMessage = "无法清理本地运动会话，请稍后重试。"
+            return
+        }
+        exerciseSession = nil
+        errorMessage = nil
+    }
+
+    func submissionTask(for session: ExerciseSession) -> CourseTask? {
+        if session.category == .general {
+            return selfCheckInTask
+        }
+        guard let courseID = session.courseID else { return nil }
+        return submittableTasks().first { $0.courseId == courseID && $0.creditType == .courseRelated }
+    }
+
+    func markExerciseSessionSubmitted() {
+        exerciseSession = nil
+        _ = localStore.clearExerciseSession()
+    }
+
+#if DEBUG
+    func installCompletedExerciseSessionForUITesting(at date: Date = Date()) {
+        discardExerciseSession()
+        let startTime = date.addingTimeInterval(-ExerciseSession.oneHour)
+        guard startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: startTime
+        ) else { return }
+        _ = endExerciseSession(at: date)
+    }
+#endif
+
     func hasSubmittedCheckInToday(at date: Date = Date()) -> Bool {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let exerciseSubmissionDates = localStore.readExerciseSubmissionDates().value ?? [:]
         let fractionalISOFormatter = ISO8601DateFormatter()
         fractionalISOFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let standardISOFormatter = ISO8601DateFormatter()
         return workspace.records.contains { record in
             guard record.creditType != .organizationOffset else { return false }
+            if let exerciseStartDate = exerciseSubmissionDates[record.id] {
+                return calendar.isDate(exerciseStartDate, inSameDayAs: date)
+            }
             let value = record.submittedAt.trimmingCharacters(in: .whitespacesAndNewlines)
             if value.hasPrefix("刚刚") { return true }
 
@@ -287,6 +416,7 @@ final class AppState: ObservableObject {
         let journalCleared = clearAllPendingRemoteMutations()
         let localWorkspace = localStore.readWorkspace().value ?? repository.loadWorkspace()
         workspace = localWorkspace
+        restoreExerciseSession(for: workspace.student.id)
         let localDraft = localStore.readDraft().value
         if let localDraft,
            localDraft.taskId == "self-general" || workspace.tasks.contains(where: { $0.id == localDraft.taskId && $0.isSubmittable() }) {
@@ -317,6 +447,9 @@ final class AppState: ObservableObject {
         checkInSubmissionPhase = .idle
         canSafelyRetryCheckIn = false
         draft = nil
+        exerciseSession = nil
+        _ = localStore.clearExerciseSession()
+        _ = localStore.clearExerciseSubmissionDates()
 
         if wasRemoteMode, let remoteStudentID {
             localStore.clearRemoteWorkspace(
@@ -359,6 +492,7 @@ final class AppState: ObservableObject {
             guard loginEpoch == sessionEpoch else { return }
             isRemoteMode = true
             remoteCacheStudentID = authenticatedStudent.id
+            restoreExerciseSession(for: authenticatedStudent.id)
             sanitizePersistedRemoteMutations(for: authenticatedStudent.id)
             do {
                 let remoteWorkspace = try await remoteRepo.loadWorkspace()
@@ -469,7 +603,8 @@ final class AppState: ObservableObject {
         hours: Double,
         note: String,
         sportType: String? = nil,
-        proofAttachments: [ProofAttachment]
+        proofAttachments: [ProofAttachment],
+        exerciseSession: ExerciseSession? = nil
     ) async -> Bool {
         guard !isSubmittingCheckIn else { return false }
         canSafelyRetryCheckIn = false
@@ -494,6 +629,7 @@ final class AppState: ObservableObject {
                 note: note,
                 sportType: sportType,
                 proofAttachments: proofAttachments,
+                exerciseSession: exerciseSession,
                 expectedSessionEpoch: submissionEpoch
             )
         }
@@ -523,6 +659,10 @@ final class AppState: ObservableObject {
             sportType: sportType
         )
         workspace.records.insert(record, at: 0)
+        if let exerciseSession {
+            saveExerciseSubmissionDate(exerciseSession.startTime, recordID: record.id)
+        }
+        creditSubmittedExercise(hours: submittedHours, creditType: task.creditType)
         workspace.notices.insert(
             StudentNotice(
                 id: UUID().uuidString,
@@ -1129,6 +1269,7 @@ final class AppState: ObservableObject {
         note: String,
         sportType: String?,
         proofAttachments: [ProofAttachment],
+        exerciseSession: ExerciseSession?,
         expectedSessionEpoch: UInt64
     ) async -> Bool {
         guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
@@ -1261,6 +1402,9 @@ final class AppState: ObservableObject {
                 idempotencyKey: attempt.idempotencyKey
             )
             guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
+            if let exerciseSession {
+                saveExerciseSubmissionDate(exerciseSession.startTime, recordID: submittedRecord.id)
+            }
 
             attempt.markServerConfirmed(resultID: submittedRecord.id)
             var localJournalWarning: String?
@@ -1306,6 +1450,7 @@ final class AppState: ObservableObject {
 
             if !refreshedSubmittedRecord {
                 upsertCheckInRecord(submittedRecord)
+                creditSubmittedExercise(hours: submittedHours, creditType: task.creditType)
             }
             workspace.notices.insert(
                 StudentNotice(
@@ -1920,6 +2065,24 @@ final class AppState: ObservableObject {
         saveWorkspace(event: event)
     }
 
+    private func restoreExerciseSession(for studentID: String) {
+        guard let storedSession = localStore.readExerciseSession().value else {
+            exerciseSession = nil
+            return
+        }
+        guard storedSession.studentID == studentID else {
+            exerciseSession = nil
+            _ = localStore.clearExerciseSession()
+            return
+        }
+
+        let reconciledSession = storedSession.reconciled()
+        exerciseSession = reconciledSession
+        if reconciledSession != storedSession {
+            _ = localStore.saveExerciseSession(reconciledSession)
+        }
+    }
+
     private func upsertExemption(_ application: ExemptionApplication) {
         if let index = workspace.exemptions.firstIndex(where: { $0.id == application.id }) {
             workspace.exemptions[index] = application
@@ -1934,6 +2097,32 @@ final class AppState: ObservableObject {
         } else {
             workspace.records.insert(record, at: 0)
         }
+    }
+
+    private func creditSubmittedExercise(hours: Double, creditType: CreditType) {
+        guard hours > 0 else { return }
+        switch creditType {
+        case .courseRelated:
+            workspace.progress.course = min(workspace.progress.course + hours, hourRule.courseRequired)
+        case .general:
+            workspace.progress.rawGeneral += hours
+            workspace.progress.general = min(workspace.progress.general + hours, hourRule.generalRequired)
+        case .organizationOffset:
+            break
+        }
+    }
+
+    private func saveExerciseSubmissionDate(_ startDate: Date, recordID: String) {
+        var datesByRecordID = localStore.readExerciseSubmissionDates().value ?? [:]
+        datesByRecordID[recordID] = startDate
+        if datesByRecordID.count > 120 {
+            let retainedRecordIDs = datesByRecordID
+                .sorted { $0.value > $1.value }
+                .prefix(120)
+                .map(\.key)
+            datesByRecordID = datesByRecordID.filter { retainedRecordIDs.contains($0.key) }
+        }
+        _ = localStore.saveExerciseSubmissionDates(datesByRecordID)
     }
 
     private func updateCheckInUploadProgress(

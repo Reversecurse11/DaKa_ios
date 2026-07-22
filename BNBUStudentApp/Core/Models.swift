@@ -256,6 +256,124 @@ struct StudentAcademicProjection: Equatable {
     }
 }
 
+enum ExerciseCategory: String, CaseIterable, Identifiable, Hashable, Codable {
+    case courseRelated
+    case general
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .courseRelated: return "课程相关运动"
+        case .general: return "自主其他运动"
+        }
+    }
+}
+
+enum ExerciseSportType: String, CaseIterable, Identifiable, Hashable, Codable {
+    case running
+    case basketball
+    case football
+    case badminton
+    case swimming
+    case fitness
+    case cycling
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .running: return "跑步"
+        case .basketball: return "篮球"
+        case .football: return "足球"
+        case .badminton: return "羽毛球"
+        case .swimming: return "游泳"
+        case .fitness: return "健身"
+        case .cycling: return "骑行"
+        case .other: return "其他"
+        }
+    }
+}
+
+enum ExerciseSessionStatus: String, Hashable, Codable {
+    case active
+    case completed
+}
+
+enum ExerciseLocationStatus: String, Hashable, Codable {
+    case available
+    case unavailable
+}
+
+struct ExerciseSession: Identifiable, Hashable, Codable {
+    static let oneHour: TimeInterval = 60 * 60
+    static let maximumDuration: TimeInterval = 2 * oneHour
+
+    let id: String
+    let studentID: String
+    let category: ExerciseCategory
+    let sportType: ExerciseSportType
+    let customSportName: String?
+    let courseID: String?
+    let startTime: Date
+    var endTime: Date?
+    var status: ExerciseSessionStatus
+    var locationStatus: ExerciseLocationStatus
+    var latitude: Double?
+    var longitude: Double?
+
+    var resolvedSportName: String {
+        if sportType == .other {
+            return customSportName ?? sportType.title
+        }
+        return sportType.title
+    }
+
+    func elapsed(at date: Date = Date()) -> TimeInterval {
+        let effectiveEnd = min(endTime ?? date, startTime.addingTimeInterval(Self.maximumDuration))
+        return min(max(effectiveEnd.timeIntervalSince(startTime), 0), Self.maximumDuration)
+    }
+
+    func creditedHours(at date: Date = Date()) -> Double {
+        let duration = elapsed(at: date)
+        if duration >= Self.maximumDuration { return 2 }
+        if duration >= Self.oneHour { return 1 }
+        return 0
+    }
+
+    func reconciled(at date: Date = Date()) -> ExerciseSession {
+        guard status == .active,
+              date >= startTime.addingTimeInterval(Self.maximumDuration) else {
+            return self
+        }
+        var updated = self
+        updated.endTime = startTime.addingTimeInterval(Self.maximumDuration)
+        updated.status = .completed
+        return updated
+    }
+
+    func ended(at date: Date = Date()) -> ExerciseSession {
+        var updated = self
+        updated.endTime = min(max(date, startTime), startTime.addingTimeInterval(Self.maximumDuration))
+        updated.status = .completed
+        return updated
+    }
+}
+
+enum ExerciseSessionInputRule {
+    static let maximumCustomSportNameLength = 32
+
+    static func validationMessage(sportType: ExerciseSportType?, customSportName: String) -> String? {
+        guard let sportType else { return "请选择运动项目。" }
+        guard sportType == .other else { return nil }
+        let normalized = customSportName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty { return "请填写其他运动项目名称。" }
+        if normalized.count > maximumCustomSportNameLength { return "其他运动项目名称不能超过 32 个字符。" }
+        return nil
+    }
+}
+
 struct UserBrief: Identifiable, Hashable, Codable {
     let id: String
     let name: String
