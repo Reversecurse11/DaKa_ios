@@ -17,7 +17,6 @@ struct CourseDetailView: View {
                             DetailFactRow(label: "课程名称", value: course.name)
                             DetailFactRow(label: "Section", value: "Section \(course.section)")
                             DetailFactRow(label: "任课老师", value: course.teacher)
-                            DetailFactRow(label: "下一截止", value: course.deadline)
                         }
                     }
 

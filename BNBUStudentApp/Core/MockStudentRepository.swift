@@ -159,7 +159,7 @@ struct MockStudentRepository: StudentRepository {
                 proofFiles: [
                     ProofAttachment(id: "pf-r4-1", type: .image, fileName: "duplicate-run-screen.jpg", byteCount: 640_000, source: "mock")
                 ],
-                note: "补交跑步记录。",
+                note: "操场跑步记录。",
                 sportType: "running"
             )
         ]

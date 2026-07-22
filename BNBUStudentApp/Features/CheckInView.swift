@@ -32,7 +32,6 @@ struct CheckInView: View {
     @FocusState private var focusedField: CheckInFormField?
     @State private var selectedSegment: CheckInSegment = .submit
     @State private var selectedCategory: ExerciseCategory = .general
-    @State private var hours = 1.0
     @State private var note = ""
     @State private var selectedSportType: ExerciseSportType?
     @State private var customSportType = ""
@@ -350,9 +349,6 @@ struct CheckInView: View {
                 }
             }
         }
-        .onAppear {
-            hours = session.creditedHours()
-        }
     }
 
     private var recordList: some View {
@@ -485,7 +481,6 @@ struct CheckInView: View {
             clearDraftAndForm()
             return
         }
-        hours = draft.hours
         note = draft.note
         proofAttachments = draft.proofAttachments
         selectedSegment = .submit

@@ -17,6 +17,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     func testStudentShellSmokeFlow() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["体育学时进度"].exists)
+        XCTAssertTrue(app.staticTexts["最近打卡"].exists)
 
         openTab(label: "课程", screenIdentifier: "screen.courses")
         XCTAssertTrue(app.staticTexts["我的课程"].waitForExistence(timeout: 3))
@@ -60,6 +61,9 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.segmentedControls.buttons["记录"].tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 3))
+        // The mock workspace ships one teacher-invalidated record (r4);
+        // its badge must render the new validity model, not review states.
+        XCTAssertTrue(app.staticTexts["无效"].firstMatch.exists)
         XCTAssertFalse(app.staticTexts["待审核"].exists)
         XCTAssertFalse(app.staticTexts["已通过"].exists)
         XCTAssertFalse(app.staticTexts["被驳回"].exists)
