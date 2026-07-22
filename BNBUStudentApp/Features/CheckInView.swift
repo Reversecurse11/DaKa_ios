@@ -7,31 +7,7 @@ enum CheckInSegment: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private enum SportTypeOption: String, CaseIterable, Identifiable {
-    case running
-    case basketball
-    case football
-    case badminton
-    case swimming
-    case fitness
-    case cycling
-    case other
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .running: return "跑步"
-        case .basketball: return "篮球"
-        case .football: return "足球"
-        case .badminton: return "羽毛球"
-        case .swimming: return "游泳"
-        case .fitness: return "健身"
-        case .cycling: return "骑行"
-        case .other: return "其他"
-        }
-    }
-
+private extension ExerciseSportType {
     var systemImage: String {
         switch self {
         case .running: return "figure.run"
@@ -52,11 +28,13 @@ private enum CheckInFormField: Hashable {
 
 struct CheckInView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var focusedField: CheckInFormField?
     @State private var selectedSegment: CheckInSegment = .submit
+    @State private var selectedCategory: ExerciseCategory = .general
     @State private var hours = 1.0
     @State private var note = ""
-    @State private var selectedSportType: SportTypeOption?
+    @State private var selectedSportType: ExerciseSportType?
     @State private var customSportType = ""
     @State private var proofAttachments: [ProofAttachment] = []
     @State private var submitted = false
@@ -122,7 +100,13 @@ struct CheckInView: View {
             Text(submitConfirmationMessage)
         }
         .onAppear {
+            appState.reconcileExerciseSession()
             restoreDraftIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                appState.reconcileExerciseSession()
+            }
         }
         .onChange(of: selectedSegment) { _, _ in
             focusedField = nil
@@ -163,6 +147,126 @@ struct CheckInView: View {
                 }
             }
 
+            if let session = appState.exerciseSession {
+                exerciseSessionPanel(session)
+                if session.status == .completed, session.creditedHours() > 0 {
+                    evidenceSubmissionForm(session)
+                }
+            } else {
+                exerciseStartForm
+            }
+        }
+    }
+
+    private var exerciseStartForm: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("运动类型")
+                        .font(.headline.weight(.medium))
+                    Picker("运动类型", selection: $selectedCategory) {
+                        ForEach(ExerciseCategory.allCases) { category in
+                            Text(category.title).tag(category)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if let course = appState.currentExerciseCourse {
+                    Label(course.displayTitle, systemImage: "book.closed")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                } else {
+                    Text("当前没有在读体育课程，暂时不能开始运动。")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(BNBUTheme.muted)
+                }
+
+                SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
+
+                Text("开始后将按实际经过时间计时：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。")
+                    .font(.caption.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineSpacing(3)
+
+                if let startValidationMessage {
+                    Text(startValidationMessage)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(BNBUTheme.muted)
+                }
+
+                DisabledAwareButton(
+                    title: "开始运动",
+                    systemImage: "play.fill",
+                    isDisabled: startValidationMessage != nil,
+                    accessibilityIdentifier: "checkin.exercise.start"
+                ) {
+                    startExercise()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func exerciseSessionPanel(_ session: ExerciseSession) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let displayedSession = session.reconciled(at: context.date)
+            SwissPanel {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Label(
+                            displayedSession.status == .active ? "运动进行中" : "运动已结束",
+                            systemImage: displayedSession.status == .active ? "figure.run.circle.fill" : "checkmark.circle.fill"
+                        )
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(BNBUTheme.primary)
+                        Spacer()
+                        StatusBadge(text: displayedSession.category.title, filled: true)
+                    }
+
+                    Text(formatDuration(displayedSession.elapsed(at: context.date)))
+                        .font(.system(size: 42, weight: .medium, design: .monospaced))
+                        .contentTransition(.numericText())
+                        .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        sessionDetailRow(title: "运动项目", value: displayedSession.resolvedSportName)
+                        sessionDetailRow(title: "开始时间", value: displayedSession.startTime.formatted(date: .omitted, time: .shortened))
+                        sessionDetailRow(
+                            title: "位置记录",
+                            value: displayedSession.locationStatus == .available ? "已获取" : "未获取（不影响计时）"
+                        )
+                        if displayedSession.status == .completed {
+                            sessionDetailRow(title: "可计学时", value: displayedSession.creditedHours().hourText)
+                        }
+                    }
+
+                    if displayedSession.status == .active {
+                        SecondaryActionButton(title: "结束运动", systemImage: "stop.fill") {
+                            _ = appState.endExerciseSession()
+                        }
+                        .accessibilityIdentifier("checkin.exercise.end")
+                    } else if displayedSession.creditedHours() == 0 {
+                        Text("本次运动不足 1 小时，不计入体育学时，也不能提交凭证。")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BNBUTheme.muted)
+                        SecondaryActionButton(title: "完成并返回", systemImage: "arrow.counterclockwise") {
+                            appState.discardExerciseSession()
+                            resetFormAfterSubmit()
+                        }
+                    }
+                }
+            }
+            .task(id: displayedSession.status) {
+                if displayedSession.status == .completed, session.status == .active {
+                    appState.reconcileExerciseSession(at: context.date)
+                }
+            }
+        }
+    }
+
+    private func evidenceSubmissionForm(_ session: ExerciseSession) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
             if let draft = appState.draft {
                 DraftBanner(draft: draft) {
                     restoreDraft(draft)
@@ -172,84 +276,82 @@ struct CheckInView: View {
             }
 
             SwissPanel {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("本次学时")
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("提交运动凭证")
+                        .font(.headline.weight(.medium))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("补充说明")
                                 .font(.headline.weight(.medium))
-                            CheckInHoursControl(value: $hours, maximum: selectedTaskHourLimit)
+                            Spacer()
+                            if focusedField == .note {
+                                Button {
+                                    focusedField = nil
+                                    dismissBNBUKeyboard()
+                                } label: {
+                                    Image(systemName: "keyboard.chevron.compact.down")
+                                        .font(.headline.weight(.medium))
+                                        .foregroundStyle(BNBUTheme.blue)
+                                        .frame(width: 34, height: 34)
+                                }
+                                .accessibilityLabel("收起键盘")
+                                .buttonStyle(.plain)
+                            }
                         }
-
-                        SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text("补充说明")
-                                    .font(.headline.weight(.medium))
-                                Spacer()
-                                if focusedField == .note {
-                                    Button {
-                                        focusedField = nil
-                                        dismissBNBUKeyboard()
-                                    } label: {
-                                        Image(systemName: "keyboard.chevron.compact.down")
-                                            .font(.headline.weight(.medium))
-                                            .foregroundStyle(BNBUTheme.blue)
-                                            .frame(width: 34, height: 34)
-                                    }
-                                    .accessibilityLabel("收起键盘")
-                                    .buttonStyle(.plain)
+                        TextEditor(text: $note)
+                            .bnbuInputText()
+                            .accessibilityLabel("补充说明")
+                            .accessibilityHint("可选，最多 2000 个字符")
+                            .focused($focusedField, equals: .note)
+                            .frame(minHeight: 100)
+                            .padding(8)
+                            .scrollContentBackground(.hidden)
+                            .background(BNBUTheme.pale)
+                            .bnbuOutlinedSurface()
+                            .onChange(of: note) { _, value in
+                                if value.count > 2_000 {
+                                    note = String(value.prefix(2_000))
                                 }
                             }
-                            TextEditor(text: $note)
-                                .bnbuInputText()
-                                .accessibilityLabel("补充说明")
-                                .accessibilityHint("可选，最多 2000 个字符")
-                                .focused($focusedField, equals: .note)
-                                .frame(minHeight: 100)
-                                .padding(8)
-                                .scrollContentBackground(.hidden)
-                                .background(BNBUTheme.pale)
-                                .bnbuOutlinedSurface()
-                                .onChange(of: note) { _, value in
-                                    if value.count > 2_000 {
-                                        note = String(value.prefix(2_000))
-                                    }
-                                }
+                    }
+
+                    ProofAttachmentPanel(attachments: $proofAttachments)
+
+                    if appState.isSubmittingCheckIn {
+                        CheckInSubmissionProgressPanel(phase: appState.checkInSubmissionPhase)
+                    }
+
+                    if let validationMessage {
+                        Text(validationMessage)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BNBUTheme.muted)
+                    }
+
+                    HStack(spacing: 10) {
+                        SecondaryActionButton(title: draftSaved ? "草稿已保存" : "保存草稿", systemImage: "tray.and.arrow.down") {
+                            saveDraft()
                         }
-
-                        ProofAttachmentPanel(attachments: $proofAttachments)
-
-                        if appState.isSubmittingCheckIn {
-                            CheckInSubmissionProgressPanel(phase: appState.checkInSubmissionPhase)
-                        }
-
-                        if let validationMessage {
-                            Text(validationMessage)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(BNBUTheme.muted)
-                        }
-
-                        HStack(spacing: 10) {
-                            SecondaryActionButton(title: draftSaved ? "草稿已保存" : "保存草稿", systemImage: "tray.and.arrow.down") {
-                                saveDraft()
-                            }
-                            SecondaryActionButton(title: "清空草稿", systemImage: "trash") {
-                                clearDraftAndForm()
-                            }
-                        }
-
-                        DisabledAwareButton(
-                            title: submissionButtonTitle,
-                            systemImage: submissionButtonSystemImage,
-                            isDisabled: !canSubmit || appState.isLoading || appState.isSubmittingCheckIn,
-                            accessibilityIdentifier: "checkin.submit.button"
-                        ) {
-                            focusedField = nil
-                            dismissBNBUKeyboard()
-                            confirmSubmit = true
+                        SecondaryActionButton(title: "清空凭证", systemImage: "trash") {
+                            clearDraftAndForm()
                         }
                     }
+
+                    DisabledAwareButton(
+                        title: submissionButtonTitle,
+                        systemImage: submissionButtonSystemImage,
+                        isDisabled: !canSubmit || appState.isLoading || appState.isSubmittingCheckIn,
+                        accessibilityIdentifier: "checkin.submit.button"
+                    ) {
+                        focusedField = nil
+                        dismissBNBUKeyboard()
+                        confirmSubmit = true
+                    }
                 }
+            }
+        }
+        .onAppear {
+            hours = session.creditedHours()
         }
     }
 
@@ -272,19 +374,18 @@ struct CheckInView: View {
         }
     }
 
-    private var selectedTask: CourseTask {
-        appState.selfCheckInTask
-    }
-
-    private var selectedTaskHourLimit: Double {
-        return appState.hourLimit(for: selectedTask)
+    private var selectedTask: CourseTask? {
+        guard let session = appState.exerciseSession else { return nil }
+        return appState.submissionTask(for: session)
     }
 
     private var canSubmit: Bool {
-        !appState.hasSubmittedCheckInToday() &&
-            (hours == 1 || hours == 2) &&
-            hours <= selectedTaskHourLimit &&
-            !(selectedSportType == .other && customSportType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) &&
+        guard let session = appState.exerciseSession,
+              session.status == .completed,
+              selectedTask != nil else { return false }
+        let creditedHours = session.creditedHours()
+        return !appState.hasSubmittedCheckInToday() &&
+            (creditedHours == 1 || creditedHours == 2) &&
             CheckInInputRule.validationMessage(note: note) == nil &&
             !proofAttachments.isEmpty &&
             ProofUploadRule.accepts(proofAttachments) &&
@@ -292,17 +393,15 @@ struct CheckInView: View {
     }
 
     private var validationMessage: String? {
+        guard let session = appState.exerciseSession else { return nil }
         if appState.hasSubmittedCheckInToday() {
             return "今日已打卡，每天只能提交一次。"
         }
-        if hours != 1 && hours != 2 {
-            return "本次打卡只能选择 1h 或 2h。"
+        if selectedTask == nil {
+            return "当前课程暂未开放运动提交，请刷新课程后重试。"
         }
-        if hours > selectedTaskHourLimit {
-            return "当前任务最多可提交 \(selectedTaskHourLimit.hourText)。"
-        }
-        if selectedSportType == .other && customSportType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "请填写其他运动项目。"
+        if session.creditedHours() != 1 && session.creditedHours() != 2 {
+            return "运动不足 1 小时，不能提交。"
         }
         if let inputMessage = CheckInInputRule.validationMessage(note: note) {
             return inputMessage
@@ -321,13 +420,17 @@ struct CheckInView: View {
     }
 
     private var submitConfirmationMessage: String {
-        return "\(selectedTask.title) · \(hours.hourText) · \(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
+        guard let session = appState.exerciseSession, let selectedTask else {
+            return "请先完成运动并确认可提交任务。"
+        }
+        return "\(selectedTask.title) · \(session.creditedHours().hourText) · \(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
     }
 
     private var canResumePendingUpload: Bool {
-        appState.canResumePendingCheckIn(
+        guard let selectedTask, let session = appState.exerciseSession else { return false }
+        return appState.canResumePendingCheckIn(
             task: selectedTask,
-            hours: hours,
+            hours: session.creditedHours(),
             note: note,
             sportType: resolvedSportType,
             proofAttachments: proofAttachments
@@ -369,32 +472,31 @@ struct CheckInView: View {
     private func restoreDraftIfNeeded() {
         guard !draftRestored else { return }
         draftRestored = true
-        guard let draft = appState.draft else { return }
+        guard appState.exerciseSession?.status == .completed,
+              let draft = appState.draft else { return }
         restoreDraft(draft)
     }
 
     private func restoreDraft(_ draft: CheckInDraft) {
-        guard draft.taskId == appState.selfCheckInTask.id else {
+        guard let selectedTask, draft.taskId == selectedTask.id else {
             clearDraftAndForm()
             return
         }
         hours = draft.hours
         note = draft.note
-        selectedSportType = draft.sportType.flatMap(SportTypeOption.init(rawValue:))
-        customSportType = draft.customSportType ?? ""
         proofAttachments = draft.proofAttachments
         selectedSegment = .submit
         draftSaved = false
-        clampHoursForSelectedTask()
     }
 
     private func saveDraft() {
+        guard let selectedTask, let session = appState.exerciseSession else { return }
         appState.saveDraft(
             task: selectedTask,
-            hours: hours,
+            hours: session.creditedHours(),
             note: note,
-            sportType: selectedSportType?.rawValue,
-            customSportType: customSportType,
+            sportType: session.sportType.rawValue,
+            customSportType: session.customSportName ?? "",
             proofAttachments: proofAttachments
         )
         draftSaved = true
@@ -412,115 +514,108 @@ struct CheckInView: View {
     private func resetFormAfterSubmit() {
         note = ""
         selectedSportType = nil
+        selectedCategory = .general
         customSportType = ""
         proofAttachments = []
         draftSaved = false
     }
 
     private func performSubmit() {
-        guard canSubmit, !appState.isSubmittingCheckIn else { return }
+        guard canSubmit,
+              !appState.isSubmittingCheckIn,
+              let selectedTask,
+              let session = appState.exerciseSession else { return }
         Task {
             let success = await appState.submitCheckIn(
                 task: selectedTask,
-                hours: hours,
+                hours: session.creditedHours(),
                 note: note,
                 sportType: resolvedSportType,
-                proofAttachments: proofAttachments
+                proofAttachments: proofAttachments,
+                exerciseSession: session
             )
             guard success else { return }
+            appState.markExerciseSessionSubmitted()
             resetFormAfterSubmit()
             submitted = true
         }
     }
 
-    private func clampHoursForSelectedTask() {
-        hours = appState.normalizedHours(hours, for: selectedTask)
+    private var startValidationMessage: String? {
+        if appState.hasSubmittedCheckInToday() {
+            return "今日已打卡，每天只能开始一次计时。"
+        }
+        if appState.currentExerciseCourse == nil {
+            return "当前学期没有在读体育课程。"
+        }
+        return ExerciseSessionInputRule.validationMessage(
+            sportType: selectedSportType,
+            customSportName: customSportType
+        )
+    }
+
+    private func startExercise() {
+        guard startValidationMessage == nil else { return }
+        appState.clearDraft()
+        proofAttachments = []
+        note = ""
+        draftSaved = false
+        _ = appState.startExerciseSession(
+            category: selectedCategory,
+            sportType: selectedSportType,
+            customSportName: customSportType
+        )
     }
 
     private var resolvedSportType: String? {
-        guard let selectedSportType else { return nil }
-        if selectedSportType == .other {
-            return customSportType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let session = appState.exerciseSession else { return nil }
+        if session.sportType == .other {
+            return session.customSportName
         }
-        return selectedSportType.rawValue
-    }
-}
-
-private struct CheckInHoursControl: View {
-    @Binding var value: Double
-    let maximum: Double
-
-    var body: some View {
-        HStack {
-            hourButton(
-                systemImage: "minus.circle.fill",
-                accessibilityLabel: "减少学时",
-                enabled: value > 1
-            ) {
-                value = 1
-            }
-
-            VStack(spacing: 4) {
-                Text(value.hourText)
-                    .font(.system(size: 30, weight: .medium))
-                    .contentTransition(.numericText())
-                Text("单次最多 \(maximum.hourText)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            }
-            .frame(maxWidth: .infinity)
-
-            hourButton(
-                systemImage: "plus.circle.fill",
-                accessibilityLabel: "增加学时",
-                enabled: value < maximum && maximum >= 2
-            ) {
-                value = min(2, maximum)
-            }
-        }
-        .padding(10)
-        .background(BNBUTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
-        .animation(.easeInOut(duration: 0.24), value: value)
+        return session.sportType.rawValue
     }
 
-    private func hourButton(
-        systemImage: String,
-        accessibilityLabel: String,
-        enabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.title3.weight(.medium))
-                .foregroundStyle(enabled ? BNBUTheme.onPrimaryContainer : BNBUTheme.onSurfaceVariant)
-                .frame(width: 48, height: 48)
-                .background(enabled ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
-                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+    @ViewBuilder
+    private func sessionDetailRow(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            Spacer(minLength: 16)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(BNBUTheme.onSurface)
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel(accessibilityLabel)
+        .font(.subheadline.weight(.regular))
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let seconds = max(Int(duration), 0)
+        return String(format: "%02d:%02d:%02d", seconds / 3_600, (seconds % 3_600) / 60, seconds % 60)
+    }
+
+    private func formatDurationForVoiceOver(_ duration: TimeInterval) -> String {
+        let seconds = max(Int(duration), 0)
+        return "\(seconds / 3_600) 小时 \((seconds % 3_600) / 60) 分 \(seconds % 60) 秒"
     }
 }
 
 private struct SportTypeSelector: View {
-    @Binding var selected: SportTypeOption?
+    @Binding var selected: ExerciseSportType?
     @Binding var customValue: String
     @State private var showAll = false
 
-    private var visibleOptions: [SportTypeOption] {
-        let needsExpandedSelection = selected.map { SportTypeOption.allCases.dropFirst(4).contains($0) } ?? false
+    private var visibleOptions: [ExerciseSportType] {
+        let needsExpandedSelection = selected.map { ExerciseSportType.allCases.dropFirst(4).contains($0) } ?? false
         return showAll || needsExpandedSelection
-            ? SportTypeOption.allCases
-            : Array(SportTypeOption.allCases.prefix(4))
+            ? ExerciseSportType.allCases
+            : Array(ExerciseSportType.allCases.prefix(4))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("运动项目（可选）")
+            Text("运动项目")
                 .font(.headline.weight(.medium))
-            Text("请选择本次运动；再次点击已选项目可取消。")
+            Text("请选择本次运动项目。")
                 .font(.caption.weight(.regular))
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
@@ -556,7 +651,7 @@ private struct SportTypeSelector: View {
                 }
             }
 
-            if selected == nil || SportTypeOption.allCases.prefix(4).contains(selected!) {
+            if selected == nil || ExerciseSportType.allCases.prefix(4).contains(selected!) {
                 Button(showAll ? "收起运动项目" : "查看更多运动项目") {
                     withAnimation(.easeInOut(duration: 0.24)) {
                         showAll.toggle()

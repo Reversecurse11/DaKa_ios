@@ -6,7 +6,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated"]
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-completed-exercise"]
         app.launch()
     }
 

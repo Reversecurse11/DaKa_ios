@@ -43,11 +43,15 @@ struct LocalStoreHealth: Hashable {
 struct AppLocalStore {
     static let workspaceStorageKey = "bnbu.student.workspace.v1"
     static let draftStorageKey = "bnbu.student.checkin.draft.v1"
+    static let exerciseSessionStorageKey = "bnbu.student.exercise.session.v1"
+    static let exerciseSubmissionDatesStorageKey = "bnbu.student.exercise.submission-dates.v1"
     static let pendingMutationStorageKey = "bnbu.student.remote.mutations.v1"
     static let remoteWorkspaceStorageKeyPrefix = "bnbu.student.remote.workspace.v1"
 
     private let workspaceKey = Self.workspaceStorageKey
     private let draftKey = Self.draftStorageKey
+    private let exerciseSessionKey = Self.exerciseSessionStorageKey
+    private let exerciseSubmissionDatesKey = Self.exerciseSubmissionDatesStorageKey
     private let pendingMutationKey = Self.pendingMutationStorageKey
     private let defaults: UserDefaults?
     private let legacyDefaults: UserDefaults
@@ -121,6 +125,34 @@ struct AppLocalStore {
         _ = removeValue(forKey: draftKey)
     }
 
+    func readExerciseSession() -> LocalStoreReadResult<ExerciseSession> {
+        read(ExerciseSession.self, forKey: exerciseSessionKey)
+    }
+
+    @discardableResult
+    func saveExerciseSession(_ session: ExerciseSession) -> Bool {
+        save(session, forKey: exerciseSessionKey)
+    }
+
+    @discardableResult
+    func clearExerciseSession() -> Bool {
+        removeValue(forKey: exerciseSessionKey)
+    }
+
+    func readExerciseSubmissionDates() -> LocalStoreReadResult<[String: Date]> {
+        read([String: Date].self, forKey: exerciseSubmissionDatesKey)
+    }
+
+    @discardableResult
+    func saveExerciseSubmissionDates(_ datesByRecordID: [String: Date]) -> Bool {
+        save(datesByRecordID, forKey: exerciseSubmissionDatesKey)
+    }
+
+    @discardableResult
+    func clearExerciseSubmissionDates() -> Bool {
+        removeValue(forKey: exerciseSubmissionDatesKey)
+    }
+
     func readPendingRemoteMutations() -> LocalStoreReadResult<[String: PendingRemoteMutationAttempt]> {
         read([String: PendingRemoteMutationAttempt].self, forKey: pendingMutationKey)
     }
@@ -154,6 +186,8 @@ struct AppLocalStore {
         if let defaults {
             defaults.removeObject(forKey: workspaceKey)
             defaults.removeObject(forKey: draftKey)
+            defaults.removeObject(forKey: exerciseSessionKey)
+            defaults.removeObject(forKey: exerciseSubmissionDatesKey)
             defaults.removeObject(forKey: pendingMutationKey)
             for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(Self.remoteWorkspaceStorageKeyPrefix) {
                 defaults.removeObject(forKey: key)
@@ -291,7 +325,7 @@ struct AppLocalStore {
     }
 
     private func migrateLegacyDefaultsIfNeeded() {
-        let fixedKeys = [workspaceKey, draftKey, pendingMutationKey]
+        let fixedKeys = [workspaceKey, draftKey, exerciseSessionKey, exerciseSubmissionDatesKey, pendingMutationKey]
         let remoteKeys = legacyDefaults.dictionaryRepresentation().keys.filter {
             $0.hasPrefix(Self.remoteWorkspaceStorageKeyPrefix)
         }
@@ -315,6 +349,8 @@ struct AppLocalStore {
     private func removeLegacyDefaults() {
         legacyDefaults.removeObject(forKey: workspaceKey)
         legacyDefaults.removeObject(forKey: draftKey)
+        legacyDefaults.removeObject(forKey: exerciseSessionKey)
+        legacyDefaults.removeObject(forKey: exerciseSubmissionDatesKey)
         legacyDefaults.removeObject(forKey: pendingMutationKey)
         for key in legacyDefaults.dictionaryRepresentation().keys where key.hasPrefix(Self.remoteWorkspaceStorageKeyPrefix) {
             legacyDefaults.removeObject(forKey: key)

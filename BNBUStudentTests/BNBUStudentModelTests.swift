@@ -3,6 +3,123 @@ import XCTest
 
 @MainActor
 final class BNBUStudentModelTests: XCTestCase {
+    func testExerciseSessionCreditsOnlyCompletedWholeHoursAndCapsAtTwoHours() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let session = ExerciseSession(
+            id: "exercise-1",
+            studentID: "student-1",
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: nil,
+            status: .active,
+            locationStatus: .unavailable,
+            latitude: nil,
+            longitude: nil
+        )
+
+        XCTAssertEqual(session.creditedHours(at: start.addingTimeInterval(3_599)), 0)
+        XCTAssertEqual(session.creditedHours(at: start.addingTimeInterval(3_600)), 1)
+        XCTAssertEqual(session.creditedHours(at: start.addingTimeInterval(7_199)), 1)
+        XCTAssertEqual(session.creditedHours(at: start.addingTimeInterval(7_200)), 2)
+        XCTAssertEqual(session.elapsed(at: start.addingTimeInterval(10_000)), 7_200)
+    }
+
+    func testExerciseSessionAutomaticallyEndsAtTwoHourBoundary() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let active = ExerciseSession(
+            id: "exercise-2",
+            studentID: "student-1",
+            category: .courseRelated,
+            sportType: .basketball,
+            customSportName: nil,
+            courseID: "course-1",
+            startTime: start,
+            endTime: nil,
+            status: .active,
+            locationStatus: .available,
+            latitude: 22.35,
+            longitude: 114.20
+        )
+
+        XCTAssertEqual(active.reconciled(at: start.addingTimeInterval(7_199)).status, .active)
+        let completed = active.reconciled(at: start.addingTimeInterval(7_201))
+        XCTAssertEqual(completed.status, .completed)
+        XCTAssertEqual(completed.endTime, start.addingTimeInterval(7_200))
+        XCTAssertEqual(completed.creditedHours(), 2)
+    }
+
+    func testExerciseSessionPersistsAndRestoresForCurrentStudent() throws {
+        let defaults = isolatedDefaults()
+        let store = AppLocalStore(defaults: defaults)
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        let start = Date(timeIntervalSince1970: 1_783_516_800)
+
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .other,
+            customSportName: "飞盘",
+            at: start
+        ))
+
+        let stored = try XCTUnwrap(store.readExerciseSession().value)
+        XCTAssertEqual(stored.resolvedSportName, "飞盘")
+        XCTAssertEqual(stored.studentID, appState.workspace.student.id)
+
+        let restored = AppState(repository: MockStudentRepository(), localStore: store)
+        XCTAssertEqual(restored.exerciseSession?.id, stored.id)
+        XCTAssertEqual(restored.exerciseSession?.resolvedSportName, "飞盘")
+    }
+
+    func testDailyLimitUsesExerciseStartDateWhenSessionCrossesMidnight() async throws {
+        let defaults = isolatedDefaults()
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults)
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let start = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 21,
+            hour: 23,
+            minute: 30
+        )))
+        let nextDay = start.addingTimeInterval(3_600)
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(appState.endExerciseSession(at: nextDay))
+        let session = try XCTUnwrap(appState.exerciseSession)
+
+        let submitted = await appState.submitCheckIn(
+            task: appState.selfCheckInTask,
+            hours: session.creditedHours(),
+            note: "跨零点运动",
+            sportType: session.sportType.rawValue,
+            proofAttachments: [
+                ProofAttachment(
+                    id: "cross-midnight-proof",
+                    type: .image,
+                    fileName: "proof.jpg",
+                    byteCount: 400_000,
+                    source: "test"
+                )
+            ],
+            exerciseSession: session
+        )
+        XCTAssertTrue(submitted)
+
+        XCTAssertTrue(appState.hasSubmittedCheckInToday(at: start))
+        XCTAssertFalse(appState.hasSubmittedCheckInToday(at: nextDay))
+    }
+
     func testDebugServerConfigDefaultsToTestAPI() {
         let resolved = StudentServerConfig.resolvedBaseURL(arguments: ["BNBUStudent"], environment: [:])
 
@@ -203,6 +320,8 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.workspace.records.first?.hours, 2)
         XCTAssertEqual(appState.workspace.records.first?.status, .pending)
         XCTAssertEqual(appState.workspace.records.first?.proofPhotoCount, 1)
+        XCTAssertEqual(appState.workspace.progress.rawGeneral, 2)
+        XCTAssertEqual(appState.workspace.progress.general, appState.hourRule.generalRequired)
     }
 
     func testProofUploadRuleRejectsBatchAboveServerRequestLimit() {
