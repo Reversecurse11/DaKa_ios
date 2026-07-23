@@ -238,6 +238,13 @@ requireText(models, "static let maximumPhotoDrafts = 6", "In-session photo draft
 requireText(checkinView, "ExerciseCameraCaptureButton", "Check-in proofs are captured through the camera-only flow");
 rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from the photo library");
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
+requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
+requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
+requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
+rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
+requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
+requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");
+rejectText(debugInfoPlist + releaseInfoPlist, "NSLocationAlwaysAndWhenInUseUsageDescription", "Background location is never requested");
 requireText(gradesView, "maxAttachmentCount: ExemptionProofRule.maxAttachmentCount", "Exemption picker stops at five proofs");
 requireText(appState, "guard ExemptionProofRule.accepts(proofAttachments)", "Exemption submission revalidates its proof contract");
 requireText(remote, "guard attachment.uploadData != nil || attachment.sourceFileURL != nil", "Uploads require original bounded Data or the selected local file rather than a thumbnail");
@@ -404,7 +411,7 @@ requireText(components, ".photosPicker(", "Photo evidence uses the system privac
 requireText(privacyManifest, "<key>NSPrivacyTracking</key>\n\t<false/>", "Privacy manifest declares no tracking");
 requireText(privacyManifest, "NSPrivacyAccessedAPICategoryUserDefaults", "Privacy manifest declares UserDefaults required-reason API");
 requireText(privacyManifest, "CA92.1", "UserDefaults access has the app-only required reason");
-for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo"]) {
+for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo", "PreciseLocation"]) {
   requireText(privacyManifest, `NSPrivacyCollectedDataType${dataType}`, `Privacy manifest declares ${dataType}`);
 }
 

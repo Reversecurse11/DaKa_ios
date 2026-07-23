@@ -196,6 +196,7 @@ final class BNBUStudentModelTests: XCTestCase {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
         let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        appState.enforcesCheckInTimeWindow = false
         let start = Date().addingTimeInterval(-1_800)
 
         XCTAssertTrue(appState.startExerciseSession(
@@ -232,6 +233,7 @@ final class BNBUStudentModelTests: XCTestCase {
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
+        appState.enforcesCheckInTimeWindow = false
         XCTAssertTrue(appState.startExerciseSession(
             category: .general,
             sportType: .running,
@@ -260,6 +262,7 @@ final class BNBUStudentModelTests: XCTestCase {
     func testUnderOneHourEndRetainsDraftsWhileAbandonClearsThem() throws {
         let store = AppLocalStore(defaults: isolatedDefaults())
         let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        appState.enforcesCheckInTimeWindow = false
         let start = Date().addingTimeInterval(-1_200)
 
         // Attempt 1: capture two photos, end under one hour → drafts retained.
@@ -295,6 +298,7 @@ final class BNBUStudentModelTests: XCTestCase {
     func testSubmissionClearsAllMediaDraftsAndDraftsExpireNextDay() throws {
         let store = AppLocalStore(defaults: isolatedDefaults())
         let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        appState.enforcesCheckInTimeWindow = false
 
         XCTAssertTrue(appState.startExerciseSession(
             category: .general,
@@ -325,12 +329,94 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(materialized.type, .image)
     }
 
+    // MARK: - Daily open window (business rule 3.3)
+
+    func testExerciseCanOnlyStartInsideDailyOpenWindow() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        func shanghai(_ hour: Int, _ minute: Int) throws -> Date {
+            try XCTUnwrap(calendar.date(from: DateComponents(
+                year: 2026, month: 7, day: 21, hour: hour, minute: minute
+            )))
+        }
+
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(5, 59)))
+        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(6, 0)))
+        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(21, 59)))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0)))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(23, 30)))
+
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        XCTAssertFalse(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: try shanghai(22, 30)
+        ))
+        XCTAssertEqual(appState.errorMessage, "当前不在每日打卡开放时段（06:00–22:00），暂时不能开始运动。")
+        XCTAssertNil(appState.exerciseSession)
+
+        // A session started inside the window may end past it (3.3).
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: try shanghai(21, 0)
+        ))
+        XCTAssertTrue(appState.endExerciseSession(at: try shanghai(22, 30)))
+        XCTAssertEqual(appState.exerciseSession?.creditedHours(), 1)
+    }
+
+    // MARK: - Best-effort location (business rules 5.5/10.3)
+
+    func testLocationAttachesOnlyToRunningSessionWithoutFix() throws {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.enforcesCheckInTimeWindow = false
+
+        // No session: attach is a no-op.
+        appState.attachExerciseSessionLocation(latitude: 22.35, longitude: 114.20)
+        XCTAssertNil(appState.exerciseSession)
+
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .unavailable)
+
+        // A late fix attaches to the running session and persists.
+        appState.attachExerciseSessionLocation(latitude: 22.35, longitude: 114.20)
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
+        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
+        XCTAssertEqual(appState.exerciseSession?.longitude, 114.20)
+
+        // A second fix never overwrites the first.
+        appState.attachExerciseSessionLocation(latitude: 0, longitude: 0)
+        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
+
+        // A completed session no longer accepts fixes.
+        XCTAssertTrue(appState.endExerciseSession())
+        let endedLatitude = appState.exerciseSession?.latitude
+        appState.attachExerciseSessionLocation(latitude: 1, longitude: 1)
+        XCTAssertEqual(appState.exerciseSession?.latitude, endedLatitude)
+    }
+
     func testDailyLimitUsesExerciseStartDateWhenSessionCrossesMidnight() async throws {
         let defaults = isolatedDefaults()
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: defaults)
         )
+        // The window rule (3.3) is exercised separately; this test targets
+        // the day-attribution rule, so the gate is disabled to allow a
+        // 23:30 start that crosses midnight.
+        appState.enforcesCheckInTimeWindow = false
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         let start = try XCTUnwrap(calendar.date(from: DateComponents(

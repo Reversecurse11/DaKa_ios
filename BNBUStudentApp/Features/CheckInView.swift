@@ -255,7 +255,7 @@ struct CheckInView: View {
 
                 SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
 
-                Text("开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。")
+                Text("每日开放时段 \(CheckInTimeWindowRule.displayText) 内可开始运动；开始后即使超出时段也可正常结束和提交。开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。开始时会尝试获取一次位置，获取失败不影响打卡。")
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
@@ -820,6 +820,9 @@ struct CheckInView: View {
         if appState.hasSubmittedCheckInToday() {
             return "今日已打卡，每天只能开始一次计时。"
         }
+        if appState.enforcesCheckInTimeWindow, !CheckInTimeWindowRule.canStartExercise(at: Date()) {
+            return CheckInTimeWindowRule.startBlockedMessage
+        }
         if appState.currentExerciseCourse == nil {
             return "当前学期没有在读体育课程。"
         }
@@ -838,11 +841,21 @@ struct CheckInView: View {
         proofAttachments = []
         note = ""
         draftSaved = false
-        _ = appState.startExerciseSession(
+        guard appState.startExerciseSession(
             category: selectedCategory,
             sportType: selectedSportType,
             customSportName: customSportType
-        )
+        ) else { return }
+        // Business rule 5.5: the timer starts immediately; a single location
+        // fix is fetched in the background and attached if it arrives while
+        // the session is still running. Failure just leaves "未获取位置".
+        if !ProcessInfo.processInfo.arguments.contains("-ui-testing-reset") {
+            Task {
+                if let fix = await ExerciseLocationProvider.shared.requestCurrentLocation() {
+                    appState.attachExerciseSessionLocation(latitude: fix.latitude, longitude: fix.longitude)
+                }
+            }
+        }
     }
 
     private var resolvedSportType: String? {

@@ -24,6 +24,7 @@
 		AA0000000000000000000014 /* StudentAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* StudentAPIClient.swift */; };
 		AA0000000000000000000015 /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* DetailViews.swift */; };
 		AA0000000000000000000016 /* AppLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000016 /* AppLocalStore.swift */; };
+		AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000024 /* ExerciseLocationProvider.swift */; };
 		AA0000000000000000000017 /* RemoteStudentRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000017 /* RemoteStudentRepository.swift */; };
 		AA0000000000000000000018 /* SecureCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000020 /* SecureCredentialStore.swift */; };
 		AA0000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000019 /* Assets.xcassets */; };
@@ -68,6 +69,7 @@
 		BB0000000000000000000014 /* StudentAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentAPIClient.swift; sourceTree = "<group>"; };
 		BB0000000000000000000015 /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000016 /* AppLocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalStore.swift; sourceTree = "<group>"; };
+		BB0000000000000000000024 /* ExerciseLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLocationProvider.swift; sourceTree = "<group>"; };
 		BB0000000000000000000017 /* RemoteStudentRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteStudentRepository.swift; sourceTree = "<group>"; };
 		BB0000000000000000000018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB0000000000000000000019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -135,6 +137,7 @@
 				BB0000000000000000000017 /* RemoteStudentRepository.swift */,
 				BB0000000000000000000020 /* SecureCredentialStore.swift */,
 				BB0000000000000000000016 /* AppLocalStore.swift */,
+				BB0000000000000000000024 /* ExerciseLocationProvider.swift */,
 				BB0000000000000000000004 /* AppState.swift */,
 				BB0000000000000000000005 /* Theme.swift */,
 			);
@@ -345,6 +348,7 @@
 				AA0000000000000000000018 /* SecureCredentialStore.swift in Sources */,
 				AA0000000000000000000015 /* DetailViews.swift in Sources */,
 				AA0000000000000000000016 /* AppLocalStore.swift in Sources */,
+				AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

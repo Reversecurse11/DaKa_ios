@@ -12,6 +12,10 @@ struct BNBUStudentApp: App {
         }
         let repository: StudentRepository = arguments.contains("-ui-testing-empty-state") ? EmptyStudentRepository() : MockStudentRepository()
         let state = AppState(repository: repository)
+        if arguments.contains("-ui-testing-reset") {
+            // Flow tests must not depend on the wall clock.
+            state.enforcesCheckInTimeWindow = false
+        }
         if arguments.contains("-ui-testing-authenticated") {
             state.demoLogin()
         }

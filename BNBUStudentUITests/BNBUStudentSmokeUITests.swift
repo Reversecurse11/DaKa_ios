@@ -218,7 +218,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset"]
+        // The remote hook installs a completed 1h exercise session after the
+        // real login succeeds, so the new timer-based submit flow is testable
+        // against the live server without waiting an hour.
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-remote-completed-exercise"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -235,6 +238,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
         app.segmentedControls.buttons["提交"].tap()
         XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["运动已结束"].waitForExistence(timeout: 5))
 
         let noteEditor = app.textViews["运动说明"]
         if noteEditor.waitForExistence(timeout: 3) {

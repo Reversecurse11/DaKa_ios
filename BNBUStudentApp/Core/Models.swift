@@ -520,6 +520,30 @@ enum ExerciseSessionInputRule {
     }
 }
 
+/// Business rule 3.3: students may only *start* a session inside the daily
+/// open window. A session started in the window may end and submit after it
+/// closes. The window is admin-configured server-side; until the backend
+/// exposes it, the documented default (06:00–22:00 Asia/Shanghai) applies.
+enum CheckInTimeWindowRule {
+    static let dailyStartHour = 6
+    static let dailyEndHour = 22
+
+    static var displayText: String {
+        String(format: "%02d:00–%02d:00", dailyStartHour, dailyEndHour)
+    }
+
+    static func canStartExercise(at date: Date) -> Bool {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let hour = calendar.component(.hour, from: date)
+        return hour >= dailyStartHour && hour < dailyEndHour
+    }
+
+    static var startBlockedMessage: String {
+        "当前不在每日打卡开放时段（\(displayText)），暂时不能开始运动。"
+    }
+}
+
 /// A camera capture taken during or right after an exercise session. Media
 /// bytes live in a protected on-device file (or inline for small test
 /// payloads); drafts never upload until the student selects them as proof.

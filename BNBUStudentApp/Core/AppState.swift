@@ -67,6 +67,9 @@ final class AppState: ObservableObject {
     private var mutationGate = InFlightMutationGate()
     private var pendingRemoteMutations: [String: PendingRemoteMutationAttempt] = [:]
     let hourRule = SportHourRule.standard
+    /// Business rule 3.3 gate on starting a session. Production keeps this
+    /// on; UI tests disable it so flow tests are not wall-clock sensitive.
+    var enforcesCheckInTimeWindow = true
 
     init(
         repository: StudentRepository,
@@ -177,6 +180,10 @@ final class AppState: ObservableObject {
             errorMessage = "今日已打卡，不能再次开始运动。"
             return false
         }
+        if enforcesCheckInTimeWindow, !CheckInTimeWindowRule.canStartExercise(at: startTime) {
+            errorMessage = CheckInTimeWindowRule.startBlockedMessage
+            return false
+        }
         guard let currentCourse = currentExerciseCourse else {
             errorMessage = "当前学期没有在读体育课程，请先完成选课或联系体育部。"
             return false
@@ -204,6 +211,20 @@ final class AppState: ObservableObject {
         exerciseSession = session
         errorMessage = nil
         return true
+    }
+
+    /// Business rule 5.5: location is fetched once, best-effort, after the
+    /// timer starts. A late fix attaches to the still-running session;
+    /// failures leave the record marked "未获取位置" and never block anything.
+    func attachExerciseSessionLocation(latitude: Double, longitude: Double) {
+        guard var session = exerciseSession,
+              session.status == .active,
+              session.locationStatus == .unavailable else { return }
+        session.locationStatus = .available
+        session.latitude = latitude
+        session.longitude = longitude
+        guard localStore.saveExerciseSession(session) else { return }
+        exerciseSession = session
     }
 
     func reconcileExerciseSession(at date: Date = Date()) {
@@ -783,6 +804,14 @@ final class AppState: ObservableObject {
                 let remoteWorkspace = try await remoteRepo.loadWorkspace()
                 guard loginEpoch == sessionEpoch else { return }
                 applyRemoteWorkspace(remoteWorkspace, event: "已从服务器同步工作台")
+#if DEBUG
+                // Remote E2E hook: with the real student workspace in place,
+                // install a completed 1h session so the submit flow is testable
+                // without waiting an hour on a live server.
+                if ProcessInfo.processInfo.arguments.contains("-ui-testing-remote-completed-exercise") {
+                    installCompletedExerciseSessionForUITesting()
+                }
+#endif
             } catch {
                 guard loginEpoch == sessionEpoch else { return }
                 if let cachedWorkspace = localStore.readRemoteWorkspace(
