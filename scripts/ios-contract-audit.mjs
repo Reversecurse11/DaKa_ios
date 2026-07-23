@@ -136,6 +136,7 @@ function assertBalancedSwiftDelimiters(filePath) {
 
 const remote = read("BNBUStudentApp/Core/RemoteStudentRepository.swift");
 const models = read("BNBUStudentApp/Core/Models.swift");
+const theme = read("BNBUStudentApp/Core/Theme.swift");
 const appState = read("BNBUStudentApp/Core/AppState.swift");
 const localStore = read("BNBUStudentApp/Core/AppLocalStore.swift");
 const credentialStore = read("BNBUStudentApp/Core/SecureCredentialStore.swift");
@@ -425,7 +426,9 @@ rejectText(appSources, ".onOpenURL", "App has no implicit deep-link handler");
 
 rejectPattern(appSources, /(^|[^A-Za-z0-9_])print\s*\(/m, "Runtime source does not print sensitive values");
 rejectText(appSources, "NSLog(", "Runtime source does not use unredacted NSLog");
-requireText(remote, 'return "服务器未能处理该请求，请检查提交内容或稍后重试。"', "Unknown backend errors are sanitized before display");
+requireText(remote, 'return BNBUL10n.text("服务器未能处理该请求，请检查提交内容或稍后重试。")', "Unknown backend errors are sanitized before display");
+requireText(theme, "enum BNBUL10n", "Client-generated messages resolve through the app-language helper");
+requireText(theme, 'ofType: "lproj"', "The language helper loads the language-specific bundle for translations");
 
 requireText(project, 'INFOPLIST_FILE = "BNBUStudentApp/Resources/Info-Debug.plist";', "Debug uses the debug-only ATS plist");
 requireText(project, "INFOPLIST_FILE = BNBUStudentApp/Resources/Info.plist;", "Release uses the hardened plist");

@@ -511,11 +511,11 @@ enum ExerciseSessionInputRule {
     static let maximumCustomSportNameLength = 32
 
     static func validationMessage(sportType: ExerciseSportType?, customSportName: String) -> String? {
-        guard let sportType else { return "请选择运动项目。" }
+        guard let sportType else { return BNBUL10n.text("请选择运动项目。") }
         guard sportType == .other else { return nil }
         let normalized = customSportName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalized.isEmpty { return "请填写其他运动项目名称。" }
-        if normalized.count > maximumCustomSportNameLength { return "其他运动项目名称不能超过 32 个字符。" }
+        if normalized.isEmpty { return BNBUL10n.text("请填写其他运动项目名称。") }
+        if normalized.count > maximumCustomSportNameLength { return BNBUL10n.text("其他运动项目名称不能超过 32 个字符。") }
         return nil
     }
 }
@@ -540,7 +540,7 @@ enum CheckInTimeWindowRule {
     }
 
     static var startBlockedMessage: String {
-        "当前不在每日打卡开放时段（\(displayText)），暂时不能开始运动。"
+        BNBUL10n.text("当前不在每日打卡开放时段（\(displayText)），暂时不能开始运动。")
     }
 }
 
@@ -1220,16 +1220,16 @@ enum ProofUploadRule {
 
     static func validationMessage(for attachments: [ProofAttachment]) -> String? {
         if imageCount(in: attachments) > maxImageCount {
-            return "最多只能添加 \(maxImageCount) 张图片。"
+            return BNBUL10n.text("最多只能添加 \(maxImageCount) 张图片。")
         }
         if videoCount(in: attachments) > maxVideoCount {
-            return "最多只能添加 \(maxVideoCount) 个视频。"
+            return BNBUL10n.text("最多只能添加 \(maxVideoCount) 个视频。")
         }
         if attachments.count > maxAttachmentCount {
-            return "最多只能添加 \(maxAttachmentCount) 个凭证。"
+            return BNBUL10n.text("最多只能添加 \(maxAttachmentCount) 个凭证。")
         }
         if totalByteCount(in: attachments) > maxRequestBytes {
-            return "全部凭证总大小不能超过 120MB。"
+            return BNBUL10n.text("全部凭证总大小不能超过 120MB。")
         }
         return nil
     }
@@ -1264,7 +1264,7 @@ enum ExemptionProofRule {
 
     static func validationMessage(for attachments: [ProofAttachment]) -> String? {
         if attachments.count > maxAttachmentCount {
-            return "免测申请最多只能添加 \(maxAttachmentCount) 个证明材料。"
+            return BNBUL10n.text("免测申请最多只能添加 \(maxAttachmentCount) 个证明材料。")
         }
         return ProofUploadRule.validationMessage(for: attachments)
     }
@@ -1284,10 +1284,10 @@ enum CheckInInputRule {
     static func validationMessage(note: String) -> String? {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return "请填写运动说明。"
+            return BNBUL10n.text("请填写运动说明。")
         }
         if trimmed.count > maximumDescriptionLength {
-            return "运动说明不能超过 \(maximumDescriptionLength) 个字符。"
+            return BNBUL10n.text("运动说明不能超过 \(maximumDescriptionLength) 个字符。")
         }
         return nil
     }
@@ -1551,14 +1551,14 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
 
     var validationMessage: String? {
         if needsOriginalFileReselection {
-            return "原始文件已不在内存中，请删除后重新选择"
+            return BNBUL10n.text("原始文件已不在内存中，请删除后重新选择")
         }
         if let byteCount {
             switch type {
             case .image where byteCount > ProofUploadRule.maxImageBytes:
-                return "图片超过 8MB"
+                return BNBUL10n.text("图片超过 8MB")
             case .video where byteCount > ProofUploadRule.maxVideoBytes:
-                return "视频超过 100MB"
+                return BNBUL10n.text("视频超过 100MB")
             default:
                 break
             }

@@ -21,7 +21,7 @@ enum RemoteMutationJournalError: Error, LocalizedError {
     case writeFailed
 
     var errorDescription: String? {
-        "无法安全保存待提交操作，已停止网络提交。请确认设备已解锁且存储空间充足，然后重试。"
+        BNBUL10n.text("无法安全保存待提交操作，已停止网络提交。请确认设备已解锁且存储空间充足，然后重试。")
     }
 }
 
@@ -166,7 +166,7 @@ final class AppState: ObservableObject {
         location: (latitude: Double, longitude: Double)? = nil
     ) -> Bool {
         guard exerciseSession == nil else {
-            errorMessage = "已有进行中或待提交的运动，请先完成当前记录。"
+            errorMessage = BNBUL10n.text("已有进行中或待提交的运动，请先完成当前记录。")
             return false
         }
         if let validationMessage = ExerciseSessionInputRule.validationMessage(
@@ -177,7 +177,7 @@ final class AppState: ObservableObject {
             return false
         }
         guard !hasSubmittedCheckInToday(at: startTime) else {
-            errorMessage = "今日已打卡，不能再次开始运动。"
+            errorMessage = BNBUL10n.text("今日已打卡，不能再次开始运动。")
             return false
         }
         if enforcesCheckInTimeWindow, !CheckInTimeWindowRule.canStartExercise(at: startTime) {
@@ -185,7 +185,7 @@ final class AppState: ObservableObject {
             return false
         }
         guard let currentCourse = currentExerciseCourse else {
-            errorMessage = "当前学期没有在读体育课程，请先完成选课或联系体育部。"
+            errorMessage = BNBUL10n.text("当前学期没有在读体育课程，请先完成选课或联系体育部。")
             return false
         }
         guard let sportType else { return false }
@@ -205,7 +205,7 @@ final class AppState: ObservableObject {
             longitude: location?.longitude
         )
         guard localStore.saveExerciseSession(session) else {
-            errorMessage = "无法安全保存运动开始时间，请确认设备存储空间后重试。"
+            errorMessage = BNBUL10n.text("无法安全保存运动开始时间，请确认设备存储空间后重试。")
             return false
         }
         exerciseSession = session
@@ -237,7 +237,7 @@ final class AppState: ObservableObject {
         let reconciled = session.reconciled(at: date)
         guard reconciled != session else { return }
         guard localStore.saveExerciseSession(reconciled) else {
-            errorMessage = "运动已达到 2 小时，但自动结束状态未能安全保存。请保持 App 打开并重试。"
+            errorMessage = BNBUL10n.text("运动已达到 2 小时，但自动结束状态未能安全保存。请保持 App 打开并重试。")
             return
         }
         exerciseSession = reconciled
@@ -247,7 +247,7 @@ final class AppState: ObservableObject {
         guard let session = exerciseSession, session.status == .active else { return false }
         let ended = session.ended(at: date)
         guard localStore.saveExerciseSession(ended) else {
-            errorMessage = "无法安全保存运动结束时间，请释放存储空间后重试。"
+            errorMessage = BNBUL10n.text("无法安全保存运动结束时间，请释放存储空间后重试。")
             return false
         }
         exerciseSession = ended
@@ -259,7 +259,7 @@ final class AppState: ObservableObject {
     func pauseExerciseSession(at date: Date = Date()) -> Bool {
         guard let session = exerciseSession, let paused = session.paused(at: date) else { return false }
         guard localStore.saveExerciseSession(paused) else {
-            errorMessage = "无法安全保存暂停时间，请释放存储空间后重试。"
+            errorMessage = BNBUL10n.text("无法安全保存暂停时间，请释放存储空间后重试。")
             return false
         }
         exerciseSession = paused
@@ -271,7 +271,7 @@ final class AppState: ObservableObject {
     func resumeExerciseSession(at date: Date = Date()) -> Bool {
         guard let session = exerciseSession, let resumed = session.resumed(at: date) else { return false }
         guard localStore.saveExerciseSession(resumed) else {
-            errorMessage = "无法安全保存恢复时间，请释放存储空间后重试。"
+            errorMessage = BNBUL10n.text("无法安全保存恢复时间，请释放存储空间后重试。")
             return false
         }
         exerciseSession = resumed
@@ -285,7 +285,7 @@ final class AppState: ObservableObject {
     func finishUncreditedExerciseSession() {
         guard let session = exerciseSession, session.creditedHours() == 0 else { return }
         guard localStore.clearExerciseSession() else {
-            errorMessage = "无法清理本地运动会话，请稍后重试。"
+            errorMessage = BNBUL10n.text("无法清理本地运动会话，请稍后重试。")
             return
         }
         exerciseSession = nil
@@ -311,11 +311,11 @@ final class AppState: ObservableObject {
         at date: Date = Date()
     ) -> Bool {
         guard let session = exerciseSession else {
-            errorMessage = "请先开始运动，再拍摄打卡凭证。"
+            errorMessage = BNBUL10n.text("请先开始运动，再拍摄打卡凭证。")
             return false
         }
         guard canAddExercisePhotoDraft else {
-            errorMessage = "最多保存 \(ExerciseMediaDraftRule.maximumPhotoDrafts) 张照片草稿。"
+            errorMessage = BNBUL10n.text("最多保存 \(ExerciseMediaDraftRule.maximumPhotoDrafts) 张照片草稿。")
             return false
         }
         let draftID = UUID().uuidString
@@ -324,7 +324,7 @@ final class AppState: ObservableObject {
         var inlineData: Data?
         if localStore.exerciseMediaDirectoryURL != nil {
             guard localStore.writeExerciseMediaFile(data: imageData, fileName: displayName) else {
-                errorMessage = "照片草稿无法安全保存，请检查设备存储空间。"
+                errorMessage = BNBUL10n.text("照片草稿无法安全保存，请检查设备存储空间。")
                 return false
             }
             storedFileName = displayName
@@ -357,14 +357,14 @@ final class AppState: ObservableObject {
         at date: Date = Date()
     ) -> Bool {
         guard let session = exerciseSession else {
-            errorMessage = "请先开始运动，再拍摄打卡凭证。"
+            errorMessage = BNBUL10n.text("请先开始运动，再拍摄打卡凭证。")
             return false
         }
         let draftID = UUID().uuidString
         let displayName = "exercise-video-\(String(draftID.prefix(6))).mov"
         guard localStore.exerciseMediaDirectoryURL != nil,
               localStore.adoptExerciseMediaFile(from: fileURL, fileName: displayName) else {
-            errorMessage = "视频草稿无法安全保存，请检查设备存储空间。"
+            errorMessage = BNBUL10n.text("视频草稿无法安全保存，请检查设备存储空间。")
             return false
         }
         let mediaDraft = ExerciseMediaDraft(
@@ -417,7 +417,7 @@ final class AppState: ObservableObject {
         var updated = exerciseMediaDrafts
         updated.remove(at: index)
         guard localStore.saveExerciseMediaDrafts(updated) else {
-            errorMessage = "草稿列表无法安全更新，请稍后重试。"
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
             return
         }
         if let storedFileName = removed.storedFileName {
@@ -432,7 +432,7 @@ final class AppState: ObservableObject {
         let (removed, remaining) = exerciseMediaDrafts.partitioned { $0.sessionID == sessionID }
         guard !removed.isEmpty else { return }
         guard localStore.saveExerciseMediaDrafts(remaining) else {
-            errorMessage = "草稿列表无法安全更新，请稍后重试。"
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
             return
         }
         for draft in removed {
@@ -481,7 +481,7 @@ final class AppState: ObservableObject {
             if let storedFileName = mediaDraft.storedFileName {
                 localStore.removeExerciseMediaFile(fileName: storedFileName)
             }
-            errorMessage = "草稿列表无法安全更新，请检查设备存储空间。"
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
             return false
         }
         exerciseMediaDrafts = updated
@@ -536,7 +536,7 @@ final class AppState: ObservableObject {
 
     func discardExerciseSession() {
         guard localStore.clearExerciseSession() else {
-            errorMessage = "无法清理本地运动会话，请稍后重试。"
+            errorMessage = BNBUL10n.text("无法清理本地运动会话，请稍后重试。")
             return
         }
         // Business rule 5.6: abandoning clears the media captured during this
@@ -789,9 +789,9 @@ final class AppState: ObservableObject {
         workspace = repository.loadWorkspace()
         let securelyCleared = await remoteRepo.logout()
         if !securelyCleared {
-            errorMessage = "已退出，但设备未能清理安全存储。请重启 App 后再登录。"
+            errorMessage = BNBUL10n.text("已退出，但设备未能清理安全存储。请重启 App 后再登录。")
         } else if !journalCleared {
-            errorMessage = "已退出，但设备未能清理待提交操作。请释放存储空间后重启 App。"
+            errorMessage = BNBUL10n.text("已退出，但设备未能清理待提交操作。请释放存储空间后重启 App。")
         } else {
             errorMessage = nil
         }
@@ -841,7 +841,7 @@ final class AppState: ObservableObject {
                 ).value,
                    !isUnauthorized(error) {
                     applyRemoteWorkspace(cachedWorkspace, event: "服务器暂不可用，已读取最近同步数据")
-                    errorMessage = "服务器暂时不可用，当前显示最近同步数据。下拉或重新进入后可再次刷新。"
+                    errorMessage = BNBUL10n.text("服务器暂时不可用，当前显示最近同步数据。下拉或重新进入后可再次刷新。")
                 } else {
                     throw error
                 }
@@ -950,7 +950,7 @@ final class AppState: ObservableObject {
         }
 
         guard let submission = validatedSubmission(creditType: creditType, courseId: courseId, hours: hours) else {
-            errorMessage = "本次运动数据不完整，无法提交。请结束运动后重试。"
+            errorMessage = BNBUL10n.text("本次运动数据不完整，无法提交。请结束运动后重试。")
             return false
         }
 
@@ -966,7 +966,7 @@ final class AppState: ObservableObject {
             )
         }
         guard !hasSubmittedCheckInToday() else {
-            errorMessage = "今日已打卡，每天只能提交一次。"
+            errorMessage = BNBUL10n.text("今日已打卡，每天只能提交一次。")
             return false
         }
         guard !proofAttachments.isEmpty, ProofUploadRule.accepts(proofAttachments) else { return false }
@@ -1018,7 +1018,7 @@ final class AppState: ObservableObject {
     func submitExemption(item: ExemptionItem, reason: String, detail: String, proofAttachments: [ProofAttachment]) async -> Bool {
         let mutationKey = "submit-exemption"
         guard beginMutation(mutationKey) else {
-            errorMessage = "免测申请正在提交，请勿重复操作。"
+            errorMessage = BNBUL10n.text("免测申请正在提交，请勿重复操作。")
             return false
         }
         defer { endMutation(mutationKey) }
@@ -1084,7 +1084,7 @@ final class AppState: ObservableObject {
     ) async -> Bool {
         let mutationKey = "supplement-exemption:\(application.id)"
         guard beginMutation(mutationKey) else {
-            errorMessage = "免测补充材料正在提交，请勿重复操作。"
+            errorMessage = BNBUL10n.text("免测补充材料正在提交，请勿重复操作。")
             return false
         }
         defer { endMutation(mutationKey) }
@@ -1309,7 +1309,7 @@ final class AppState: ObservableObject {
     func retryPendingRemoteMutation(scope: String) async -> Bool {
         guard canRetryPendingRemoteMutation(scope: scope),
               let attempt = pendingRemoteMutations[scope] else {
-            errorMessage = "该待重试操作还缺少原始文件或目标已失效。请核对最新记录，或明确放弃后重新提交。"
+            errorMessage = BNBUL10n.text("该待重试操作还缺少原始文件或目标已失效。请核对最新记录，或明确放弃后重新提交。")
             return false
         }
         if attempt.isServerConfirmed {
@@ -1360,7 +1360,7 @@ final class AppState: ObservableObject {
                 proofAttachments: attempt.sourceProofs
             )
         }
-        errorMessage = "无法识别这项待重试操作；请明确放弃后重新提交。"
+        errorMessage = BNBUL10n.text("无法识别这项待重试操作；请明确放弃后重新提交。")
         return false
     }
 
@@ -1458,15 +1458,15 @@ final class AppState: ObservableObject {
 
     func convertEndurance(timeSeconds: Int) async -> EnduranceScoreResult? {
         guard isRemoteMode else {
-            errorMessage = "请连接校园体育服务器后使用成绩换算。"
+            errorMessage = BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
             return nil
         }
         guard let gender = workspace.student.gender.apiValue else {
-            errorMessage = "学生性别尚未同步，暂时无法匹配耐力跑项目。"
+            errorMessage = BNBUL10n.text("学生性别尚未同步，暂时无法匹配耐力跑项目。")
             return nil
         }
         guard let gradeLevel = workspace.student.gradeLevel, !gradeLevel.isEmpty else {
-            errorMessage = "学生年级尚未同步，暂时无法匹配评分组别。"
+            errorMessage = BNBUL10n.text("学生年级尚未同步，暂时无法匹配评分组别。")
             return nil
         }
 
@@ -1498,7 +1498,7 @@ final class AppState: ObservableObject {
     ) async -> Bool {
         guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
         guard !hasSubmittedCheckInToday() else {
-            errorMessage = "今日已打卡，每天只能提交一次。"
+            errorMessage = BNBUL10n.text("今日已打卡，每天只能提交一次。")
             return false
         }
         guard !proofAttachments.isEmpty, ProofUploadRule.accepts(proofAttachments) else { return false }
@@ -1554,7 +1554,7 @@ final class AppState: ObservableObject {
                 )
             }
             guard sourceProofs.dropFirst(attempt.uploadedProofs.count).allSatisfy(\.isValidForUpload) else {
-                errorMessage = "尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。"
+                errorMessage = BNBUL10n.text("尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。")
                 return false
             }
             for index in attempt.uploadedProofs.count..<sourceProofs.count {
@@ -1633,7 +1633,7 @@ final class AppState: ObservableObject {
                 try clearPersistedRemoteAttemptFromDraftStrict()
             } catch {
                 retainServerConfirmedAttemptInMemory(attempt)
-                localJournalWarning = "打卡已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。"
+                localJournalWarning = BNBUL10n.text("打卡已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。")
             }
 
             submittedRecord.proofFiles = attempt.uploadedProofs
@@ -1657,7 +1657,7 @@ final class AppState: ObservableObject {
                 }
                 refreshWarning = combinedWarning(
                     refreshWarning,
-                    "记录已提交，但最新列表暂未同步。请稍后下拉刷新，不要重复提交。"
+                    BNBUL10n.text("记录已提交，但最新列表暂未同步。请稍后下拉刷新，不要重复提交。")
                 )
             }
 
@@ -1774,7 +1774,7 @@ final class AppState: ObservableObject {
                 try storePendingRemoteMutation(attempt)
             }
             guard proofAttachments.dropFirst(attempt.uploadedProofs.count).allSatisfy(\.isValidForUpload) else {
-                errorMessage = "尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。"
+                errorMessage = BNBUL10n.text("尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。")
                 return false
             }
             for index in attempt.uploadedProofs.count..<proofAttachments.count {
@@ -1804,7 +1804,7 @@ final class AppState: ObservableObject {
                 try removePendingRemoteMutationStrict(scope: scope)
             } catch {
                 retainServerConfirmedAttemptInMemory(attempt)
-                localJournalWarning = "免测申请已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。"
+                localJournalWarning = BNBUL10n.text("免测申请已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。")
             }
 
             var refreshedSubmittedApplication = false
@@ -1915,7 +1915,7 @@ final class AppState: ObservableObject {
                 try storePendingRemoteMutation(attempt)
             }
             guard proofAttachments.dropFirst(attempt.uploadedProofs.count).allSatisfy(\.isValidForUpload) else {
-                errorMessage = "尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。"
+                errorMessage = BNBUL10n.text("尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。")
                 return false
             }
             for index in attempt.uploadedProofs.count..<proofAttachments.count {
@@ -1944,7 +1944,7 @@ final class AppState: ObservableObject {
                 try removePendingRemoteMutationStrict(scope: scope)
             } catch {
                 retainServerConfirmedAttemptInMemory(attempt)
-                localJournalWarning = "免测补充材料已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。"
+                localJournalWarning = BNBUL10n.text("免测补充材料已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。")
             }
             supplemented.proofFiles = application.proofFiles + attempt.uploadedProofs
             supplemented.status = .pending
@@ -1964,7 +1964,7 @@ final class AppState: ObservableObject {
                 }
                 refreshWarning = combinedWarning(
                     refreshWarning,
-                    "补充材料已提交，但最新申请列表暂未同步。请稍后下拉刷新，不要重复提交。"
+                    BNBUL10n.text("补充材料已提交，但最新申请列表暂未同步。请稍后下拉刷新，不要重复提交。")
                 )
             }
             if !refreshedApplication {
@@ -2026,7 +2026,7 @@ final class AppState: ObservableObject {
         }
 
         if error is DecodingError {
-            errorMessage = "服务器数据格式发生变化，请稍后重试或联系技术支持。"
+            errorMessage = BNBUL10n.text("服务器数据格式发生变化，请稍后重试或联系技术支持。")
         } else {
             errorMessage = error.localizedDescription
         }
@@ -2055,9 +2055,9 @@ final class AppState: ObservableObject {
             mutationGate.removeAll()
             let journalCleared = clearAllPendingRemoteMutations()
             if !securelyCleared {
-                errorMessage = "登录已过期，且设备未能清理安全存储。请重启 App 后再登录。"
+                errorMessage = BNBUL10n.text("登录已过期，且设备未能清理安全存储。请重启 App 后再登录。")
             } else if !journalCleared {
-                errorMessage = "登录已过期，且设备未能清理待提交操作。请释放存储空间后重启 App。"
+                errorMessage = BNBUL10n.text("登录已过期，且设备未能清理待提交操作。请释放存储空间后重启 App。")
             }
         }
     }
@@ -2539,7 +2539,7 @@ final class AppState: ObservableObject {
     }
 
     private var serverConfirmedCleanupWarning: String {
-        "该操作已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。"
+        BNBUL10n.text("该操作已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。")
     }
 
     private func removePendingRemoteMutation(scope: String) {

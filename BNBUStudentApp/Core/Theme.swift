@@ -111,6 +111,45 @@ final class BNBULanguageSettings: ObservableObject {
     }
 }
 
+/// Resolves localized strings for code outside the SwiftUI locale
+/// environment (AppState errors, validation rules, repository messages).
+/// Follows the same in-app language override as the view layer, so
+/// client-generated messages match the interface language. Server-returned
+/// text is never routed through here and stays verbatim.
+enum BNBUL10n {
+    /// Tests pin a locale so exact-string assertions stay deterministic
+    /// regardless of the host machine's language.
+    nonisolated(unsafe) static var localeOverride: Locale?
+
+    static var locale: Locale {
+        if let localeOverride { return localeOverride }
+        let mode = UserDefaults.standard.string(forKey: BNBULanguage.defaultsKey)
+            .flatMap(BNBULanguage.init(rawValue:)) ?? .defaultMode
+        switch mode {
+        case .simplifiedChinese, .english:
+            return mode.locale
+        case .system:
+            return Locale(identifier: BNBULanguage.supportedSystemLocaleIdentifier())
+        }
+    }
+
+    static func text(_ key: String.LocalizationValue) -> String {
+        // The locale argument of String(localized:) only affects value
+        // formatting; the translation language comes from the bundle, so the
+        // language-specific .lproj bundle must be loaded explicitly.
+        String(localized: key, bundle: languageBundle, locale: locale)
+    }
+
+    private static var languageBundle: Bundle {
+        let code = locale.identifier.hasPrefix("zh") ? "zh-Hans" : "en"
+        guard let path = Bundle.main.path(forResource: code, ofType: "lproj"),
+              let bundle = Bundle(path: path) else {
+            return .main
+        }
+        return bundle
+    }
+}
+
 enum BNBUSpacing {
     static let screen: CGFloat = 18
     static let panel: CGFloat = 16

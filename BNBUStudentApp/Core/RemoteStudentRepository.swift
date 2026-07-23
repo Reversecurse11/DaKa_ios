@@ -1156,13 +1156,13 @@ actor RemoteStudentRepository {
         let message: String
         switch error.code {
         case .timedOut:
-            message = "连接服务器超时，请稍后重试"
+            message = BNBUL10n.text("连接服务器超时，请稍后重试")
         case .notConnectedToInternet:
-            message = "当前网络不可用，请检查网络连接"
+            message = BNBUL10n.text("当前网络不可用，请检查网络连接")
         case .networkConnectionLost:
-            message = "网络连接已中断，请先刷新记录确认提交状态"
+            message = BNBUL10n.text("网络连接已中断，请先刷新记录确认提交状态")
         case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
-            message = "暂时无法连接校园体育服务"
+            message = BNBUL10n.text("暂时无法连接校园体育服务")
         default:
             message = error.localizedDescription
         }
@@ -1378,13 +1378,13 @@ enum RepositoryError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unauthorized:
-            return "登录已过期，请重新登录"
+            return BNBUL10n.text("登录已过期，请重新登录")
         case .sessionChanged:
-            return "登录操作已取消"
+            return BNBUL10n.text("登录操作已取消")
         case .secureStorageUnavailable:
-            return "无法安全保存登录状态，请解锁设备并重试。"
+            return BNBUL10n.text("无法安全保存登录状态，请解锁设备并重试。")
         case .networkError(let message):
-            return "网络错误：\(message)"
+            return BNBUL10n.text("网络错误：\(message)")
         case .httpError(let code):
             return StudentFacingErrorMessage.httpStatus(code)
         case .apiError(let message):
@@ -1399,27 +1399,27 @@ private enum StudentFacingErrorMessage {
     static func httpStatus(_ code: Int) -> String {
         switch code {
         case 400:
-            return "提交内容不完整或格式不正确，请检查后重试。"
+            return BNBUL10n.text("提交内容不完整或格式不正确，请检查后重试。")
         case 401:
-            return "登录已过期，请重新登录。"
+            return BNBUL10n.text("登录已过期，请重新登录。")
         case 403:
-            return "当前账号无权执行此操作，请联系课程老师。"
+            return BNBUL10n.text("当前账号无权执行此操作，请联系课程老师。")
         case 404:
-            return "请求的数据或服务暂不可用，请刷新后重试。"
+            return BNBUL10n.text("请求的数据或服务暂不可用，请刷新后重试。")
         case 408:
-            return "请求超时，请检查网络后重试。"
+            return BNBUL10n.text("请求超时，请检查网络后重试。")
         case 409:
             return duplicateSubmission
         case 413:
             return oversizedFile
         case 422:
-            return "提交内容未通过校验，请确认任务状态、时间范围和凭证要求。"
+            return BNBUL10n.text("提交内容未通过校验，请确认任务状态、时间范围和凭证要求。")
         case 429:
-            return "操作过于频繁，请稍后再试。"
+            return BNBUL10n.text("操作过于频繁，请稍后再试。")
         case 500...599:
-            return "校园体育服务暂时异常，请稍后重试。"
+            return BNBUL10n.text("校园体育服务暂时异常，请稍后重试。")
         default:
-            return "服务器错误（\(code)），请稍后重试。"
+            return BNBUL10n.text("服务器错误（\(code)），请稍后重试。")
         }
     }
 
@@ -1434,7 +1434,7 @@ private enum StudentFacingErrorMessage {
         if containsAny(normalized, values: [
             "not started", "outside", "expired", "deadline", "date range", "未开始", "已结束", "已截止", "时间范围", "超出打卡"
         ]) {
-            return "当前不在任务允许的打卡时间内，请刷新任务并确认开始和截止时间。"
+            return BNBUL10n.text("当前不在任务允许的打卡时间内，请刷新任务并确认开始和截止时间。")
         }
         if containsAny(normalized, values: [
             "payload too large", "file too large", "exceeds", "文件过大", "超过文件", "超过上传"
@@ -1444,13 +1444,19 @@ private enum StudentFacingErrorMessage {
         if containsAny(normalized, values: [
             "unauthorized", "token expired", "未授权", "登录过期"
         ]) {
-            return "登录已过期，请重新登录。"
+            return BNBUL10n.text("登录已过期，请重新登录。")
         }
-        return "服务器未能处理该请求，请检查提交内容或稍后重试。"
+        return BNBUL10n.text("服务器未能处理该请求，请检查提交内容或稍后重试。")
     }
 
-    private static let duplicateSubmission = "今天已提交过该任务。请先刷新打卡记录，勿重复提交。"
-    private static let oversizedFile = "凭证文件超过服务器限制，请删除过大文件后重新选择。"
+    // Computed so a language switch is picked up on the next error.
+    private static var duplicateSubmission: String {
+        BNBUL10n.text("今天已提交过该任务。请先刷新打卡记录，勿重复提交。")
+    }
+
+    private static var oversizedFile: String {
+        BNBUL10n.text("凭证文件超过服务器限制，请删除过大文件后重新选择。")
+    }
 
     private static func containsAny(_ message: String, values: [String]) -> Bool {
         values.contains { message.contains($0) }

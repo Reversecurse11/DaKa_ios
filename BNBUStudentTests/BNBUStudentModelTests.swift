@@ -3,6 +3,38 @@ import XCTest
 
 @MainActor
 final class BNBUStudentModelTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        // Client-generated messages follow the app language; pin zh-Hans so
+        // exact-string assertions stay deterministic on any host machine.
+        BNBUL10n.localeOverride = Locale(identifier: "zh-Hans")
+    }
+
+    override func tearDown() {
+        BNBUL10n.localeOverride = nil
+        super.tearDown()
+    }
+
+    // Q&A follow-up 7/23: client-generated errors must render in the active
+    // app language instead of leaking hard-coded Chinese in English mode.
+    func testClientMessagesFollowAppLanguage() {
+        BNBUL10n.localeOverride = Locale(identifier: "en")
+        XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "Enter an exercise note.")
+        XCTAssertEqual(
+            CheckInInputRule.validationMessage(note: String(repeating: "a", count: 201)),
+            "The exercise note cannot exceed 200 characters."
+        )
+        XCTAssertEqual(
+            CheckInTimeWindowRule.startBlockedMessage,
+            "Outside the daily check-in window (06:00–22:00). You cannot start exercising right now."
+        )
+        XCTAssertEqual(RepositoryError.unauthorized.errorDescription, "Your session has expired. Please sign in again.")
+
+        BNBUL10n.localeOverride = Locale(identifier: "zh-Hans")
+        XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
+        XCTAssertEqual(RepositoryError.unauthorized.errorDescription, "登录已过期，请重新登录")
+    }
+
     func testExerciseSessionCreditsOnlyCompletedWholeHoursAndCapsAtTwoHours() {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let session = ExerciseSession(
