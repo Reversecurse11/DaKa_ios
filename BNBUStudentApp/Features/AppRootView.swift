@@ -47,6 +47,11 @@ struct AppRootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             StudentBottomBar(selectedTab: $selectedTab)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .bnbuOpenDestination)) { notification in
+            if let destination = notification.object as? AppTab {
+                selectedTab = destination
+            }
+        }
     }
 
     @ViewBuilder
@@ -97,7 +102,7 @@ private struct StudentBottomBar: View {
                         .frame(width: 54, height: 30)
                         .background(selectedTab == tab ? BNBUTheme.primaryContainer : Color.clear)
                         .clipShape(Capsule())
-                        Text(tab.rawValue)
+                        Text(LocalizedStringKey(tab.rawValue))
                             .font(.caption2.weight(.medium))
                     }
                     .foregroundStyle(selectedTab == tab ? BNBUTheme.onSurface : BNBUTheme.onSurfaceVariant)
@@ -106,7 +111,7 @@ private struct StudentBottomBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier(tab.accessibilityIdentifier)
-                .accessibilityLabel(tab.rawValue)
+                .accessibilityLabel(Text(LocalizedStringKey(tab.rawValue)))
                 .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
             }
         }
@@ -120,4 +125,5 @@ private struct StudentBottomBar: View {
                 .frame(height: 0.5)
         }
     }
+
 }

@@ -67,7 +67,9 @@ struct BNBUErrorPanel: View {
                 .foregroundStyle(BNBUTheme.onSurface)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let retryAction {
-                Button(retryTitle, action: retryAction)
+                Button(action: retryAction) {
+                    Text(LocalizedStringKey(retryTitle))
+                }
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(BNBUTheme.primary)
                     .buttonStyle(.plain)
@@ -120,7 +122,7 @@ struct SectionTitle: View {
     let title: String
 
     var body: some View {
-        Text(title)
+        Text(LocalizedStringKey(title))
             .font(.title2.weight(.regular))
             .foregroundStyle(BNBUTheme.onSurface)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,7 +134,7 @@ struct StatusBadge: View {
     var filled = false
 
     var body: some View {
-        Text(text)
+        Text(LocalizedStringKey(text))
             .font(.caption.weight(.medium))
             .foregroundStyle(filled ? BNBUTheme.onPrimaryContainer : BNBUTheme.onSurfaceVariant)
             .lineLimit(1)
@@ -175,7 +177,7 @@ struct MetricCell: View {
     var body: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 10) {
-                Text(label.uppercased())
+                Text(LocalizedStringKey(label.uppercased()))
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 Text(value)
@@ -183,7 +185,7 @@ struct MetricCell: View {
                     .foregroundStyle(BNBUTheme.onSurface)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
-                Text(footnote)
+                Text(LocalizedStringKey(footnote))
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineLimit(2)
@@ -201,7 +203,11 @@ struct PrimaryActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(LocalizedStringKey(title))
+            } icon: {
+                Image(systemName: systemImage)
+            }
                 .font(.headline.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -221,7 +227,11 @@ struct SecondaryActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(LocalizedStringKey(title))
+            } icon: {
+                Image(systemName: systemImage)
+            }
                 .font(.subheadline.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -242,7 +252,11 @@ struct DisabledAwareButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(LocalizedStringKey(title))
+            } icon: {
+                Image(systemName: systemImage)
+            }
                 .font(.headline.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -263,9 +277,9 @@ struct EmptyPlaceholder: View {
     var body: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 8) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.headline.weight(.medium))
-                Text(message)
+                Text(LocalizedStringKey(message))
                     .font(.subheadline.weight(.regular))
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
             }
@@ -385,23 +399,6 @@ struct ProofAttachmentPanel: View {
                 .buttonStyle(.plain)
                 .disabled(isAtLimit)
             }
-
-            #if DEBUG
-            Button {
-                addDemoAttachment()
-            } label: {
-                Label("添加演示凭证", systemImage: "doc.badge.plus")
-                    .font(.caption.weight(.medium))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .foregroundStyle(isAtLimit ? BNBUTheme.muted : BNBUTheme.ink)
-                    .background(BNBUTheme.surface)
-                    .bnbuOutlinedSurface(radius: BNBURadius.extraLarge, lineWidth: 1.5)
-            }
-            .buttonStyle(.plain)
-            .disabled(isAtLimit)
-            .accessibilityIdentifier("proof.demo.add")
-            #endif
 
             VStack(spacing: 8) {
                 PermissionStatusLine(
@@ -560,37 +557,6 @@ struct ProofAttachmentPanel: View {
             )
         )
         attachmentNotice = "已添加 1 个拍摄占位凭证。"
-    }
-
-    private func addDemoAttachment() {
-        guard !isAtLimit else {
-            attachmentNotice = "已达到凭证数量上限。"
-            return
-        }
-        let nextIndex = attachments.count + 1
-        let preferredType: ProofMediaType = nextIndex.isMultiple(of: 3) ? .video : .image
-        let fallbackType: ProofMediaType = preferredType == .video ? .image : .video
-        let type = canAccept(preferredType) ? preferredType : fallbackType
-        guard canAccept(type) else {
-            attachmentNotice = limitNotice(for: preferredType)
-            return
-        }
-        let demoImageData = ProofThumbnailRenderer.demoThumbnailData(type: type, index: nextIndex)
-        appendAttachment(
-            ProofAttachment(
-                id: UUID().uuidString,
-                type: type,
-                fileName: type == .video ? "demo-running-proof-\(nextIndex).mov" : "demo-running-proof-\(nextIndex).jpg",
-                byteCount: type == .video ? 12_400_000 : (demoImageData?.count ?? 1_280_000),
-                durationSeconds: type == .video ? 18 : nil,
-                thumbnailData: demoImageData,
-                // Demo images carry real bytes so the remote Debug flow can exercise
-                // the full upload + submit chain; demo videos stay preview-only.
-                uploadData: type == .image ? demoImageData : nil,
-                source: "演示",
-                mimeType: type == .image ? "image/jpeg" : nil
-            )
-        )
     }
 
     private func handlePhotoLibraryAction() {
@@ -943,7 +909,7 @@ private struct PermissionStatusLine: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(BNBUTheme.blue)
                 .frame(width: 20)
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(BNBUTheme.ink)
             Spacer()
@@ -1150,7 +1116,7 @@ struct DetailFactRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(BNBUTheme.ink)
             Spacer()

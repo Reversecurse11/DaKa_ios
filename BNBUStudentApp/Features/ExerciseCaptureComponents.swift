@@ -20,7 +20,11 @@ struct ExerciseCameraCaptureButton: View {
         Button {
             handleCameraAction()
         } label: {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(LocalizedStringKey(title))
+            } icon: {
+                Image(systemName: systemImage)
+            }
                 .font(.subheadline.weight(.medium))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -108,46 +112,6 @@ private enum ExerciseCameraAlert: Identifiable {
     }
 }
 
-#if DEBUG
-/// Simulator/UI-test stand-in for the real camera: produces an image
-/// attachment with real bytes so the full draft → upload chain still works.
-struct ExerciseSimulatedCaptureButton: View {
-    let index: Int
-    var accessibilityIdentifier = "proof.demo.add"
-    var isDisabled = false
-    let onCapture: (ProofAttachment) -> Void
-
-    var body: some View {
-        Button {
-            let demoData = ProofThumbnailRenderer.demoThumbnailData(type: .image, index: index)
-            onCapture(
-                ProofAttachment(
-                    id: UUID().uuidString,
-                    type: .image,
-                    fileName: "sim-camera-\(index).jpg",
-                    byteCount: demoData?.count ?? 0,
-                    thumbnailData: demoData,
-                    uploadData: demoData,
-                    source: "摄像头",
-                    mimeType: "image/jpeg"
-                )
-            )
-        } label: {
-            Label("模拟拍摄（调试）", systemImage: "camera.badge.clock")
-                .font(.caption.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .foregroundStyle(isDisabled ? BNBUTheme.muted : BNBUTheme.ink)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(radius: BNBURadius.extraLarge, lineWidth: 1.5)
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .accessibilityIdentifier(accessibilityIdentifier)
-    }
-}
-#endif
-
 /// Draft picker shown in the evidence form: the student selects check-in
 /// proofs from media captured during/after the exercise. Selection is capped
 /// at 6 photos + 1 video (business rule 6.1).
@@ -228,6 +192,7 @@ struct ExerciseProofSelectionPanel: View {
 }
 
 struct ExerciseMediaDraftCard: View {
+    @Environment(\.locale) private var locale
     let draft: ExerciseMediaDraft
     let isSelected: Bool
     let toggleAction: () -> Void
@@ -297,7 +262,14 @@ struct ExerciseMediaDraftCard: View {
     }
 
     private var metadataText: String {
-        var parts: [String] = [draft.capturedAt.formatted(date: .omitted, time: .shortened)]
+        var parts: [String] = [
+            draft.capturedAt.formatted(
+                Date.FormatStyle()
+                    .hour()
+                    .minute()
+                    .locale(locale)
+            )
+        ]
         if let durationSeconds = draft.durationSeconds {
             parts.append("\(Int(durationSeconds.rounded())) 秒")
         }

@@ -7,7 +7,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-completed-exercise"]
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-completed-exercise",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
         app.launch()
     }
 
@@ -34,6 +40,81 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["组织认证与抵扣记录"].exists)
     }
 
+    func testSystemLanguageChineseUpdatesCoreNavigation() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["tab.dashboard"].label, "首页")
+        XCTAssertEqual(app.buttons["tab.courses"].label, "课程")
+        XCTAssertEqual(app.buttons["tab.checkin"].label, "打卡")
+        XCTAssertEqual(app.buttons["tab.grades"].label, "成绩")
+        XCTAssertEqual(app.buttons["tab.profile"].label, "我的")
+    }
+
+    func testSystemLanguageEnglishUpdatesCoreNavigation() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-completed-exercise",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["tab.dashboard"].label, "Home")
+        XCTAssertEqual(app.buttons["tab.courses"].label, "Courses")
+        XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
+        XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
+        XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+    }
+
+    func testUnsupportedSystemLanguageFallsBackToEnglishNavigation() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-completed-exercise",
+            "-AppleLanguages", "(ja)",
+            "-AppleLocale", "ja_JP"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["tab.dashboard"].label, "Home")
+        XCTAssertEqual(app.buttons["tab.courses"].label, "Courses")
+        XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
+        XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
+        XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+    }
+
+    func testManualLanguageSwitchUpdatesNavigationWithoutRelaunch() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        openTab(label: "我的", screenIdentifier: "screen.profile")
+
+        let languagePicker = app.segmentedControls["profile.language.picker"]
+        for _ in 0..<6 where !languagePicker.waitForExistence(timeout: 0.5) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(languagePicker.waitForExistence(timeout: 2))
+        languagePicker.buttons["English"].tap()
+
+        let homeLabelUpdated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "Home"),
+            object: app.buttons["tab.dashboard"]
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [homeLabelUpdated], timeout: 3),
+            .completed
+        )
+        XCTAssertEqual(app.buttons["tab.dashboard"].label, "Home")
+        XCTAssertEqual(app.buttons["tab.courses"].label, "Courses")
+        XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
+        XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
+        XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+    }
+
     func testSubmitDraftAndSubmittedRecordFlow() throws {
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
@@ -49,8 +130,8 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         if noteDoneButton.waitForExistence(timeout: 2) {
             noteDoneButton.tap()
         }
-
-        scrollToAndTap(app.buttons["proof.demo.add"])
+        XCTAssertFalse(app.buttons["proof.demo.add"].exists)
+        XCTAssertFalse(app.staticTexts["模拟拍摄（调试）"].exists)
         scrollToAndTap(app.buttons["保存草稿"])
         XCTAssertTrue(app.buttons["草稿已保存"].waitForExistence(timeout: 2))
 
@@ -71,7 +152,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     func testExercisePauseCaptureAndUnderHourEndFlow() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise"]
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         login()
@@ -79,8 +160,9 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.segmentedControls.buttons["提交"].tap()
         XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 5))
 
-        // In-session simulated camera capture lands in the draft pool.
-        scrollToAndTap(app.buttons["checkin.capture.demo"])
+        // The launch fixture seeds one hidden draft without exposing a debug
+        // capture control in the user interface.
+        XCTAssertFalse(app.buttons["checkin.capture.demo"].exists)
         XCTAssertTrue(app.staticTexts["照片草稿 1/6"].waitForExistence(timeout: 3))
 
         // Pause freezes the timer; resume brings the session back.
@@ -114,7 +196,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     func testExerciseStartAttachesSimulatedGPSFix() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-location-check"]
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-location-check", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
 
         XCUIDevice.shared.location = XCUILocation(
             location: CLLocation(latitude: 22.3364, longitude: 114.1655)
@@ -172,17 +254,16 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["关闭"].tap()
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
-        scrollToAndTap(app.buttons["退出登录"])
-        let confirmLogoutButton = app.buttons["退出登录"].firstMatch
+        scrollToAndTap(app.buttons["profile.logout.button"], maxSwipes: 10)
         XCTAssertTrue(app.staticTexts["退出登录？"].waitForExistence(timeout: 3))
-        confirmLogoutButton.tap()
+        app.buttons["profile.logout.confirm"].firstMatch.tap()
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
     }
 
     func testEmptyStateSmokeFlow() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-empty-state", "-ui-testing-authenticated"]
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-empty-state", "-ui-testing-authenticated", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         login()
@@ -201,19 +282,19 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     func testLoginPrivacyAndEnduranceEntryFlow() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset"]
+        app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["登录前请阅读《隐私政策》"].exists)
         app.buttons["登录前请阅读《隐私政策》"].tap()
         XCTAssertTrue(app.staticTexts["隐私政策"].firstMatch.waitForExistence(timeout: 3))
-        app.buttons["完成"].tap()
+        app.buttons["privacy.done"].tap()
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated"]
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
@@ -235,12 +316,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset"]
+        app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         focusAndType(app.textFields["login.email.field"], text: account)
         focusAndType(app.secureTextFields["login.password.field"], text: password)
+        acceptPrivacyIfNeeded()
         let dismissKeyboard = app.toolbars.buttons["完成"]
         if dismissKeyboard.waitForExistence(timeout: 2) {
             dismissKeyboard.tap()
@@ -288,12 +370,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         // The remote hook installs a completed 1h exercise session after the
         // real login succeeds, so the new timer-based submit flow is testable
         // against the live server without waiting an hour.
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-remote-completed-exercise"]
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-remote-completed-exercise", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         focusAndType(app.textFields["login.email.field"], text: account)
         focusAndType(app.secureTextFields["login.password.field"], text: password)
+        acceptPrivacyIfNeeded()
         let dismissKeyboard = app.toolbars.buttons["完成"]
         if dismissKeyboard.waitForExistence(timeout: 2) {
             dismissKeyboard.tap()
@@ -317,7 +400,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
             }
         }
 
-        scrollToAndTap(app.buttons["proof.demo.add"])
+        XCTAssertFalse(app.buttons["proof.demo.add"].exists)
         attachScreenshot(named: "remote-submit-form")
 
         scrollToAndTap(app.buttons["checkin.submit.button"])
@@ -351,12 +434,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset"]
+        app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         focusAndType(app.textFields["login.email.field"], text: account)
         focusAndType(app.secureTextFields["login.password.field"], text: password)
+        acceptPrivacyIfNeeded()
         let dismissKeyboard = app.toolbars.buttons["完成"]
         if dismissKeyboard.waitForExistence(timeout: 2) {
             dismissKeyboard.tap()
@@ -450,6 +534,14 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
     }
 
+    private func acceptPrivacyIfNeeded() {
+        let consent = app.buttons["login.privacy.consent"]
+        XCTAssertTrue(consent.waitForExistence(timeout: 3))
+        if (consent.value as? String) != "已同意" {
+            consent.tap()
+        }
+    }
+
     private func screen(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
     }
@@ -457,13 +549,25 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     private func scrollToAndTap(_ element: XCUIElement, maxSwipes: Int = 6) {
         for _ in 0..<maxSwipes {
             if element.waitForExistence(timeout: 0.5), element.isHittable {
-                element.tap()
+                tapCenter(of: element)
                 return
             }
             app.swipeUp()
+            usleep(250_000)
         }
 
         XCTAssertTrue(element.waitForExistence(timeout: 2))
-        element.tap()
+        // SwiftUI can report a fully visible button inside a ScrollView as
+        // non-hittable while its custom bottom safe-area bar is present.
+        // A center-coordinate tap mirrors the physical touch and still lets
+        // the following assertion verify that the intended action fired.
+        tapCenter(of: element)
+    }
+
+    private func tapCenter(of element: XCUIElement) {
+        let frame = element.frame
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
     }
 }

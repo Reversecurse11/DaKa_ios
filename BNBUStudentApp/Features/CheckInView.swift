@@ -43,6 +43,7 @@ private enum ExerciseAutoEndAlert: Identifiable {
 struct CheckInView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
     @FocusState private var focusedField: CheckInFormField?
     @State private var selectedSegment: CheckInSegment = .submit
     @State private var selectedCategory: ExerciseCategory = .general
@@ -77,7 +78,7 @@ struct CheckInView: View {
             VStack(spacing: 0) {
                 Picker("打卡", selection: $selectedSegment) {
                     ForEach(CheckInSegment.allCases) { segment in
-                        Text(segment.rawValue).tag(segment)
+                        Text(LocalizedStringKey(segment.rawValue)).tag(segment)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -241,7 +242,7 @@ struct CheckInView: View {
                         .font(.headline.weight(.medium))
                     Picker("运动类型", selection: $selectedCategory) {
                         ForEach(ExerciseCategory.allCases) { category in
-                            Text(category.title).tag(category)
+                            Text(LocalizedStringKey(category.title)).tag(category)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -321,7 +322,7 @@ struct CheckInView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         sessionDetailRow(title: "运动项目", value: displayedSession.resolvedSportName)
-                        sessionDetailRow(title: "开始时间", value: displayedSession.startTime.formatted(date: .omitted, time: .shortened))
+                        sessionDetailRow(title: "开始时间", value: formattedTime(displayedSession.startTime))
                         if displayedSession.pausedDuration(at: context.date) > 0 {
                             sessionDetailRow(title: "暂停累计", value: formatDuration(displayedSession.pausedDuration(at: context.date)))
                         }
@@ -330,7 +331,7 @@ struct CheckInView: View {
                             value: displayedSession.locationStatus == .available ? "已获取" : "未获取（不影响计时）"
                         )
                         if displayedSession.status == .completed {
-                            sessionDetailRow(title: "结束时间", value: (displayedSession.endTime ?? context.date).formatted(date: .omitted, time: .shortened))
+                            sessionDetailRow(title: "结束时间", value: formattedTime(displayedSession.endTime ?? context.date))
                             sessionDetailRow(title: "可计学时", value: displayedSession.creditedHours().hourText)
                         }
                     }
@@ -409,15 +410,6 @@ struct CheckInView: View {
                 handleCapturedAttachment(attachment, autoSelect: false)
             }
 
-            #if DEBUG
-            ExerciseSimulatedCaptureButton(
-                index: appState.exerciseMediaDrafts.count + 1,
-                accessibilityIdentifier: "checkin.capture.demo",
-                isDisabled: !appState.canAddExercisePhotoDraft
-            ) { attachment in
-                handleCapturedAttachment(attachment, autoSelect: false)
-            }
-            #endif
         }
     }
 
@@ -515,6 +507,10 @@ struct CheckInView: View {
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(BNBUTheme.muted)
                             Spacer()
+                            Text("\(note.count)/\(CheckInInputRule.maximumDescriptionLength)")
+                                .font(.caption.monospacedDigit().weight(.medium))
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                .accessibilityLabel("已输入 \(note.count) 个字符，共可输入 \(CheckInInputRule.maximumDescriptionLength) 个字符")
                             if focusedField == .note {
                                 Button {
                                     focusedField = nil
@@ -599,16 +595,6 @@ struct CheckInView: View {
                 handleCapturedAttachment(attachment, autoSelect: true)
             }
 
-            #if DEBUG
-            ExerciseSimulatedCaptureButton(
-                index: appState.exerciseMediaDrafts.count + 1,
-                accessibilityIdentifier: "proof.demo.add",
-                isDisabled: !appState.canAddExercisePhotoDraft
-            ) { attachment in
-                handleCapturedAttachment(attachment, autoSelect: true)
-            }
-            #endif
-
             ExerciseProofSelectionPanel(
                 drafts: appState.exerciseMediaDrafts,
                 selectedDraftIDs: $selectedDraftIDs
@@ -656,7 +642,7 @@ struct CheckInView: View {
         let creditedHours = session.creditedHours()
         return !appState.hasSubmittedCheckInToday() &&
             (creditedHours == 1 || creditedHours == 2) &&
-            CheckInInputRule.validationMessage(note: note) == nil &&
+            CheckInInputRule.validationMessage(note: submissionNote(for: session)) == nil &&
             !proofAttachments.isEmpty &&
             ProofUploadRule.accepts(proofAttachments) &&
             (proofAttachments.allSatisfy(\.isValidForUpload) || canResumePendingUpload)
@@ -673,7 +659,7 @@ struct CheckInView: View {
         if session.creditedHours() != 1 && session.creditedHours() != 2 {
             return "运动不足 1 小时，不能提交。"
         }
-        if let inputMessage = CheckInInputRule.validationMessage(note: note) {
+        if let inputMessage = CheckInInputRule.validationMessage(note: submissionNote(for: session)) {
             return inputMessage
         }
         if proofAttachments.isEmpty {
@@ -695,8 +681,8 @@ struct CheckInView: View {
         guard let session = appState.exerciseSession, submissionContext != nil else {
             return "请先完成运动后再提交。"
         }
-        let startText = session.startTime.formatted(date: .omitted, time: .shortened)
-        let endText = (session.endTime ?? Date()).formatted(date: .omitted, time: .shortened)
+        let startText = formattedTime(session.startTime)
+        let endText = formattedTime(session.endTime ?? Date())
         return "\(session.category.title) · \(session.resolvedSportName)\n运动时间 \(startText) – \(endText)，实际运动 \(formatDuration(session.elapsed()))，计入 \(session.creditedHours().hourText)。\n\(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
     }
 
@@ -706,7 +692,7 @@ struct CheckInView: View {
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
             hours: session.creditedHours(),
-            note: note,
+            note: submissionNote(for: session),
             sportType: resolvedSportType,
             proofAttachments: proofAttachments
         )
@@ -759,7 +745,7 @@ struct CheckInView: View {
             clearDraftAndForm()
             return
         }
-        note = draft.note
+        note = appState.exerciseSession.map { submissionNote(draft.note, for: $0) } ?? ""
         // Proof bytes live in the media draft pool; restore the selection by
         // intersecting the saved attachment ids with what is still on disk.
         let poolIDs = Set(appState.exerciseMediaDrafts.map(\.id))
@@ -775,7 +761,7 @@ struct CheckInView: View {
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
             hours: session.creditedHours(),
-            note: note,
+            note: submissionNote(for: session),
             sportType: session.sportType.rawValue,
             customSportType: session.customSportName ?? "",
             proofAttachments: proofAttachments
@@ -813,7 +799,7 @@ struct CheckInView: View {
                 creditType: submissionContext.creditType,
                 courseId: submissionContext.courseId,
                 hours: session.creditedHours(),
-                note: note,
+                note: submissionNote(for: session),
                 sportType: resolvedSportType,
                 proofAttachments: proofAttachments,
                 exerciseSession: session
@@ -878,10 +864,18 @@ struct CheckInView: View {
         return session.sportType.rawValue
     }
 
+    private func submissionNote(for session: ExerciseSession) -> String {
+        submissionNote(note, for: session)
+    }
+
+    private func submissionNote(_ value: String, for session: ExerciseSession) -> String {
+        CheckInInputRule.normalizedDescription(value, for: session.category)
+    }
+
     @ViewBuilder
     private func sessionDetailRow(title: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
             Spacer(minLength: 16)
             Text(value)
@@ -894,6 +888,15 @@ struct CheckInView: View {
     private func formatDuration(_ duration: TimeInterval) -> String {
         let seconds = max(Int(duration), 0)
         return String(format: "%02d:%02d:%02d", seconds / 3_600, (seconds % 3_600) / 60, seconds % 60)
+    }
+
+    private func formattedTime(_ date: Date) -> String {
+        date.formatted(
+            Date.FormatStyle()
+                .hour()
+                .minute()
+                .locale(locale)
+        )
     }
 
     private func formatDurationForVoiceOver(_ duration: TimeInterval) -> String {
@@ -1010,7 +1013,7 @@ private struct SportTypeSelector: View {
                             Image(systemName: option.systemImage)
                                 .font(.headline.weight(.medium))
                                 .foregroundStyle(selected == option ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
-                            Text(option.title)
+                            Text(LocalizedStringKey(option.title))
                                 .font(.subheadline.weight(selected == option ? .semibold : .regular))
                                 .foregroundStyle(BNBUTheme.onSurface)
                             Spacer(minLength: 0)
@@ -1021,7 +1024,7 @@ private struct SportTypeSelector: View {
                         .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(option.title)
+                    .accessibilityLabel(Text(LocalizedStringKey(option.title)))
                     .accessibilityValue(selected == option ? "已选择" : "未选择")
                     .accessibilityHint(selected == option ? "双击取消选择" : "双击选择")
                     .accessibilityAddTraits(selected == option ? .isSelected : [])
@@ -1066,7 +1069,7 @@ private struct CheckInSubmissionProgressPanel: View {
             HStack(spacing: 10) {
                 Image(systemName: phaseSymbolName)
                     .foregroundStyle(BNBUTheme.primary)
-                Text(phaseTitle)
+                Text(LocalizedStringKey(phaseTitle))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(BNBUTheme.onSurface)
                 Spacer()
@@ -1083,7 +1086,7 @@ private struct CheckInSubmissionProgressPanel: View {
                     .accessibilityValue("\(Int(progress * 100))%")
             }
 
-            Text(phaseDetail)
+            phaseDetailText
                 .font(.caption.weight(.regular))
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .lineSpacing(2)
@@ -1109,16 +1112,17 @@ private struct CheckInSubmissionProgressPanel: View {
         }
     }
 
-    private var phaseDetail: String {
+    @ViewBuilder
+    private var phaseDetailText: some View {
         switch phase {
         case .idle:
-            return "正在准备本次打卡。"
+            Text("正在准备本次打卡。")
         case .uploading(let fileName, let completedFiles, let totalFiles, _):
-            return "第 \(min(completedFiles + 1, totalFiles)) / \(totalFiles) 个文件：\(fileName)"
+            Text("第 \(min(completedFiles + 1, totalFiles)) / \(totalFiles) 个文件：\(fileName)")
         case .submitting:
-            return "凭证已上传，正在等待服务器保存打卡记录。"
+            Text("凭证已上传，正在等待服务器保存打卡记录。")
         case .syncing:
-            return "服务器已接受记录，正在读取最新打卡列表。"
+            Text("服务器已接受记录，正在读取最新打卡列表。")
         }
     }
 

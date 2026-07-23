@@ -18,17 +18,20 @@
 		AA0000000000000000000009 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* DashboardView.swift */; };
 		AA0000000000000000000010 /* CoursesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* CoursesView.swift */; };
 		AA0000000000000000000011 /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* CheckInView.swift */; };
-		AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000023 /* ExerciseCaptureComponents.swift */; };
 		AA0000000000000000000012 /* GradesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* GradesView.swift */; };
 		AA0000000000000000000013 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* ProfileView.swift */; };
 		AA0000000000000000000014 /* StudentAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* StudentAPIClient.swift */; };
 		AA0000000000000000000015 /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* DetailViews.swift */; };
 		AA0000000000000000000016 /* AppLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000016 /* AppLocalStore.swift */; };
-		AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000024 /* ExerciseLocationProvider.swift */; };
 		AA0000000000000000000017 /* RemoteStudentRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000017 /* RemoteStudentRepository.swift */; };
 		AA0000000000000000000018 /* SecureCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000020 /* SecureCredentialStore.swift */; };
 		AA0000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000019 /* Assets.xcassets */; };
 		AA0000000000000000000020 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000022 /* PrivacyInfo.xcprivacy */; };
+		AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000023 /* ExerciseCaptureComponents.swift */; };
+		AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000024 /* ExerciseLocationProvider.swift */; };
+		AA0000000000000000000025 /* StudentExperienceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000025 /* StudentExperienceViews.swift */; };
+		AA0000000000000000000026 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000026 /* Localizable.xcstrings */; };
+		AA0000000000000000000027 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000027 /* InfoPlist.xcstrings */; };
 		AA0000000000000000000100 /* BNBUStudentSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000100 /* BNBUStudentSmokeUITests.swift */; };
 		AA0000000000000000000200 /* BNBUStudentModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000200 /* BNBUStudentModelTests.swift */; };
 /* End PBXBuildFile section */
@@ -63,19 +66,22 @@
 		BB0000000000000000000009 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000010 /* CoursesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoursesView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* CheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
-		BB0000000000000000000023 /* ExerciseCaptureComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCaptureComponents.swift; sourceTree = "<group>"; };
 		BB0000000000000000000012 /* GradesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradesView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000013 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000014 /* StudentAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentAPIClient.swift; sourceTree = "<group>"; };
 		BB0000000000000000000015 /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000016 /* AppLocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalStore.swift; sourceTree = "<group>"; };
-		BB0000000000000000000024 /* ExerciseLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLocationProvider.swift; sourceTree = "<group>"; };
 		BB0000000000000000000017 /* RemoteStudentRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteStudentRepository.swift; sourceTree = "<group>"; };
 		BB0000000000000000000018 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB0000000000000000000019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB0000000000000000000020 /* SecureCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureCredentialStore.swift; sourceTree = "<group>"; };
 		BB0000000000000000000021 /* Info-Debug.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Debug.plist"; sourceTree = "<group>"; };
 		BB0000000000000000000022 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		BB0000000000000000000023 /* ExerciseCaptureComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCaptureComponents.swift; sourceTree = "<group>"; };
+		BB0000000000000000000024 /* ExerciseLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLocationProvider.swift; sourceTree = "<group>"; };
+		BB0000000000000000000025 /* StudentExperienceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentExperienceViews.swift; sourceTree = "<group>"; };
+		BB0000000000000000000026 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		BB0000000000000000000027 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		BB0000000000000000000100 /* BNBUStudentSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BNBUStudentSmokeUITests.swift; sourceTree = "<group>"; };
 		BB0000000000000000000101 /* BNBUStudentUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BNBUStudentUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000200 /* BNBUStudentModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BNBUStudentModelTests.swift; sourceTree = "<group>"; };
@@ -157,6 +163,7 @@
 				BB0000000000000000000012 /* GradesView.swift */,
 				BB0000000000000000000013 /* ProfileView.swift */,
 				BB0000000000000000000015 /* DetailViews.swift */,
+				BB0000000000000000000025 /* StudentExperienceViews.swift */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -168,6 +175,8 @@
 				BB0000000000000000000021 /* Info-Debug.plist */,
 				BB0000000000000000000022 /* PrivacyInfo.xcprivacy */,
 				BB0000000000000000000019 /* Assets.xcassets */,
+				BB0000000000000000000026 /* Localizable.xcstrings */,
+				BB0000000000000000000027 /* InfoPlist.xcstrings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -280,10 +289,11 @@
 			};
 			buildConfigurationList = FF0000000000000000000001 /* Build configuration list for PBXProject "BNBUStudent" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = DD0000000000000000000001;
@@ -305,6 +315,8 @@
 			files = (
 				AA0000000000000000000019 /* Assets.xcassets in Resources */,
 				AA0000000000000000000020 /* PrivacyInfo.xcprivacy in Resources */,
+				AA0000000000000000000026 /* Localizable.xcstrings in Resources */,
+				AA0000000000000000000027 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -323,6 +335,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		CC0000000000000000000004 /* Validate Release Configuration */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/validate-release-config.sh",
+			);
+			name = "Validate Release Configuration";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/validate-release-config.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		CC0000000000000000000002 /* Sources */ = {
@@ -349,6 +384,7 @@
 				AA0000000000000000000015 /* DetailViews.swift in Sources */,
 				AA0000000000000000000016 /* AppLocalStore.swift in Sources */,
 				AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */,
+				AA0000000000000000000025 /* StudentExperienceViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -369,29 +405,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		CC0000000000000000000004 /* Validate Release Configuration */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/scripts/validate-release-config.sh",
-			);
-			name = "Validate Release Configuration";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"${SRCROOT}/scripts/validate-release-config.sh\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXTargetDependency section */
 		HH0000000000000000000100 /* PBXTargetDependency */ = {
@@ -517,9 +530,9 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRIP_INSTALLED_PRODUCT = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				STRIP_INSTALLED_PRODUCT = YES;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -532,7 +545,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 29T9XQFV8P;
+				DEVELOPMENT_TEAM = 2KZNTP97UF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "BNBUStudentApp/Resources/Info-Debug.plist";
@@ -564,7 +577,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 29T9XQFV8P;
+				DEVELOPMENT_TEAM = 2KZNTP97UF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BNBUStudentApp/Resources/Info.plist;
@@ -581,8 +594,8 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphonesimulator iphoneos";
 				SUPPORTS_MACCATALYST = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = RELEASE;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = targeted;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -595,7 +608,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2KZNTP97UF;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -621,7 +634,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2KZNTP97UF;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -648,7 +661,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2KZNTP97UF;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -675,7 +688,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2KZNTP97UF;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (

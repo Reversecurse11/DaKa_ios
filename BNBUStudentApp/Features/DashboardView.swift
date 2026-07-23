@@ -252,7 +252,7 @@ private struct ActionMiniMetric: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(BNBUTheme.muted)
             Text(value)
@@ -273,7 +273,11 @@ private struct DashboardShortcutButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(LocalizedStringKey(title))
+            } icon: {
+                Image(systemName: systemImage)
+            }
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -295,7 +299,7 @@ private struct ProgressLine: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.subheadline.weight(.medium))
                 Spacer()
                 Text("\(value.hourText) / \(total.hourText)")
@@ -314,7 +318,11 @@ struct NoticeRow: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label(notice.category.rawValue, systemImage: notice.category.symbolName)
+                    Label {
+                        Text(LocalizedStringKey(notice.category.rawValue))
+                    } icon: {
+                        Image(systemName: notice.category.symbolName)
+                    }
                         .font(.caption.weight(.medium))
                         .foregroundStyle(BNBUTheme.blue)
                     Spacer()
@@ -375,7 +383,7 @@ private struct NotificationCenterSheet: View {
 
                 Picker("通知筛选", selection: $selectedFilter) {
                     ForEach(DashboardNotificationFilter.allCases) { filter in
-                        Text(filter.rawValue).tag(filter)
+                        Text(LocalizedStringKey(filter.rawValue)).tag(filter)
                     }
                 }
                 .pickerStyle(.segmented)

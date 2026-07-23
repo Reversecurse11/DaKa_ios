@@ -1276,6 +1276,11 @@ enum CheckInInputRule {
     /// spec is published with the OpenAPI document.
     static let maximumDescriptionLength = 200
 
+    static func normalizedDescription(_ note: String, for category: ExerciseCategory) -> String {
+        _ = category
+        return note.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func validationMessage(note: String) -> String? {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {

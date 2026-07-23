@@ -43,6 +43,74 @@ enum BNBUAppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum BNBULanguage: String, CaseIterable, Identifiable {
+    case system
+    case simplifiedChinese
+    case english
+
+    static let defaultsKey = "bnbu.language.mode.v1"
+    static let defaultMode: BNBULanguage = .system
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "系统"
+        case .simplifiedChinese: return "简体中文"
+        case .english: return "English"
+        }
+    }
+
+    var locale: Locale {
+        switch self {
+        case .system: return .autoupdatingCurrent
+        case .simplifiedChinese: return Locale(identifier: "zh-Hans")
+        case .english: return Locale(identifier: "en")
+        }
+    }
+
+    /// The student app currently ships Simplified Chinese and English.
+    /// Treat every Chinese system language as Simplified Chinese and use
+    /// English for all other system languages instead of falling back to the
+    /// development language.
+    static func supportedSystemLocaleIdentifier(
+        preferredLanguages: [String] = Locale.preferredLanguages
+    ) -> String {
+        guard let preferredLanguage = preferredLanguages.first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !preferredLanguage.isEmpty else {
+            return english.locale.identifier
+        }
+        return preferredLanguage.hasPrefix("zh")
+            ? simplifiedChinese.locale.identifier
+            : english.locale.identifier
+    }
+}
+
+@MainActor
+final class BNBULanguageSettings: ObservableObject {
+    @Published private(set) var mode: BNBULanguage
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        mode = defaults.string(forKey: BNBULanguage.defaultsKey)
+            .flatMap(BNBULanguage.init(rawValue:))
+            ?? .defaultMode
+    }
+
+    func select(rawValue: String) {
+        guard let selectedMode = BNBULanguage(rawValue: rawValue),
+              selectedMode != mode else {
+            return
+        }
+        mode = selectedMode
+        defaults.set(selectedMode.rawValue, forKey: BNBULanguage.defaultsKey)
+    }
+}
+
 enum BNBUSpacing {
     static let screen: CGFloat = 18
     static let panel: CGFloat = 16

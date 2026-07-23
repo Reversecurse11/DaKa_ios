@@ -247,7 +247,7 @@ struct ExemptionApplicationRow: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(application.item.rawValue)
+                        Text(LocalizedStringKey(application.item.rawValue))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(BNBUTheme.ink)
                         Spacer()
@@ -351,7 +351,7 @@ struct ExemptionApplicationSheet: View {
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
-            .navigationTitle(mode.title)
+            .navigationTitle(LocalizedStringKey(mode.title))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -375,7 +375,7 @@ struct ExemptionApplicationSheet: View {
                 isPresented: $isConfirmationPresented,
                 titleVisibility: .visible
             ) {
-                Button(mode.submitTitle) {
+                Button {
                     focusedField = nil
                     dismissBNBUKeyboard()
                     Task {
@@ -383,6 +383,8 @@ struct ExemptionApplicationSheet: View {
                             dismiss()
                         }
                     }
+                } label: {
+                    Text(LocalizedStringKey(mode.submitTitle))
                 }
                 Button("取消", role: .cancel) {}
             } message: {
@@ -404,7 +406,12 @@ struct ExemptionApplicationSheet: View {
                         .font(.subheadline.weight(.medium))
                     Picker("申请项目", selection: $selectedItem) {
                         ForEach(ExemptionItem.allCases) { item in
-                            Label(item.rawValue, systemImage: item.symbolName).tag(item)
+                            Label {
+                                Text(LocalizedStringKey(item.rawValue))
+                            } icon: {
+                                Image(systemName: item.symbolName)
+                            }
+                            .tag(item)
                         }
                     }
                     .pickerStyle(.menu)
@@ -445,7 +452,7 @@ struct ExemptionApplicationSheet: View {
                         .bnbuOutlinedSurface(lineWidth: 1.5)
                         .focused($focusedField, equals: .detail)
                         .accessibilityIdentifier("exemption.detail.editor")
-                    Text(selectedItem.proofHint)
+                    Text(LocalizedStringKey(selectedItem.proofHint))
                         .font(.caption.weight(.regular))
                         .foregroundStyle(BNBUTheme.muted)
                 }

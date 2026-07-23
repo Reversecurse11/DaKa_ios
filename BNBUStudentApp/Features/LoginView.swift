@@ -1,8 +1,47 @@
+import Foundation
 import SwiftUI
 
 private enum LoginFormField: Hashable {
     case account
     case password
+}
+
+enum BNBUPrivacyConsent {
+    static let currentVersion = "2026-07-23"
+    static let defaultsKeyPrefix = "bnbu.privacy.consent.v1."
+
+    static func normalizedAccount(_ account: String) -> String {
+        account.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func hasAccepted(account: String, defaults: UserDefaults = .standard) -> Bool {
+        let normalized = normalizedAccount(account)
+        guard !normalized.isEmpty,
+              let record = defaults.dictionary(forKey: defaultsKeyPrefix + normalized) else {
+            return false
+        }
+        return record["version"] as? String == currentVersion &&
+            record["acceptedAt"] as? String != nil
+    }
+
+    static func recordAcceptance(account: String, defaults: UserDefaults = .standard) {
+        let normalized = normalizedAccount(account)
+        guard !normalized.isEmpty else { return }
+        defaults.set(
+            [
+                "version": currentVersion,
+                "acceptedAt": ISO8601DateFormatter().string(from: Date())
+            ],
+            forKey: defaultsKeyPrefix + normalized
+        )
+    }
+
+    static func clearAll(defaults: UserDefaults = .standard) {
+        for key in defaults.dictionaryRepresentation().keys
+            where key.hasPrefix(defaultsKeyPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+    }
 }
 
 struct LoginView: View {
@@ -12,6 +51,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var passwordVisible = false
     @State private var showPrivacyPolicy = false
+    @State private var agreedToPrivacy = false
 
     var body: some View {
         ZStack {
@@ -32,12 +72,19 @@ struct LoginView: View {
             .scrollDismissesKeyboard(.immediately)
         }
         .accessibilityIdentifier("screen.login")
+        .onAppear {
+            agreedToPrivacy = BNBUPrivacyConsent.hasAccepted(account: account)
+        }
+        .onChange(of: account) { _, newValue in
+            agreedToPrivacy = BNBUPrivacyConsent.hasAccepted(account: newValue)
+        }
         .sheet(isPresented: $showPrivacyPolicy) {
             NavigationStack {
                 PrivacyPolicyView()
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") { showPrivacyPolicy = false }
+                                .accessibilityIdentifier("privacy.done")
                         }
                     }
             }
@@ -150,6 +197,24 @@ struct LoginView: View {
                 .foregroundStyle(BNBUTheme.primary)
                 .frame(maxWidth: .infinity)
                 .buttonStyle(.plain)
+
+                Button {
+                    agreedToPrivacy.toggle()
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: agreedToPrivacy ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(agreedToPrivacy ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+                        Text("我已阅读并同意当前版本《隐私政策》")
+                            .font(.subheadline.weight(.regular))
+                            .foregroundStyle(BNBUTheme.onSurface)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("login.privacy.consent")
+                .accessibilityValue(agreedToPrivacy ? "已同意" : "未同意")
             }
         }
     }
@@ -173,6 +238,7 @@ struct LoginView: View {
     private var canLogin: Bool {
         !account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !password.isEmpty &&
+            agreedToPrivacy &&
             !appState.isLoading
     }
 
@@ -180,6 +246,7 @@ struct LoginView: View {
         guard canLogin else { return }
         focusedField = nil
         dismissBNBUKeyboard()
+        BNBUPrivacyConsent.recordAcceptance(account: account)
         Task {
             await appState.login(
                 account: account.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -212,7 +279,7 @@ struct PrivacyPolicyView: View {
                         "您可以查看自己的学时、成绩和打卡记录；如需更正或删除服务器数据，请联系体育老师或系统管理员。"
                     ])
                     privacySection("五、政策更新", paragraphs: [
-                        "重大变更将通过 App 内通知或学校公告告知。最新修订日期：2026 年 7 月 15 日。"
+                        "重大变更将通过 App 内通知或学校公告告知。最新修订日期：2026 年 7 月 23 日。"
                     ])
                 }
                 .padding(BNBUSpacing.screen)
@@ -225,10 +292,10 @@ struct PrivacyPolicyView: View {
     private func privacySection(_ title: String, paragraphs: [String]) -> some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 10) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.headline.weight(.medium))
                 ForEach(paragraphs, id: \.self) { paragraph in
-                    Text(paragraph)
+                    Text(LocalizedStringKey(paragraph))
                         .font(.subheadline.weight(.regular))
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .lineSpacing(3)

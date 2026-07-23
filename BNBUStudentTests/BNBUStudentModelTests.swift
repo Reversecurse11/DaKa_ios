@@ -732,6 +732,68 @@ final class BNBUStudentModelTests: XCTestCase {
     // Business rule 5.7 + Q&A 7/23 Q5: the sport note is required and capped
     // at 200 characters.
     func testCheckInDescriptionStopsAboveTwoHundredCharacters() async {
+        XCTAssertEqual(BNBULanguage.defaultMode, .system)
+        XCTAssertEqual(
+            BNBULanguage.supportedSystemLocaleIdentifier(preferredLanguages: ["zh-Hans-CN"]),
+            "zh-Hans"
+        )
+        XCTAssertEqual(
+            BNBULanguage.supportedSystemLocaleIdentifier(preferredLanguages: ["zh-Hant-HK"]),
+            "zh-Hans"
+        )
+        XCTAssertEqual(
+            BNBULanguage.supportedSystemLocaleIdentifier(preferredLanguages: ["en-US"]),
+            "en"
+        )
+        XCTAssertEqual(
+            BNBULanguage.supportedSystemLocaleIdentifier(preferredLanguages: ["ja-JP"]),
+            "en"
+        )
+        XCTAssertEqual(
+            BNBULanguage.supportedSystemLocaleIdentifier(preferredLanguages: []),
+            "en"
+        )
+        let consentSuiteName = "bnbu.privacy.tests.\(UUID().uuidString)"
+        let consentDefaults = UserDefaults(suiteName: consentSuiteName)!
+        defer {
+            consentDefaults.removePersistentDomain(forName: consentSuiteName)
+        }
+        XCTAssertFalse(
+            BNBUPrivacyConsent.hasAccepted(account: " Student@BNBU.edu.cn ", defaults: consentDefaults)
+        )
+        BNBUPrivacyConsent.recordAcceptance(
+            account: " Student@BNBU.edu.cn ",
+            defaults: consentDefaults
+        )
+        XCTAssertTrue(
+            BNBUPrivacyConsent.hasAccepted(account: "student@bnbu.edu.cn", defaults: consentDefaults)
+        )
+        XCTAssertNotNil(
+            consentDefaults.dictionary(
+                forKey: BNBUPrivacyConsent.defaultsKeyPrefix + "student@bnbu.edu.cn"
+            )?["acceptedAt"]
+        )
+        XCTAssertEqual(
+            BNBUOnboarding.completedVersion(studentID: "student-a", defaults: consentDefaults),
+            0
+        )
+        BNBUOnboarding.markCompleted(studentID: "student-a", defaults: consentDefaults)
+        XCTAssertEqual(
+            BNBUOnboarding.completedVersion(studentID: "student-a", defaults: consentDefaults),
+            BNBUOnboarding.currentVersion
+        )
+        XCTAssertEqual(
+            BNBUOnboarding.completedVersion(studentID: "student-b", defaults: consentDefaults),
+            0
+        )
+        let languageSettings = BNBULanguageSettings(defaults: consentDefaults)
+        XCTAssertEqual(languageSettings.mode, .system)
+        languageSettings.select(rawValue: BNBULanguage.english.rawValue)
+        XCTAssertEqual(languageSettings.mode, .english)
+        XCTAssertEqual(
+            consentDefaults.string(forKey: BNBULanguage.defaultsKey),
+            BNBULanguage.english.rawValue
+        )
         XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
         XCTAssertEqual(CheckInInputRule.validationMessage(note: "  \n"), "请填写运动说明。")
         XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 200)))
@@ -739,6 +801,18 @@ final class BNBUStudentModelTests: XCTestCase {
             CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 201)),
             "运动说明不能超过 200 个字符。"
         )
+        XCTAssertEqual(
+            CheckInInputRule.normalizedDescription("晚间慢跑", for: .general),
+            "晚间慢跑"
+        )
+        XCTAssertEqual(
+            CheckInInputRule.normalizedDescription("  课程训练说明  ", for: .courseRelated),
+            "课程训练说明"
+        )
+        XCTAssertEqual(BNBUNotificationManager.route(from: ["route": "course"]), .courses)
+        XCTAssertEqual(BNBUNotificationManager.route(from: ["target": "sport_record"]), .checkin)
+        XCTAssertEqual(BNBUNotificationManager.route(from: ["type": "grade"]), .grades)
+        XCTAssertEqual(BNBUNotificationManager.route(from: [:]), .dashboard)
 
         let appState = AppState(
             repository: MockStudentRepository(),

@@ -2,10 +2,13 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var languageSettings: BNBULanguageSettings
     @AppStorage(BNBUAppearanceMode.defaultsKey) private var appearanceModeRaw = BNBUAppearanceMode.light.rawValue
     @State private var showExemptionCenter = false
     @State private var showPrivacyPolicy = false
     @State private var showEnduranceScoring = false
+    @State private var showHelpCenter = false
+    @State private var showOnboarding = false
     @State private var showLogoutConfirmation = false
     @State private var showPendingDiscardConfirmation = false
     @State private var pendingScopeToDiscard: String?
@@ -22,7 +25,9 @@ struct ProfileView: View {
                     teacherPanel
                     identityPanel
                     settingsPanel
-                    Spacer(minLength: 40)
+                    // Keep the last action fully above the custom bottom bar
+                    // after the settings section grows.
+                    Spacer(minLength: 120)
                 }
                 .padding(BNBUSpacing.screen)
             }
@@ -38,6 +43,7 @@ struct ProfileView: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("完成") { showPrivacyPolicy = false }
+                                .accessibilityIdentifier("privacy.done")
                         }
                     }
             }
@@ -45,6 +51,14 @@ struct ProfileView: View {
         .sheet(isPresented: $showEnduranceScoring) {
             EnduranceScoringSheet()
                 .environmentObject(appState)
+        }
+        .sheet(isPresented: $showHelpCenter) {
+            HelpCenterView()
+        }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView {
+                showOnboarding = false
+            }
         }
         .confirmationDialog(
             "退出登录？",
@@ -54,6 +68,7 @@ struct ProfileView: View {
             Button("退出登录", role: .destructive) {
                 Task { await appState.logout() }
             }
+            .accessibilityIdentifier("profile.logout.confirm")
             Button("取消", role: .cancel) {}
         } message: {
             Text("将清理本机登录凭据、当前账号缓存、未提交草稿和全部待重试操作。")
@@ -286,12 +301,33 @@ struct ProfileView: View {
             }
 
             SwissPanel {
+                VStack(spacing: 10) {
+                    SecondaryActionButton(title: "帮助中心", systemImage: "questionmark.circle") {
+                        showHelpCenter = true
+                    }
+                    SecondaryActionButton(title: "重新查看新手引导", systemImage: "sparkles.rectangle.stack") {
+                        showOnboarding = true
+                    }
+                    SecondaryActionButton(title: "隐私政策", systemImage: "hand.raised") {
+                        showPrivacyPolicy = true
+                    }
+                    PrimaryActionButton(
+                        title: "退出登录",
+                        systemImage: "rectangle.portrait.and.arrow.right",
+                        accessibilityIdentifier: "profile.logout.button"
+                    ) {
+                        showLogoutConfirmation = true
+                    }
+                }
+            }
+
+            SwissPanel {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("外观模式")
                         .font(.headline.weight(.medium))
                     Picker("外观模式", selection: $appearanceModeRaw) {
                         ForEach(BNBUAppearanceMode.allCases) { mode in
-                            Text(shortAppearanceTitle(mode)).tag(mode.rawValue)
+                            Text(LocalizedStringKey(shortAppearanceTitle(mode))).tag(mode.rawValue)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -302,15 +338,22 @@ struct ProfileView: View {
             }
 
             SwissPanel {
-                VStack(spacing: 10) {
-                    SecondaryActionButton(title: "隐私政策", systemImage: "hand.raised") {
-                        showPrivacyPolicy = true
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("语言")
+                        .font(.headline.weight(.medium))
+                    Picker("语言", selection: languageSelection) {
+                        ForEach(BNBULanguage.allCases) { language in
+                            Text(LocalizedStringKey(language.title)).tag(language.rawValue)
+                        }
                     }
-                    PrimaryActionButton(title: "退出登录", systemImage: "rectangle.portrait.and.arrow.right") {
-                        showLogoutConfirmation = true
-                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("profile.language.picker")
+                    Text("切换后立即生效；选择跟随系统后会随设备语言更新。课程名称等由教师或管理员录入的数据内容保持原文。")
+                        .font(.caption.weight(.regular))
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
             }
+
         }
     }
 
@@ -320,6 +363,15 @@ struct ProfileView: View {
         case .dark: return "深色"
         case .system: return "跟随系统"
         }
+    }
+
+    private var languageSelection: Binding<String> {
+        Binding(
+            get: { languageSettings.mode.rawValue },
+            set: { newValue in
+                languageSettings.select(rawValue: newValue)
+            }
+        )
     }
 }
 
@@ -339,10 +391,10 @@ private struct ProfileNavigationCard: View {
                         .foregroundStyle(BNBUTheme.primary)
                         .frame(width: 24)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
+                        Text(LocalizedStringKey(title))
                             .font(.headline.weight(.medium))
                             .foregroundStyle(BNBUTheme.onSurface)
-                        Text(detail)
+                        Text(LocalizedStringKey(detail))
                             .font(.caption.weight(.regular))
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
@@ -363,7 +415,7 @@ struct SettingLine: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(.subheadline.weight(.medium))
             Spacer()
             Text(value)

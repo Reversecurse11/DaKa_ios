@@ -169,7 +169,11 @@ struct NoticeDetailView: View {
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Label(currentNotice.category.rawValue, systemImage: currentNotice.category.symbolName)
+                                Label {
+                                    Text(LocalizedStringKey(currentNotice.category.rawValue))
+                                } icon: {
+                                    Image(systemName: currentNotice.category.symbolName)
+                                }
                                     .font(.headline.weight(.medium))
                                     .foregroundStyle(BNBUTheme.blue)
                                 Spacer()

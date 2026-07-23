@@ -601,15 +601,36 @@ final class AppState: ObservableObject {
             at: startTime
         ) else { return }
         _ = endExerciseSession(at: date)
+        installExerciseProofForUITesting(saveSelection: true, at: date)
     }
 
     func installActiveExerciseSessionForUITesting(at date: Date = Date()) {
         discardExerciseSession()
-        _ = startExerciseSession(
+        guard startExerciseSession(
             category: .general,
             sportType: .running,
             customSportName: "",
             at: date.addingTimeInterval(-10 * 60)
+        ) else { return }
+        installExerciseProofForUITesting(saveSelection: false, at: date)
+    }
+
+    private func installExerciseProofForUITesting(saveSelection: Bool, at date: Date) {
+        guard let imageData = ProofThumbnailRenderer.demoThumbnailData(type: .image, index: 1),
+              addExercisePhotoDraft(imageData: imageData, thumbnailData: imageData, at: date),
+              let mediaDraft = exerciseMediaDrafts.last else { return }
+        guard saveSelection,
+              let session = exerciseSession,
+              let context = submissionContext(for: session),
+              let attachment = proofAttachment(from: mediaDraft) else { return }
+        saveDraft(
+            creditType: context.creditType,
+            courseId: context.courseId,
+            hours: session.creditedHours(),
+            note: "",
+            sportType: session.sportType.rawValue,
+            customSportType: session.customSportName ?? "",
+            proofAttachments: [attachment]
         )
     }
 #endif

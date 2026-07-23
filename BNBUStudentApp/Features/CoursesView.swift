@@ -132,7 +132,7 @@ private struct CourseCard: View {
                 }
 
                 HStack {
-                    Text(isCurrent ? "当前教学班" : "历史学期")
+                    Text(LocalizedStringKey(isCurrent ? "当前教学班" : "历史学期"))
                         .font(.subheadline.weight(.regular))
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     Spacer()
