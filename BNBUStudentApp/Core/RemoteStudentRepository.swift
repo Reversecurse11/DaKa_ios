@@ -108,7 +108,7 @@ struct WorkspacePayload: Decodable {
                 physical: 0,
                 total: 0,
                 sourceTrace: "server:grades-missing",
-                missingItems: ["成绩暂未返回"]
+                missingItems: [BNBUL10n.text("成绩暂未返回")]
             ),
             memberships: memberships,
             notices: notices,
@@ -367,7 +367,7 @@ struct StudentGradesPayload: Decodable {
             physical: summary.overallPhysical ?? average(\.physical),
             total: summary.overallTotal ?? average(\.total),
             sourceTrace: grades.compactMap(\.sourceTrace).first ?? "API: /student/grades",
-            missingItems: grades.isEmpty ? ["成绩尚未录入"] : []
+            missingItems: grades.isEmpty ? [BNBUL10n.text("成绩尚未录入")] : []
         )
     }
 
@@ -656,9 +656,9 @@ actor RemoteStudentRepository {
             taskTitle: taskTitle,
             creditType: resolvedCreditType(from: creditType),
             hours: hours,
-            submittedAt: "刚刚",
+            submittedAt: RecentTimestamp.justNow,
             validity: .valid,
-            proofSummary: proofFiles.isEmpty ? "未添加凭证" : "\(proofFiles.count) 个凭证",
+            proofSummary: proofFiles.isEmpty ? BNBUL10n.text("未添加凭证") : BNBUL10n.text("\(proofFiles.count) 个凭证"),
             proofPhotoCount: 0,
             proofVideoCount: 0,
             proofFiles: [],
@@ -760,11 +760,11 @@ actor RemoteStudentRepository {
             item: resolvedExemptionItem(from: item),
             reason: reason,
             detail: detail,
-            submittedAt: "刚刚",
+            submittedAt: RecentTimestamp.justNow,
             status: .pending,
             proofFiles: remoteProofAttachments(from: proofFiles),
-            teacherFeedback: "免测申请已提交到服务器，等待老师审核。",
-            updatedAt: "刚刚"
+            teacherFeedback: BNBUL10n.text("免测申请已提交到服务器，等待老师审核。"),
+            updatedAt: RecentTimestamp.justNow
         )
     }
 
@@ -803,9 +803,9 @@ actor RemoteStudentRepository {
             submittedAt: application.submittedAt,
             status: .pending,
             proofFiles: remoteProofAttachments(from: proofFiles),
-            teacherFeedback: "补充材料已提交到服务器，等待老师复审。",
+            teacherFeedback: BNBUL10n.text("补充材料已提交到服务器，等待老师复审。"),
             reviewer: application.reviewer,
-            updatedAt: "刚刚"
+            updatedAt: RecentTimestamp.justNow
         )
     }
 
@@ -867,7 +867,7 @@ actor RemoteStudentRepository {
                 physical: 0,
                 total: 0,
                 sourceTrace: "服务器：成绩规则尚未发布",
-                missingItems: ["成绩规则尚未发布"]
+                missingItems: [BNBUL10n.text("成绩规则尚未发布")]
             )
         let records = try decodeFlexible(SportRecordsPayload.self, from: recordsData).records
 
@@ -936,7 +936,7 @@ actor RemoteStudentRepository {
             exam: 0,
             attendance: 0,
             physical: 0,
-            status: summary == nil ? "打卡规则待老师发布" : "等待服务器返回进度",
+            status: summary == nil ? BNBUL10n.text("打卡规则待老师发布") : BNBUL10n.text("等待服务器返回进度"),
             source: summary == nil ? "server:checkin-setting-required" : "server:progress-missing",
             organizationCredit: nil
         )
@@ -974,7 +974,7 @@ actor RemoteStudentRepository {
                     type: .resetLocalData,
                     title: "腾讯云 API 同步",
                     detail: "已从 \(baseURL.absoluteString) 聚合学生端数据。",
-                    createdAt: "刚刚",
+                    createdAt: RecentTimestamp.justNow,
                     status: .synced
                 )
             ]

@@ -648,7 +648,7 @@ final class AppState: ObservableObject {
                 return calendar.isDate(exerciseStartDate, inSameDayAs: date)
             }
             let value = record.submittedAt.trimmingCharacters(in: .whitespacesAndNewlines)
-            if value.hasPrefix("刚刚") { return true }
+            if RecentTimestamp.isJustNow(value) { return true }
 
             if let parsed = fractionalISOFormatter.date(from: value) ?? standardISOFormatter.date(from: value) {
                 return calendar.isDate(parsed, inSameDayAs: date)
@@ -699,7 +699,7 @@ final class AppState: ObservableObject {
     }
 
     var dataSourceDescription: String {
-        isRemoteMode ? "校园体育服务" : "演示数据"
+        isRemoteMode ? BNBUL10n.text("校园体育服务") : BNBUL10n.text("演示数据")
     }
 
     var dataIntegritySummary: String {
@@ -979,7 +979,7 @@ final class AppState: ObservableObject {
             taskTitle: submission.title,
             creditType: submission.creditType,
             hours: submission.hours,
-            submittedAt: "刚刚",
+            submittedAt: RecentTimestamp.justNow,
             validity: .valid,
             proofSummary: proofSummary(proofAttachments: proofAttachments),
             proofPhotoCount: photoCount,
@@ -996,9 +996,9 @@ final class AppState: ObservableObject {
         workspace.notices.insert(
             StudentNotice(
                 id: UUID().uuidString,
-                title: "打卡已提交",
-                message: "\(submission.title) 已成功提交，可在打卡记录中查看。",
-                time: "刚刚",
+                title: BNBUL10n.text("打卡已提交"),
+                message: BNBUL10n.text("\(submission.title) 已成功提交，可在打卡记录中查看。"),
+                time: RecentTimestamp.justNow,
                 category: .system,
                 isUnread: true
             ),
@@ -1048,19 +1048,19 @@ final class AppState: ObservableObject {
             item: item,
             reason: normalizedReason,
             detail: normalizedDetail,
-            submittedAt: "刚刚",
+            submittedAt: RecentTimestamp.justNow,
             status: .pending,
             proofFiles: proofAttachments,
-            teacherFeedback: "免测申请已提交，等待老师审核。",
-            updatedAt: "刚刚"
+            teacherFeedback: BNBUL10n.text("免测申请已提交，等待老师审核。"),
+            updatedAt: RecentTimestamp.justNow
         )
         workspace.exemptions.insert(application, at: 0)
         workspace.notices.insert(
             StudentNotice(
                 id: UUID().uuidString,
-                title: "免测申请已提交",
-                message: "\(item.rawValue) 已进入审核流程。",
-                time: "刚刚",
+                title: BNBUL10n.text("免测申请已提交"),
+                message: BNBUL10n.text("\(item.rawValue) 已进入审核流程。"),
+                time: RecentTimestamp.justNow,
                 category: .review,
                 isUnread: true
             ),
@@ -1122,8 +1122,8 @@ final class AppState: ObservableObject {
             detail: normalizedDetail
         )
         workspace.exemptions[index].proofFiles += proofAttachments
-        workspace.exemptions[index].teacherFeedback = "补充材料已提交，等待老师复审。"
-        workspace.exemptions[index].updatedAt = "刚刚"
+        workspace.exemptions[index].teacherFeedback = BNBUL10n.text("补充材料已提交，等待老师复审。")
+        workspace.exemptions[index].updatedAt = RecentTimestamp.justNow
         enqueueSyncOperation(
             .supplementExemption,
             title: "提交免测补充材料",
@@ -1179,7 +1179,7 @@ final class AppState: ObservableObject {
             hours: submission.hours,
             note: note,
             proofAttachments: proofAttachments,
-            updatedAt: "刚刚",
+            updatedAt: RecentTimestamp.justNow,
             sportType: sportType,
             customSportType: customSportType,
             pendingRemoteMutation: retainedAttempt
@@ -1668,9 +1668,9 @@ final class AppState: ObservableObject {
             workspace.notices.insert(
                 StudentNotice(
                     id: UUID().uuidString,
-                    title: "打卡已提交",
-                    message: "\(submission.title) 已成功提交，可在打卡记录中查看。",
-                    time: "刚刚",
+                    title: BNBUL10n.text("打卡已提交"),
+                    message: BNBUL10n.text("\(submission.title) 已成功提交，可在打卡记录中查看。"),
+                    time: RecentTimestamp.justNow,
                     category: .system,
                     isUnread: true
                 ),
@@ -1819,9 +1819,9 @@ final class AppState: ObservableObject {
             workspace.notices.insert(
                 StudentNotice(
                     id: UUID().uuidString,
-                    title: "免测申请已提交",
-                    message: "\(item.rawValue) 已进入审核流程。",
-                    time: "刚刚",
+                    title: BNBUL10n.text("免测申请已提交"),
+                    message: BNBUL10n.text("\(item.rawValue) 已进入审核流程。"),
+                    time: RecentTimestamp.justNow,
                     category: .review,
                     isUnread: true
                 ),
@@ -1973,9 +1973,9 @@ final class AppState: ObservableObject {
             workspace.notices.insert(
                 StudentNotice(
                     id: UUID().uuidString,
-                    title: "免测补充材料已提交",
-                    message: "\(application.item.rawValue) 的补充材料已进入复审队列。",
-                    time: "刚刚",
+                    title: BNBUL10n.text("免测补充材料已提交"),
+                    message: BNBUL10n.text("\(application.item.rawValue) 的补充材料已进入复审队列。"),
+                    time: RecentTimestamp.justNow,
                     category: .review,
                     isUnread: true
                 ),
@@ -2110,7 +2110,7 @@ final class AppState: ObservableObject {
                     type: .resetLocalData,
                     title: "服务器同步",
                     detail: "从 \(StudentServerConfig.resolvedBaseURL().absoluteString) 读取学生端数据。",
-                    createdAt: "刚刚",
+                    createdAt: RecentTimestamp.justNow,
                     status: .synced
                 )
             ]
@@ -2207,12 +2207,12 @@ final class AppState: ObservableObject {
         let videoCount = proofAttachments.filter { $0.type == .video }.count
         var parts: [String] = []
         if photoCount > 0 {
-            parts.append("\(photoCount) 张图片")
+            parts.append(BNBUL10n.text("\(photoCount) 张图片"))
         }
         if videoCount > 0 {
-            parts.append("\(videoCount) 个短视频")
+            parts.append(BNBUL10n.text("\(videoCount) 个短视频"))
         }
-        return parts.isEmpty ? "未添加凭证" : parts.joined(separator: "，")
+        return parts.isEmpty ? BNBUL10n.text("未添加凭证") : parts.joined(separator: BNBUL10n.text("，"))
     }
 
     private func enqueueSyncOperation(
@@ -2227,7 +2227,7 @@ final class AppState: ObservableObject {
                 type: type,
                 title: title,
                 detail: detail,
-                createdAt: "刚刚",
+                createdAt: RecentTimestamp.justNow,
                 status: status
             ),
             at: 0
@@ -2383,7 +2383,7 @@ final class AppState: ObservableObject {
             hours: submission.hours,
             note: note,
             proofAttachments: proofAttachments,
-            updatedAt: "刚刚",
+            updatedAt: RecentTimestamp.justNow,
             sportType: persistedSportType,
             customSportType: persistedCustomSportType,
             pendingRemoteMutation: attempt

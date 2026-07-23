@@ -49,6 +49,54 @@
         }
       }
     },
+    "%@ 已成功提交，可在打卡记录中查看。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ was submitted successfully. You can review it in your check-in records."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已成功提交，可在打卡记录中查看。"
+          }
+        }
+      }
+    },
+    "%@ 已进入审核流程。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ has entered the review process."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已进入审核流程。"
+          }
+        }
+      }
+    },
+    "%@ 的补充材料已进入复审队列。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The supplementary material for %@ has entered the re-review queue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的补充材料已进入复审队列。"
+          }
+        }
+      }
+    },
     "%@：%@": {
       "localizations": {
         "en": {
@@ -97,6 +145,54 @@
         }
       }
     },
+    "%lld 个凭证": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld proof(s)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个凭证"
+          }
+        }
+      }
+    },
+    "%lld 个短视频": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld short video(s)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个短视频"
+          }
+        }
+      }
+    },
+    "%lld 张图片": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld photo(s)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 张图片"
+          }
+        }
+      }
+    },
     "%lld%%": {
       "localizations": {
         "en": {
@@ -125,6 +221,38 @@
           "stringUnit": {
             "state": "new",
             "value": "%1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "%lld分%lld秒": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lldm %2$llds"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分%lld秒"
+          }
+        }
+      }
+    },
+    "%lld秒": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llds"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒"
           }
         }
       }
@@ -907,6 +1035,54 @@
         }
       }
     },
+    "免测申请已提交": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exemption request submitted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免测申请已提交"
+          }
+        }
+      }
+    },
+    "免测申请已提交到服务器，等待老师审核。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The exemption request was submitted to the server and is awaiting teacher review."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免测申请已提交到服务器，等待老师审核。"
+          }
+        }
+      }
+    },
+    "免测申请已提交，等待老师审核。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The exemption request was submitted and is awaiting teacher review."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免测申请已提交，等待老师审核。"
+          }
+        }
+      }
+    },
     "免测申请最多只能添加 %lld 个证明材料。": {
       "localizations": {
         "en": {
@@ -951,6 +1127,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "免测补充材料已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。"
+          }
+        }
+      }
+    },
+    "免测补充材料已提交": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supplementary material submitted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免测补充材料已提交"
           }
         }
       }
@@ -1281,6 +1473,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换后立即生效；选择跟随系统后会随设备语言更新。课程名称等由教师或管理员录入的数据内容保持原文。"
+          }
+        }
+      }
+    },
+    "刚刚": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Just now"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚刚"
           }
         }
       }
@@ -2974,6 +3182,54 @@
         }
       }
     },
+    "成绩尚未录入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grades not entered yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩尚未录入"
+          }
+        }
+      }
+    },
+    "成绩暂未返回": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grades not returned yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩暂未返回"
+          }
+        }
+      }
+    },
+    "成绩规则尚未发布": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grading rules not published yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩规则尚未发布"
+          }
+        }
+      }
+    },
     "成绩进度": {
       "extractionState": "stale",
       "localizations": {
@@ -3204,6 +3460,22 @@
         }
       }
     },
+    "打卡已提交": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check-in submitted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡已提交"
+          }
+        }
+      }
+    },
     "打卡照片 / 视频": {
       "localizations": {
         "en": {
@@ -3216,6 +3488,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打卡照片 / 视频"
+          }
+        }
+      }
+    },
+    "打卡规则待老师发布": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check-in rules pending teacher release"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡规则待老师发布"
           }
         }
       }
@@ -4381,6 +4669,22 @@
         }
       }
     },
+    "未添加凭证": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No proof added"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未添加凭证"
+          }
+        }
+      }
+    },
     "未确认的提交可沿用原请求安全重试；服务器已确认成功的条目只会清理本地标记，绝不会再次提交。": {
       "localizations": {
         "en": {
@@ -4443,6 +4747,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "本周行动计划"
+          }
+        }
+      }
+    },
+    "本地占位": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local placeholder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地占位"
           }
         }
       }
@@ -4623,6 +4943,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看课程详情"
+          }
+        }
+      }
+    },
+    "校园体育服务": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Campus sports service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "校园体育服务"
           }
         }
       }
@@ -4908,6 +5244,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "游泳"
+          }
+        }
+      }
+    },
+    "演示数据": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo data"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演示数据"
           }
         }
       }
@@ -5359,6 +5711,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "第一阶段仅包含学生端体育打卡与成绩透明化；老师端和管理端由 Web 承担。"
+          }
+        }
+      }
+    },
+    "等待服务器返回进度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for progress from the server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待服务器返回进度"
           }
         }
       }
@@ -5842,6 +6210,22 @@
         }
       }
     },
+    "补充材料已提交到服务器，等待老师复审。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The supplementary material was submitted to the server and is awaiting re-review."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充材料已提交到服务器，等待老师复审。"
+          }
+        }
+      }
+    },
     "补充材料已提交，但最新申请列表暂未同步。请稍后下拉刷新，不要重复提交。": {
       "localizations": {
         "en": {
@@ -5854,6 +6238,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "补充材料已提交，但最新申请列表暂未同步。请稍后下拉刷新，不要重复提交。"
+          }
+        }
+      }
+    },
+    "补充材料已提交，等待老师复审。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The supplementary material was submitted and is awaiting re-review."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充材料已提交，等待老师复审。"
           }
         }
       }
@@ -7153,6 +7553,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "默认使用浅色模式；选择跟随系统后会随设备设置切换。"
+          }
+        }
+      }
+    },
+    "，": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，"
           }
         }
       }

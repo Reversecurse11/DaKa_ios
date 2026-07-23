@@ -1148,7 +1148,7 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
     }
 
     private static func proofSummary(for proofFiles: [ProofAttachment]) -> String {
-        guard !proofFiles.isEmpty else { return "未添加凭证" }
+        guard !proofFiles.isEmpty else { return BNBUL10n.text("未添加凭证") }
         let photoCount = proofFiles.filter { $0.type == .image }.count
         let videoCount = proofFiles.filter { $0.type == .video }.count
         var parts: [String] = []
@@ -1533,7 +1533,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
     }
 
     var displaySize: String {
-        guard let byteCount else { return "本地占位" }
+        guard let byteCount else { return BNBUL10n.text("本地占位") }
         if byteCount >= 1_000_000 {
             return String(format: "%.1f MB", Double(byteCount) / 1_000_000)
         }
@@ -1544,9 +1544,9 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
         guard let durationSeconds else { return nil }
         let totalSeconds = max(Int(durationSeconds.rounded()), 0)
         if totalSeconds >= 60 {
-            return "\(totalSeconds / 60)分\(totalSeconds % 60)秒"
+            return BNBUL10n.text("\(totalSeconds / 60)分\(totalSeconds % 60)秒")
         }
-        return "\(totalSeconds)秒"
+        return BNBUL10n.text("\(totalSeconds)秒")
     }
 
     var validationMessage: String? {

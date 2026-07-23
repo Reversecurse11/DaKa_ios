@@ -150,6 +150,16 @@ enum BNBUL10n {
     }
 }
 
+/// "Just now" sentinel written into freshly created records/notifications.
+/// Stored values may be either language, so the freshness check accepts both.
+enum RecentTimestamp {
+    static var justNow: String { BNBUL10n.text("刚刚") }
+
+    static func isJustNow(_ value: String) -> Bool {
+        value.hasPrefix("刚刚") || value.lowercased().hasPrefix("just now")
+    }
+}
+
 enum BNBUSpacing {
     static let screen: CGFloat = 18
     static let panel: CGFloat = 16
