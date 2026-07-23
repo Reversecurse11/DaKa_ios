@@ -39,6 +39,17 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
 
         app.segmentedControls.buttons["提交"].tap()
+
+        // Q&A 7/23 (Q5): the sport note is required before submitting.
+        let noteEditor = app.textViews["运动说明"]
+        XCTAssertTrue(noteEditor.waitForExistence(timeout: 3))
+        noteEditor.tap()
+        noteEditor.typeText("操场跑步一小时")
+        let noteDoneButton = app.toolbars.buttons["完成"]
+        if noteDoneButton.waitForExistence(timeout: 2) {
+            noteDoneButton.tap()
+        }
+
         scrollToAndTap(app.buttons["proof.demo.add"])
         scrollToAndTap(app.buttons["保存草稿"])
         XCTAssertTrue(app.buttons["草稿已保存"].waitForExistence(timeout: 2))

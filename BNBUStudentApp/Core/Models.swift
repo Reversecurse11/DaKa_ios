@@ -1271,11 +1271,17 @@ enum ExemptionProofRule {
 }
 
 enum CheckInInputRule {
-    /// Business rule 5.7: the optional sport note is capped at 200 characters.
+    /// Q&A 7/23 (Q5): the sport note is required for both course-related and
+    /// general exercise. The 200-character cap stays until the final field
+    /// spec is published with the OpenAPI document.
     static let maximumDescriptionLength = 200
 
     static func validationMessage(note: String) -> String? {
-        if note.trimmingCharacters(in: .whitespacesAndNewlines).count > maximumDescriptionLength {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "请填写运动说明。"
+        }
+        if trimmed.count > maximumDescriptionLength {
             return "运动说明不能超过 \(maximumDescriptionLength) 个字符。"
         }
         return nil

@@ -238,6 +238,8 @@ requireText(models, "static let maximumPhotoDrafts = 6", "In-session photo draft
 requireText(checkinView, "ExerciseCameraCaptureButton", "Check-in proofs are captured through the camera-only flow");
 rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from the photo library");
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
+requireText(models, "请填写运动说明", "The sport note is required for all check-ins (Q&A 7/23 Q5)");
+requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");

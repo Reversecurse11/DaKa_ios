@@ -634,7 +634,7 @@ final class BNBUStudentModelTests: XCTestCase {
             creditType: .general,
             courseId: nil,
             hours: 4,
-            note: "",
+            note: "操场跑步。",
             proofAttachments: [
                 ProofAttachment(id: "proof-oversized", type: .image, fileName: "proof.jpg", byteCount: 400_000, source: "test")
             ]
@@ -646,7 +646,7 @@ final class BNBUStudentModelTests: XCTestCase {
             creditType: .general,
             courseId: nil,
             hours: 2,
-            note: "",
+            note: "操场跑步。",
             proofAttachments: [
                 ProofAttachment(id: "proof", type: .image, fileName: "proof.jpg", byteCount: 400_000, source: "test")
             ]
@@ -729,8 +729,11 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.errorMessage, "申请原因至少需要 2 个字符。")
     }
 
-    // Business rule 5.7: the sport note is capped at 200 characters.
+    // Business rule 5.7 + Q&A 7/23 Q5: the sport note is required and capped
+    // at 200 characters.
     func testCheckInDescriptionStopsAboveTwoHundredCharacters() async {
+        XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
+        XCTAssertEqual(CheckInInputRule.validationMessage(note: "  \n"), "请填写运动说明。")
         XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 200)))
         XCTAssertEqual(
             CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 201)),

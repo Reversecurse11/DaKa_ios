@@ -511,6 +511,9 @@ struct CheckInView: View {
                         HStack {
                             Text("运动说明")
                                 .font(.headline.weight(.medium))
+                            Text("必填")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(BNBUTheme.muted)
                             Spacer()
                             if focusedField == .note {
                                 Button {
@@ -529,7 +532,7 @@ struct CheckInView: View {
                         TextEditor(text: $note)
                             .bnbuInputText()
                             .accessibilityLabel("运动说明")
-                            .accessibilityHint("可选，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符")
+                            .accessibilityHint("必填，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符")
                             .focused($focusedField, equals: .note)
                             .frame(minHeight: 100)
                             .padding(8)
@@ -951,8 +954,8 @@ private struct CheckInSessionDialogs: ViewModifier {
                 switch alert {
                 case .dailyCap:
                     return Alert(
-                        title: Text("已达到今日计时上限"),
-                        message: Text("运动时长已满 2 小时，计时已自动结束并按 2 小时计入。请补充说明和凭证完成提交。"),
+                        title: Text("您已完成两小时打卡"),
+                        message: Text("您已完成两小时打卡。计时已自动结束并按 2 小时计入，请上传材料并提交运动打卡。"),
                         dismissButton: .default(Text("好"))
                     )
                 case .pauseTimeout:
