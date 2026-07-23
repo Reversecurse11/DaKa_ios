@@ -849,7 +849,10 @@ struct CheckInView: View {
         // Business rule 5.5: the timer starts immediately; a single location
         // fix is fetched in the background and attached if it arrives while
         // the session is still running. Failure just leaves "未获取位置".
-        if !ProcessInfo.processInfo.arguments.contains("-ui-testing-reset") {
+        // UI tests skip the fetch (permission alerts break determinism)
+        // except the dedicated GPS test, which opts back in.
+        let arguments = ProcessInfo.processInfo.arguments
+        if !arguments.contains("-ui-testing-reset") || arguments.contains("-ui-testing-location-check") {
             Task {
                 if let fix = await ExerciseLocationProvider.shared.requestCurrentLocation() {
                     appState.attachExerciseSessionLocation(latitude: fix.latitude, longitude: fix.longitude)

@@ -1,3 +1,4 @@
+import CoreLocation
 import XCTest
 
 final class BNBUStudentSmokeUITests: XCTestCase {
@@ -82,6 +83,49 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["结束运动"].firstMatch.waitForExistence(timeout: 3))
         app.buttons.matching(identifier: "checkin.exercise.end.confirm").firstMatch.tap()
         XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 5))
+    }
+
+    // Business rules 5.5/10.3: starting exercise fetches one best-effort GPS
+    // fix and attaches it to the running session. Runs against a simulated
+    // device location, driving the real CoreLocation permission + fix path.
+    func testExerciseStartAttachesSimulatedGPSFix() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-location-check"]
+
+        XCUIDevice.shared.location = XCUILocation(
+            location: CLLocation(latitude: 22.3364, longitude: 114.1655)
+        )
+        let monitor = addUIInterruptionMonitor(withDescription: "Location permission") { alert in
+            for label in ["Allow While Using App", "Allow Once", "使用App时允许", "允许一次", "允许"] {
+                let button = alert.buttons[label]
+                if button.exists {
+                    button.tap()
+                    return true
+                }
+            }
+            return false
+        }
+        defer { removeUIInterruptionMonitor(monitor) }
+
+        app.launch()
+        login()
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        app.segmentedControls.buttons["提交"].tap()
+
+        scrollToAndTap(app.buttons["跑步"])
+        scrollToAndTap(app.buttons["checkin.exercise.start"])
+        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 5))
+
+        // Interruption monitors only fire on interaction; nudge the app while
+        // polling so the permission alert gets answered, then wait for the
+        // fix to attach and render in the session detail rows.
+        let attached = app.staticTexts["已获取"]
+        for _ in 0..<12 where !attached.exists {
+            app.staticTexts["运动进行中"].firstMatch.tap()
+            _ = attached.waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(attached.exists, "开始运动后应附加一次 GPS 定位并显示“已获取”")
     }
 
     func testSubmittedHistoryNoticeReadAndLogoutFlow() throws {
