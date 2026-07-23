@@ -31,10 +31,11 @@ struct ExerciseCameraCaptureButton: View {
         .buttonStyle(.plain)
         .disabled(isDisabled)
         .accessibilityIdentifier(accessibilityIdentifier ?? "checkin.capture.camera")
-        .sheet(isPresented: $isCameraPresented) {
+        .fullScreenCover(isPresented: $isCameraPresented) {
             CameraCapturePicker { attachment in
                 onCapture(attachment)
             }
+            .ignoresSafeArea()
         }
         .alert(item: $activeAlert) { alert in
             switch alert {

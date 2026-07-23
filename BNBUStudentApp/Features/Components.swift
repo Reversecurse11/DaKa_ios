@@ -475,11 +475,12 @@ struct ProofAttachmentPanel: View {
             maxSelectionCount: max(remainingSlots, 1),
             matching: .any(of: [.images, .videos])
         )
-        .sheet(isPresented: $isCameraPresented) {
+        .fullScreenCover(isPresented: $isCameraPresented) {
             CameraCapturePicker { attachment in
                 appendAttachment(attachment)
                 cameraPermission = CameraPermissionState.current
             }
+            .ignoresSafeArea()
         }
         .confirmationDialog(
             "删除凭证",
