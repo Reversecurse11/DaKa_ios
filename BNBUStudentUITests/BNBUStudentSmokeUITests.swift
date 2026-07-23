@@ -78,10 +78,22 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         scrollToAndTap(app.buttons["checkin.exercise.resume"])
         XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 3))
 
-        // Ending under one hour warns, keeps drafts, and reopens the form.
+        // Business rule 5.6: ending always passes the anti-mistap dialog
+        // first;「取消」returns to the running session with the timer intact.
+        let endAlert = app.alerts["结束运动"]
         scrollToAndTap(app.buttons["checkin.exercise.end"])
-        XCTAssertTrue(app.staticTexts["结束运动"].firstMatch.waitForExistence(timeout: 3))
-        app.buttons.matching(identifier: "checkin.exercise.end.confirm").firstMatch.tap()
+        XCTAssertTrue(endAlert.waitForExistence(timeout: 3))
+        endAlert.buttons["取消"].tap()
+        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 3))
+
+        // An under-one-hour end then shows the notice, keeps drafts, and
+        // reopens the start form.
+        scrollToAndTap(app.buttons["checkin.exercise.end"])
+        XCTAssertTrue(endAlert.waitForExistence(timeout: 3))
+        XCTAssertTrue(endAlert.staticTexts["你确定要结束本次运动吗？当前运动时长不足 1 小时，结束后本次不计入有效打卡时长。"].exists)
+        endAlert.buttons["确认结束"].firstMatch.tap()
+        XCTAssertTrue(app.alerts["运动时长未满 1 小时"].waitForExistence(timeout: 3))
+        app.alerts["运动时长未满 1 小时"].buttons["好"].tap()
         XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 5))
     }
 

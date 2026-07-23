@@ -58,7 +58,9 @@ struct CheckInView: View {
     @State private var draftSaved = false
     @State private var draftRestored = false
     @State private var confirmSubmit = false
-    @State private var confirmUnderHourEnd = false
+    @State private var confirmEndExercise = false
+    @State private var endWillBeUncredited = false
+    @State private var showUnderHourNotice = false
     @State private var confirmAbandon = false
     @State private var autoEndAlert: ExerciseAutoEndAlert?
     @State private var showHealthReminder = false
@@ -161,12 +163,14 @@ struct CheckInView: View {
 
     private var sessionDialogs: CheckInSessionDialogs {
         CheckInSessionDialogs(
-            confirmUnderHourEnd: $confirmUnderHourEnd,
+            confirmEndExercise: $confirmEndExercise,
+            showUnderHourNotice: $showUnderHourNotice,
             confirmAbandon: $confirmAbandon,
             autoEndAlert: $autoEndAlert,
             showHealthReminder: $showHealthReminder,
+            endWillBeUncredited: endWillBeUncredited,
             healthReminderKey: healthReminderKey,
-            endUnderOneHourAction: { endUnderOneHourExercise() },
+            confirmEndAction: { performConfirmedEndExercise() },
             abandonAction: {
                 appState.discardExerciseSession()
                 resetFormAfterSubmit()
@@ -435,20 +439,22 @@ struct CheckInView: View {
         }
     }
 
+    /// Business rule 5.6: every manual end first passes the anti-mistap
+    /// confirmation dialog. Duration handling only runs after 「确认结束」.
     private func requestEndExercise(_ session: ExerciseSession, at date: Date) {
-        if session.creditedHours(at: date) == 0 {
-            confirmUnderHourEnd = true
-        } else {
-            _ = appState.endExerciseSession(at: date)
-        }
+        endWillBeUncredited = session.creditedHours(at: date) == 0
+        confirmEndExercise = true
     }
 
-    /// Business rule 5.6: an under-one-hour end closes the session without a
-    /// record or quota usage, but keeps the captured drafts for later today.
-    private func endUnderOneHourExercise() {
+    /// Runs after 「确认结束」: an under-one-hour end closes the session with a
+    /// notice, without a record or quota usage, keeping drafts for later today.
+    private func performConfirmedEndExercise() {
         guard appState.endExerciseSession() else { return }
-        appState.finishUncreditedExerciseSession()
-        resetFormAfterSubmit()
+        if appState.exerciseSession?.creditedHours() == 0 {
+            appState.finishUncreditedExerciseSession()
+            resetFormAfterSubmit()
+            showUnderHourNotice = true
+        }
     }
 
     private func handleCapturedAttachment(_ attachment: ProofAttachment, autoSelect: Bool) {
@@ -896,28 +902,37 @@ struct CheckInView: View {
 /// Session-lifecycle dialogs, split out so the compiler can type-check the
 /// main body in reasonable time.
 private struct CheckInSessionDialogs: ViewModifier {
-    @Binding var confirmUnderHourEnd: Bool
+    @Binding var confirmEndExercise: Bool
+    @Binding var showUnderHourNotice: Bool
     @Binding var confirmAbandon: Bool
     @Binding var autoEndAlert: ExerciseAutoEndAlert?
     @Binding var showHealthReminder: Bool
+    let endWillBeUncredited: Bool
     let healthReminderKey: String
-    let endUnderOneHourAction: () -> Void
+    let confirmEndAction: () -> Void
     let abandonAction: () -> Void
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog(
-                "结束运动",
-                isPresented: $confirmUnderHourEnd,
-                titleVisibility: .visible
-            ) {
-                Button("结束（本次不计入）", role: .destructive) {
-                    endUnderOneHourAction()
+            // Business rule 5.6: anti-mistap confirmation before any manual
+            // end;「取消」returns to the running session with the timer intact.
+            // An alert (not confirmationDialog) guarantees both buttons render
+            // on every device idiom; popover-style dialogs drop cancel roles.
+            .alert("结束运动", isPresented: $confirmEndExercise) {
+                Button("取消", role: .cancel) {}
+                Button("确认结束", role: .destructive) {
+                    confirmEndAction()
                 }
                 .accessibilityIdentifier("checkin.exercise.end.confirm")
-                Button("继续运动", role: .cancel) {}
             } message: {
-                Text("运动时长未满 1 小时，结束后本次不计入有效打卡时长，也不占用今日打卡次数。已拍摄的照片/视频草稿会保留，今天继续运动后仍可选用。")
+                Text(endWillBeUncredited
+                    ? "你确定要结束本次运动吗？当前运动时长不足 1 小时，结束后本次不计入有效打卡时长。"
+                    : "你确定要结束本次运动吗？")
+            }
+            .alert("运动时长未满 1 小时", isPresented: $showUnderHourNotice) {
+                Button("好") {}
+            } message: {
+                Text("本次不计入有效打卡时长，也不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
             }
             .confirmationDialog(
                 "放弃本次运动",
