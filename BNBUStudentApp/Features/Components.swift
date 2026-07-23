@@ -788,7 +788,7 @@ private struct ImportedProofFile: Transferable {
     }
 }
 
-private enum ProofThumbnailRenderer {
+enum ProofThumbnailRenderer {
     private static let maxPixel: CGFloat = 420
 
     static func imageThumbnailData(from data: Data) -> Data? {
@@ -953,7 +953,7 @@ private struct PermissionStatusLine: View {
     }
 }
 
-private struct CameraCapturePicker: UIViewControllerRepresentable {
+struct CameraCapturePicker: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
     let completion: (ProofAttachment) -> Void
 

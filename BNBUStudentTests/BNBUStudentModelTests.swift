@@ -73,6 +73,258 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(restored.exerciseSession?.resolvedSportName, "飞盘")
     }
 
+    // MARK: - Pause model (business rule 3.2.1)
+
+    func testPausedTimeIsExcludedFromExerciseDuration() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var session = ExerciseSession(
+            id: "exercise-pause",
+            studentID: "student-1",
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: nil,
+            status: .active,
+            locationStatus: .unavailable
+        )
+
+        // Exercise 30min, pause 20min, resume, exercise 40min → active 70min.
+        session = try XCTUnwrap(session.paused(at: start.addingTimeInterval(1_800)))
+        XCTAssertTrue(session.isPaused)
+        // Timer freezes while paused.
+        XCTAssertEqual(session.elapsed(at: start.addingTimeInterval(2_400)), 1_800)
+        session = try XCTUnwrap(session.resumed(at: start.addingTimeInterval(3_000)))
+        XCTAssertFalse(session.isPaused)
+        let checkpoint = start.addingTimeInterval(3_000 + 2_400)
+        XCTAssertEqual(session.elapsed(at: checkpoint), 4_200)
+        XCTAssertEqual(session.pausedDuration(at: checkpoint), 1_200)
+        XCTAssertEqual(session.creditedHours(at: checkpoint), 1)
+
+        // Pause/resume instants are all recorded.
+        XCTAssertEqual(session.pauses.count, 1)
+        XCTAssertEqual(session.pauses[0].startedAt, start.addingTimeInterval(1_800))
+        XCTAssertEqual(session.pauses[0].resumedAt, start.addingTimeInterval(3_000))
+
+        // Cannot double-pause or resume when not paused.
+        XCTAssertNil(session.resumed(at: checkpoint))
+        let repaused = try XCTUnwrap(session.paused(at: checkpoint))
+        XCTAssertNil(repaused.paused(at: checkpoint))
+    }
+
+    func testTwoHourCapShiftsByAccumulatedPauses() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var session = ExerciseSession(
+            id: "exercise-cap",
+            studentID: "student-1",
+            category: .general,
+            sportType: .cycling,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: nil,
+            status: .active,
+            locationStatus: .unavailable
+        )
+        session = try XCTUnwrap(session.paused(at: start.addingTimeInterval(3_600)))
+        session = try XCTUnwrap(session.resumed(at: start.addingTimeInterval(5_400)))
+
+        // Cap instant moves from start+2h to start+2h+30min of pause.
+        let expectedCap = start.addingTimeInterval(7_200 + 1_800)
+        XCTAssertEqual(session.reconciled(at: expectedCap.addingTimeInterval(-1)).status, .active)
+        let completed = session.reconciled(at: expectedCap.addingTimeInterval(1))
+        XCTAssertEqual(completed.status, .completed)
+        XCTAssertEqual(completed.endTime, expectedCap)
+        XCTAssertEqual(completed.creditedHours(), 2)
+        XCTAssertTrue(session.reachedDailyCap(at: expectedCap))
+    }
+
+    func testPauseOverSixHoursAutoEndsAtPauseStart() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var session = ExerciseSession(
+            id: "exercise-timeout",
+            studentID: "student-1",
+            category: .general,
+            sportType: .fitness,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: nil,
+            status: .active,
+            locationStatus: .unavailable
+        )
+        let pauseStart = start.addingTimeInterval(4_000)
+        session = try XCTUnwrap(session.paused(at: pauseStart))
+
+        // Under the 6h timeout the session simply stays paused.
+        XCTAssertEqual(session.reconciled(at: pauseStart.addingTimeInterval(6 * 3_600 - 1)).status, .active)
+
+        let autoEnded = session.reconciled(at: pauseStart.addingTimeInterval(6 * 3_600))
+        XCTAssertEqual(autoEnded.status, .completed)
+        // Exercise effectively stopped when the pause began.
+        XCTAssertEqual(autoEnded.endTime, pauseStart)
+        XCTAssertEqual(autoEnded.elapsed(), 4_000)
+        XCTAssertEqual(autoEnded.creditedHours(), 1)
+        XCTAssertFalse(session.reachedDailyCap(at: pauseStart.addingTimeInterval(6 * 3_600)))
+    }
+
+    func testEndingWhilePausedStopsAtPauseStart() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var session = ExerciseSession(
+            id: "exercise-end-paused",
+            studentID: "student-1",
+            category: .general,
+            sportType: .swimming,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: nil,
+            status: .active,
+            locationStatus: .unavailable
+        )
+        let pauseStart = start.addingTimeInterval(3_700)
+        session = try XCTUnwrap(session.paused(at: pauseStart))
+
+        let ended = session.ended(at: pauseStart.addingTimeInterval(1_200))
+        XCTAssertEqual(ended.endTime, pauseStart)
+        XCTAssertEqual(ended.elapsed(), 3_700)
+        XCTAssertEqual(ended.creditedHours(), 1)
+    }
+
+    func testPauseStatePersistsAcrossRestartAndLegacySessionsDecode() throws {
+        let defaults = isolatedDefaults()
+        let store = AppLocalStore(defaults: defaults)
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        let start = Date().addingTimeInterval(-1_800)
+
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(appState.pauseExerciseSession(at: start.addingTimeInterval(1_200)))
+        XCTAssertEqual(appState.exerciseSession?.isPaused, true)
+
+        // Restart: pause state survives.
+        let restored = AppState(repository: MockStudentRepository(), localStore: store)
+        XCTAssertEqual(restored.exerciseSession?.isPaused, true)
+        XCTAssertEqual(restored.exerciseSession?.pauses.count, 1)
+        XCTAssertTrue(restored.resumeExerciseSession(at: start.addingTimeInterval(1_500)))
+        XCTAssertEqual(restored.exerciseSession?.isPaused, false)
+
+        // A payload persisted before the pause feature (no pauses key)
+        // still decodes with an empty pause list.
+        let legacyJSON = """
+        {"id":"legacy","studentID":"s1","category":"general","sportType":"running",
+         "startTime":700000000,"status":"active","locationStatus":"unavailable"}
+        """
+        let legacy = try JSONDecoder().decode(ExerciseSession.self, from: Data(legacyJSON.utf8))
+        XCTAssertTrue(legacy.pauses.isEmpty)
+        XCTAssertNil(legacy.openPause)
+    }
+
+    // MARK: - Media draft pool (business rules 5.5/6.4/7)
+
+    func testExercisePhotoDraftsCapAtSixAndVideosDoNotCount() throws {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+
+        for index in 1...6 {
+            XCTAssertTrue(
+                appState.addExercisePhotoDraft(imageData: Data([UInt8(index)]), thumbnailData: nil),
+                "第 \(index) 张照片草稿应能保存"
+            )
+        }
+        XCTAssertFalse(appState.canAddExercisePhotoDraft)
+        XCTAssertFalse(appState.addExercisePhotoDraft(imageData: Data([7]), thumbnailData: nil))
+        XCTAssertEqual(appState.errorMessage, "最多保存 6 张照片草稿。")
+
+        // Videos are not blocked by the photo cap.
+        XCTAssertTrue(appState.addInlineExerciseVideoDraftForTesting(
+            videoData: Data([0xAA]),
+            durationSeconds: 12
+        ))
+        XCTAssertEqual(appState.exerciseMediaDrafts.count, 7)
+        XCTAssertEqual(appState.exercisePhotoDraftCount, 6)
+    }
+
+    func testUnderOneHourEndRetainsDraftsWhileAbandonClearsThem() throws {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        let start = Date().addingTimeInterval(-1_200)
+
+        // Attempt 1: capture two photos, end under one hour → drafts retained.
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([1]), thumbnailData: nil))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([2]), thumbnailData: nil))
+        XCTAssertTrue(appState.endExerciseSession())
+        XCTAssertEqual(appState.exerciseSession?.creditedHours(), 0)
+        appState.finishUncreditedExerciseSession()
+        XCTAssertNil(appState.exerciseSession)
+        XCTAssertEqual(appState.exerciseMediaDrafts.count, 2, "不足 1 小时结束时草稿应保留")
+
+        // The day quota is untouched: a new session can start immediately.
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([3]), thumbnailData: nil))
+        XCTAssertEqual(appState.exerciseMediaDrafts.count, 3)
+
+        // Abandoning clears only the current session's captures.
+        appState.discardExerciseSession()
+        XCTAssertNil(appState.exerciseSession)
+        XCTAssertEqual(appState.exerciseMediaDrafts.count, 2, "放弃只清除本次会话拍摄的草稿")
+    }
+
+    func testSubmissionClearsAllMediaDraftsAndDraftsExpireNextDay() throws {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([1]), thumbnailData: nil))
+        XCTAssertEqual(store.readExerciseMediaDrafts().value?.count, 1)
+
+        appState.markExerciseSessionSubmitted()
+        XCTAssertTrue(appState.exerciseMediaDrafts.isEmpty)
+        XCTAssertNil(store.readExerciseMediaDrafts().value)
+
+        // Same-day restore keeps drafts; next-day restore drops them.
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([2]), thumbnailData: nil))
+        let sameDay = AppState(repository: MockStudentRepository(), localStore: store)
+        sameDay.demoLogin()
+        XCTAssertEqual(sameDay.exerciseMediaDrafts.count, 1)
+
+        XCTAssertEqual(store.readExerciseMediaDrafts().value?.count, 1)
+        let materialized = try XCTUnwrap(sameDay.proofAttachment(from: sameDay.exerciseMediaDrafts[0]))
+        XCTAssertEqual(materialized.uploadData, Data([2]))
+        XCTAssertEqual(materialized.type, .image)
+    }
+
     func testDailyLimitUsesExerciseStartDateWhenSessionCrossesMidnight() async throws {
         let defaults = isolatedDefaults()
         let appState = AppState(
@@ -391,11 +643,12 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.errorMessage, "申请原因至少需要 2 个字符。")
     }
 
-    func testCheckInDescriptionStopsAboveTwoThousandCharacters() async {
-        XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 2_000)))
+    // Business rule 5.7: the sport note is capped at 200 characters.
+    func testCheckInDescriptionStopsAboveTwoHundredCharacters() async {
+        XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 200)))
         XCTAssertEqual(
-            CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 2_001)),
-            "补充说明不能超过 2000 个字符。"
+            CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 201)),
+            "运动说明不能超过 200 个字符。"
         )
 
         let appState = AppState(
@@ -407,7 +660,7 @@ final class BNBUStudentModelTests: XCTestCase {
             creditType: .general,
             courseId: nil,
             hours: 1,
-            note: String(repeating: "跑", count: 2_001),
+            note: String(repeating: "跑", count: 201),
             sportType: "running",
             proofAttachments: [
                 ProofAttachment(id: "proof", type: .image, fileName: "proof.jpg", byteCount: 100_000, source: "test")
@@ -415,7 +668,7 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertFalse(submitted)
         XCTAssertEqual(appState.workspace.records.count, originalCount)
-        XCTAssertEqual(appState.errorMessage, "补充说明不能超过 2000 个字符。")
+        XCTAssertEqual(appState.errorMessage, "运动说明不能超过 200 个字符。")
     }
 
     func testPersistedLocalProofRequiresOriginalFileReselection() throws {

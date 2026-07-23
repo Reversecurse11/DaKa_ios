@@ -48,6 +48,7 @@ final class AppState: ObservableObject {
     @Published var workspace: StudentWorkspace
     @Published var draft: CheckInDraft?
     @Published private(set) var exerciseSession: ExerciseSession?
+    @Published private(set) var exerciseMediaDrafts: [ExerciseMediaDraft] = []
     @Published var storeHealth: LocalStoreHealth
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -233,10 +234,294 @@ final class AppState: ObservableObject {
         return true
     }
 
+    @discardableResult
+    func pauseExerciseSession(at date: Date = Date()) -> Bool {
+        guard let session = exerciseSession, let paused = session.paused(at: date) else { return false }
+        guard localStore.saveExerciseSession(paused) else {
+            errorMessage = "无法安全保存暂停时间，请释放存储空间后重试。"
+            return false
+        }
+        exerciseSession = paused
+        errorMessage = nil
+        return true
+    }
+
+    @discardableResult
+    func resumeExerciseSession(at date: Date = Date()) -> Bool {
+        guard let session = exerciseSession, let resumed = session.resumed(at: date) else { return false }
+        guard localStore.saveExerciseSession(resumed) else {
+            errorMessage = "无法安全保存恢复时间，请释放存储空间后重试。"
+            return false
+        }
+        exerciseSession = resumed
+        errorMessage = nil
+        return true
+    }
+
+    /// Business rule 5.6: an under-one-hour exercise ends without forming a
+    /// record and without using the daily quota, but captured media drafts
+    /// are retained for a later attempt on the same day.
+    func finishUncreditedExerciseSession() {
+        guard let session = exerciseSession, session.creditedHours() == 0 else { return }
+        guard localStore.clearExerciseSession() else {
+            errorMessage = "无法清理本地运动会话，请稍后重试。"
+            return
+        }
+        exerciseSession = nil
+        errorMessage = nil
+    }
+
+    // MARK: - Exercise media drafts (business rules 5.5/6.4/7)
+
+    var exercisePhotoDraftCount: Int {
+        exerciseMediaDrafts.filter { $0.type == .image }.count
+    }
+
+    var canAddExercisePhotoDraft: Bool {
+        ExerciseMediaDraftRule.canAddPhoto(to: exerciseMediaDrafts)
+    }
+
+    /// Stores a camera photo as a local draft. Capture is only offered while a
+    /// check-in lifecycle exists (active, paused or completed session).
+    @discardableResult
+    func addExercisePhotoDraft(
+        imageData: Data,
+        thumbnailData: Data?,
+        at date: Date = Date()
+    ) -> Bool {
+        guard let session = exerciseSession else {
+            errorMessage = "请先开始运动，再拍摄打卡凭证。"
+            return false
+        }
+        guard canAddExercisePhotoDraft else {
+            errorMessage = "最多保存 \(ExerciseMediaDraftRule.maximumPhotoDrafts) 张照片草稿。"
+            return false
+        }
+        let draftID = UUID().uuidString
+        let displayName = "exercise-photo-\(String(draftID.prefix(6))).jpg"
+        var storedFileName: String?
+        var inlineData: Data?
+        if localStore.exerciseMediaDirectoryURL != nil {
+            guard localStore.writeExerciseMediaFile(data: imageData, fileName: displayName) else {
+                errorMessage = "照片草稿无法安全保存，请检查设备存储空间。"
+                return false
+            }
+            storedFileName = displayName
+        } else {
+            inlineData = imageData
+        }
+        let mediaDraft = ExerciseMediaDraft(
+            id: draftID,
+            studentID: session.studentID,
+            sessionID: session.id,
+            type: .image,
+            fileName: displayName,
+            storedFileName: storedFileName,
+            inlineData: inlineData,
+            thumbnailData: thumbnailData,
+            byteCount: imageData.count,
+            durationSeconds: nil,
+            capturedAt: date
+        )
+        return appendExerciseMediaDraft(mediaDraft)
+    }
+
+    /// Adopts a camera video file into durable draft storage.
+    @discardableResult
+    func addExerciseVideoDraft(
+        fileURL: URL,
+        byteCount: Int,
+        durationSeconds: Double?,
+        thumbnailData: Data?,
+        at date: Date = Date()
+    ) -> Bool {
+        guard let session = exerciseSession else {
+            errorMessage = "请先开始运动，再拍摄打卡凭证。"
+            return false
+        }
+        let draftID = UUID().uuidString
+        let displayName = "exercise-video-\(String(draftID.prefix(6))).mov"
+        guard localStore.exerciseMediaDirectoryURL != nil,
+              localStore.adoptExerciseMediaFile(from: fileURL, fileName: displayName) else {
+            errorMessage = "视频草稿无法安全保存，请检查设备存储空间。"
+            return false
+        }
+        let mediaDraft = ExerciseMediaDraft(
+            id: draftID,
+            studentID: session.studentID,
+            sessionID: session.id,
+            type: .video,
+            fileName: displayName,
+            storedFileName: displayName,
+            inlineData: nil,
+            thumbnailData: thumbnailData,
+            byteCount: byteCount,
+            durationSeconds: durationSeconds,
+            capturedAt: date
+        )
+        return appendExerciseMediaDraft(mediaDraft)
+    }
+
+#if DEBUG
+    /// Test-only: registers an inline video draft without touching the file
+    /// system, mirroring the photo inline path used by unit tests.
+    @discardableResult
+    func addInlineExerciseVideoDraftForTesting(
+        videoData: Data,
+        durationSeconds: Double?,
+        at date: Date = Date()
+    ) -> Bool {
+        guard let session = exerciseSession else { return false }
+        let draftID = UUID().uuidString
+        let mediaDraft = ExerciseMediaDraft(
+            id: draftID,
+            studentID: session.studentID,
+            sessionID: session.id,
+            type: .video,
+            fileName: "exercise-video-\(String(draftID.prefix(6))).mov",
+            storedFileName: nil,
+            inlineData: videoData,
+            thumbnailData: nil,
+            byteCount: videoData.count,
+            durationSeconds: durationSeconds,
+            capturedAt: date
+        )
+        return appendExerciseMediaDraft(mediaDraft)
+    }
+#endif
+
+    func removeExerciseMediaDraft(id: String) {
+        guard let index = exerciseMediaDrafts.firstIndex(where: { $0.id == id }) else { return }
+        let removed = exerciseMediaDrafts[index]
+        var updated = exerciseMediaDrafts
+        updated.remove(at: index)
+        guard localStore.saveExerciseMediaDrafts(updated) else {
+            errorMessage = "草稿列表无法安全更新，请稍后重试。"
+            return
+        }
+        if let storedFileName = removed.storedFileName {
+            localStore.removeExerciseMediaFile(fileName: storedFileName)
+        }
+        exerciseMediaDrafts = updated
+    }
+
+    /// Abandoning a session clears only the drafts it produced; drafts
+    /// retained from an earlier under-one-hour attempt stay usable.
+    private func clearExerciseMediaDrafts(sessionID: String) {
+        let (removed, remaining) = exerciseMediaDrafts.partitioned { $0.sessionID == sessionID }
+        guard !removed.isEmpty else { return }
+        guard localStore.saveExerciseMediaDrafts(remaining) else {
+            errorMessage = "草稿列表无法安全更新，请稍后重试。"
+            return
+        }
+        for draft in removed {
+            if let storedFileName = draft.storedFileName {
+                localStore.removeExerciseMediaFile(fileName: storedFileName)
+            }
+        }
+        exerciseMediaDrafts = remaining
+    }
+
+    private func clearAllExerciseMediaDrafts() {
+        _ = localStore.clearExerciseMediaDraftIndex()
+        localStore.removeAllExerciseMediaFiles()
+        exerciseMediaDrafts = []
+    }
+
+    /// Loads persisted drafts for the current student, dropping drafts that
+    /// belong to another account or were captured on a previous Shanghai day
+    /// (retention only covers same-day continuation, business rule 5.6).
+    private func restoreExerciseMediaDrafts(for studentID: String, at date: Date = Date()) {
+        let stored = localStore.readExerciseMediaDrafts().value ?? []
+        guard !stored.isEmpty else {
+            exerciseMediaDrafts = []
+            return
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let (kept, dropped) = stored.partitioned {
+            $0.studentID == studentID && calendar.isDate($0.capturedAt, inSameDayAs: date)
+        }
+        if !dropped.isEmpty {
+            _ = localStore.saveExerciseMediaDrafts(kept)
+            for draft in dropped {
+                if let storedFileName = draft.storedFileName {
+                    localStore.removeExerciseMediaFile(fileName: storedFileName)
+                }
+            }
+        }
+        exerciseMediaDrafts = kept
+    }
+
+    private func appendExerciseMediaDraft(_ mediaDraft: ExerciseMediaDraft) -> Bool {
+        var updated = exerciseMediaDrafts
+        updated.append(mediaDraft)
+        guard localStore.saveExerciseMediaDrafts(updated) else {
+            if let storedFileName = mediaDraft.storedFileName {
+                localStore.removeExerciseMediaFile(fileName: storedFileName)
+            }
+            errorMessage = "草稿列表无法安全更新，请检查设备存储空间。"
+            return false
+        }
+        exerciseMediaDrafts = updated
+        errorMessage = nil
+        return true
+    }
+
+    /// Materialises a draft into an uploadable proof attachment. Photo bytes
+    /// are loaded into memory (≤8MB by rule); videos stay file-backed.
+    func proofAttachment(from mediaDraft: ExerciseMediaDraft) -> ProofAttachment? {
+        let fileURL = mediaDraft.storedFileName.flatMap { localStore.exerciseMediaFileURL(fileName: $0) }
+        switch mediaDraft.type {
+        case .image:
+            let data = mediaDraft.inlineData ?? fileURL.flatMap { try? Data(contentsOf: $0) }
+            guard let data else { return nil }
+            return ProofAttachment(
+                id: mediaDraft.id,
+                type: .image,
+                fileName: mediaDraft.fileName,
+                byteCount: data.count,
+                thumbnailData: mediaDraft.thumbnailData,
+                uploadData: data,
+                source: "运动拍摄",
+                mimeType: "image/jpeg"
+            )
+        case .video:
+            if let fileURL {
+                return ProofAttachment(
+                    id: mediaDraft.id,
+                    type: .video,
+                    fileName: mediaDraft.fileName,
+                    byteCount: mediaDraft.byteCount,
+                    durationSeconds: mediaDraft.durationSeconds,
+                    thumbnailData: mediaDraft.thumbnailData,
+                    sourceFileURL: fileURL,
+                    source: "运动拍摄"
+                )
+            }
+            guard let data = mediaDraft.inlineData else { return nil }
+            return ProofAttachment(
+                id: mediaDraft.id,
+                type: .video,
+                fileName: mediaDraft.fileName,
+                byteCount: data.count,
+                durationSeconds: mediaDraft.durationSeconds,
+                thumbnailData: mediaDraft.thumbnailData,
+                uploadData: data,
+                source: "运动拍摄"
+            )
+        }
+    }
+
     func discardExerciseSession() {
         guard localStore.clearExerciseSession() else {
             errorMessage = "无法清理本地运动会话，请稍后重试。"
             return
+        }
+        // Business rule 5.6: abandoning clears the media captured during this
+        // session, but keeps drafts retained from earlier attempts today.
+        if let sessionID = exerciseSession?.id {
+            clearExerciseMediaDrafts(sessionID: sessionID)
         }
         exerciseSession = nil
         errorMessage = nil
@@ -279,6 +564,9 @@ final class AppState: ObservableObject {
     func markExerciseSessionSubmitted() {
         exerciseSession = nil
         _ = localStore.clearExerciseSession()
+        // Business rule 6.4: a successful submission ends the check-in
+        // lifecycle, so every local media draft is released.
+        clearAllExerciseMediaDrafts()
     }
 
 #if DEBUG
@@ -292,6 +580,16 @@ final class AppState: ObservableObject {
             at: startTime
         ) else { return }
         _ = endExerciseSession(at: date)
+    }
+
+    func installActiveExerciseSessionForUITesting(at date: Date = Date()) {
+        discardExerciseSession()
+        _ = startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: date.addingTimeInterval(-10 * 60)
+        )
     }
 #endif
 
@@ -402,6 +700,7 @@ final class AppState: ObservableObject {
         let localWorkspace = localStore.readWorkspace().value ?? repository.loadWorkspace()
         workspace = localWorkspace
         restoreExerciseSession(for: workspace.student.id)
+        restoreExerciseMediaDrafts(for: workspace.student.id)
         let localDraft = localStore.readDraft().value
         if let localDraft, localDraft.creditType != .organizationOffset {
             draft = localDraft
@@ -434,6 +733,7 @@ final class AppState: ObservableObject {
         exerciseSession = nil
         _ = localStore.clearExerciseSession()
         _ = localStore.clearExerciseSubmissionDates()
+        clearAllExerciseMediaDrafts()
 
         if wasRemoteMode, let remoteStudentID {
             localStore.clearRemoteWorkspace(
@@ -477,6 +777,7 @@ final class AppState: ObservableObject {
             isRemoteMode = true
             remoteCacheStudentID = authenticatedStudent.id
             restoreExerciseSession(for: authenticatedStudent.id)
+            restoreExerciseMediaDrafts(for: authenticatedStudent.id)
             sanitizePersistedRemoteMutations(for: authenticatedStudent.id)
             do {
                 let remoteWorkspace = try await remoteRepo.loadWorkspace()
@@ -2283,5 +2584,21 @@ final class AppState: ObservableObject {
             return "本地数据读取完成。"
         }
         return "未发现本地数据，已使用 mock 初始数据。"
+    }
+}
+
+private extension Array {
+    /// Splits the array into (matching, nonMatching) while preserving order.
+    func partitioned(_ predicate: (Element) -> Bool) -> ([Element], [Element]) {
+        var matching: [Element] = []
+        var rest: [Element] = []
+        for element in self {
+            if predicate(element) {
+                matching.append(element)
+            } else {
+                rest.append(element)
+            }
+        }
+        return (matching, rest)
     }
 }

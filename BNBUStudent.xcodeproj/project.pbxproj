@@ -18,6 +18,7 @@
 		AA0000000000000000000009 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* DashboardView.swift */; };
 		AA0000000000000000000010 /* CoursesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* CoursesView.swift */; };
 		AA0000000000000000000011 /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* CheckInView.swift */; };
+		AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000023 /* ExerciseCaptureComponents.swift */; };
 		AA0000000000000000000012 /* GradesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* GradesView.swift */; };
 		AA0000000000000000000013 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* ProfileView.swift */; };
 		AA0000000000000000000014 /* StudentAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* StudentAPIClient.swift */; };
@@ -61,6 +62,7 @@
 		BB0000000000000000000009 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000010 /* CoursesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoursesView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* CheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000023 /* ExerciseCaptureComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCaptureComponents.swift; sourceTree = "<group>"; };
 		BB0000000000000000000012 /* GradesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradesView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000013 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000014 /* StudentAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentAPIClient.swift; sourceTree = "<group>"; };
@@ -148,6 +150,7 @@
 				BB0000000000000000000009 /* DashboardView.swift */,
 				BB0000000000000000000010 /* CoursesView.swift */,
 				BB0000000000000000000011 /* CheckInView.swift */,
+				BB0000000000000000000023 /* ExerciseCaptureComponents.swift */,
 				BB0000000000000000000012 /* GradesView.swift */,
 				BB0000000000000000000013 /* ProfileView.swift */,
 				BB0000000000000000000015 /* DetailViews.swift */,
@@ -334,6 +337,7 @@
 				AA0000000000000000000009 /* DashboardView.swift in Sources */,
 				AA0000000000000000000010 /* CoursesView.swift in Sources */,
 				AA0000000000000000000011 /* CheckInView.swift in Sources */,
+				AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */,
 				AA0000000000000000000012 /* GradesView.swift in Sources */,
 				AA0000000000000000000013 /* ProfileView.swift in Sources */,
 				AA0000000000000000000014 /* StudentAPIClient.swift in Sources */,

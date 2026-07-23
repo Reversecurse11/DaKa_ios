@@ -45,13 +45,16 @@ struct AppLocalStore {
     static let draftStorageKey = "bnbu.student.checkin.draft.v1"
     static let exerciseSessionStorageKey = "bnbu.student.exercise.session.v1"
     static let exerciseSubmissionDatesStorageKey = "bnbu.student.exercise.submission-dates.v1"
+    static let exerciseMediaDraftsStorageKey = "bnbu.student.exercise.media-drafts.v1"
     static let pendingMutationStorageKey = "bnbu.student.remote.mutations.v1"
     static let remoteWorkspaceStorageKeyPrefix = "bnbu.student.remote.workspace.v1"
+    private static let exerciseMediaDirectoryName = "exercise-media"
 
     private let workspaceKey = Self.workspaceStorageKey
     private let draftKey = Self.draftStorageKey
     private let exerciseSessionKey = Self.exerciseSessionStorageKey
     private let exerciseSubmissionDatesKey = Self.exerciseSubmissionDatesStorageKey
+    private let exerciseMediaDraftsKey = Self.exerciseMediaDraftsStorageKey
     private let pendingMutationKey = Self.pendingMutationStorageKey
     private let defaults: UserDefaults?
     private let legacyDefaults: UserDefaults
@@ -139,6 +142,86 @@ struct AppLocalStore {
         removeValue(forKey: exerciseSessionKey)
     }
 
+    func readExerciseMediaDrafts() -> LocalStoreReadResult<[ExerciseMediaDraft]> {
+        read([ExerciseMediaDraft].self, forKey: exerciseMediaDraftsKey)
+    }
+
+    @discardableResult
+    func saveExerciseMediaDrafts(_ drafts: [ExerciseMediaDraft]) -> Bool {
+        guard !drafts.isEmpty else { return clearExerciseMediaDraftIndex() }
+        return save(drafts, forKey: exerciseMediaDraftsKey)
+    }
+
+    @discardableResult
+    func clearExerciseMediaDraftIndex() -> Bool {
+        removeValue(forKey: exerciseMediaDraftsKey)
+    }
+
+    /// Directory for captured exercise media. Nil in defaults-backed test
+    /// stores, in which case draft bytes stay inline in the metadata index.
+    var exerciseMediaDirectoryURL: URL? {
+        protectedDirectoryURL?.appendingPathComponent(Self.exerciseMediaDirectoryName, isDirectory: true)
+    }
+
+    func exerciseMediaFileURL(fileName: String) -> URL? {
+        exerciseMediaDirectoryURL?.appendingPathComponent(fileName, isDirectory: false)
+    }
+
+    @discardableResult
+    func writeExerciseMediaFile(data: Data, fileName: String) -> Bool {
+        guard shouldFailWrite?(fileName) != true else { return false }
+        guard let url = exerciseMediaFileURL(fileName: fileName) else { return false }
+        prepareExerciseMediaDirectory()
+        do {
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Moves a transient capture file (e.g. a camera video) into durable
+    /// draft storage so it survives app restarts.
+    @discardableResult
+    func adoptExerciseMediaFile(from sourceURL: URL, fileName: String) -> Bool {
+        guard shouldFailWrite?(fileName) != true else { return false }
+        guard let url = exerciseMediaFileURL(fileName: fileName) else { return false }
+        prepareExerciseMediaDirectory()
+        do {
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+            do {
+                try fileManager.moveItem(at: sourceURL, to: url)
+            } catch {
+                try fileManager.copyItem(at: sourceURL, to: url)
+            }
+            try? fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func removeExerciseMediaFile(fileName: String) {
+        guard let url = exerciseMediaFileURL(fileName: fileName) else { return }
+        try? fileManager.removeItem(at: url)
+    }
+
+    func removeAllExerciseMediaFiles() {
+        guard let directoryURL = exerciseMediaDirectoryURL else { return }
+        try? fileManager.removeItem(at: directoryURL)
+    }
+
+    private func prepareExerciseMediaDirectory() {
+        guard let directoryURL = exerciseMediaDirectoryURL else { return }
+        try? fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+    }
+
     func readExerciseSubmissionDates() -> LocalStoreReadResult<[String: Date]> {
         read([String: Date].self, forKey: exerciseSubmissionDatesKey)
     }
@@ -188,6 +271,7 @@ struct AppLocalStore {
             defaults.removeObject(forKey: draftKey)
             defaults.removeObject(forKey: exerciseSessionKey)
             defaults.removeObject(forKey: exerciseSubmissionDatesKey)
+            defaults.removeObject(forKey: exerciseMediaDraftsKey)
             defaults.removeObject(forKey: pendingMutationKey)
             for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(Self.remoteWorkspaceStorageKeyPrefix) {
                 defaults.removeObject(forKey: key)

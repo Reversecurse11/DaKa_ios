@@ -26,6 +26,20 @@ private enum CheckInFormField: Hashable {
     case note
 }
 
+private enum ExerciseAutoEndAlert: Identifiable {
+    /// Active exercise time reached the 2-hour daily cap.
+    case dailyCap
+    /// An open pause exceeded 6 hours and the session was closed.
+    case pauseTimeout
+
+    var id: String {
+        switch self {
+        case .dailyCap: return "dailyCap"
+        case .pauseTimeout: return "pauseTimeout"
+        }
+    }
+}
+
 struct CheckInView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
@@ -35,13 +49,26 @@ struct CheckInView: View {
     @State private var note = ""
     @State private var selectedSportType: ExerciseSportType?
     @State private var customSportType = ""
+    /// Draft-pool captures the student picked as proof for this submission.
+    @State private var selectedDraftIDs: Set<String> = []
+    /// Materialized attachments for the current selection. Rebuilt when the
+    /// selection or the draft pool changes, so render passes stay cheap.
     @State private var proofAttachments: [ProofAttachment] = []
     @State private var submitted = false
     @State private var draftSaved = false
     @State private var draftRestored = false
     @State private var confirmSubmit = false
+    @State private var confirmUnderHourEnd = false
+    @State private var confirmAbandon = false
+    @State private var autoEndAlert: ExerciseAutoEndAlert?
+    @State private var showHealthReminder = false
 
     var body: some View {
+        scaffoldWithSubmitDialogs
+            .modifier(sessionDialogs)
+    }
+
+    private var scaffoldWithSubmitDialogs: some View {
         ZStack {
             BNBUPageBackground()
 
@@ -101,6 +128,13 @@ struct CheckInView: View {
         .onAppear {
             appState.reconcileExerciseSession()
             restoreDraftIfNeeded()
+            rebuildProofAttachments()
+            // Business rule 5.4: one-time health reminder per account.
+            // Suppressed under UI testing so dialogs stay deterministic.
+            if !ProcessInfo.processInfo.arguments.contains("-ui-testing-reset"),
+               !UserDefaults.standard.bool(forKey: healthReminderKey) {
+                showHealthReminder = true
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -111,6 +145,44 @@ struct CheckInView: View {
             focusedField = nil
             dismissBNBUKeyboard()
         }
+        .onChange(of: selectedDraftIDs) { _, _ in
+            rebuildProofAttachments()
+        }
+        .onChange(of: appState.exerciseMediaDrafts) { _, drafts in
+            let validIDs = Set(drafts.map(\.id))
+            let pruned = selectedDraftIDs.intersection(validIDs)
+            if pruned != selectedDraftIDs {
+                selectedDraftIDs = pruned
+            } else {
+                rebuildProofAttachments()
+            }
+        }
+    }
+
+    private var sessionDialogs: CheckInSessionDialogs {
+        CheckInSessionDialogs(
+            confirmUnderHourEnd: $confirmUnderHourEnd,
+            confirmAbandon: $confirmAbandon,
+            autoEndAlert: $autoEndAlert,
+            showHealthReminder: $showHealthReminder,
+            healthReminderKey: healthReminderKey,
+            endUnderOneHourAction: { endUnderOneHourExercise() },
+            abandonAction: {
+                appState.discardExerciseSession()
+                resetFormAfterSubmit()
+            }
+        )
+    }
+
+    private var healthReminderKey: String {
+        "bnbu.health.reminder.shown.\(appState.workspace.student.id)"
+    }
+
+    private func rebuildProofAttachments() {
+        proofAttachments = appState.exerciseMediaDrafts
+            .filter { selectedDraftIDs.contains($0.id) }
+            .compactMap { appState.proofAttachment(from: $0) }
+        draftSaved = false
     }
 
     @ViewBuilder
@@ -183,7 +255,7 @@ struct CheckInView: View {
 
                 SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
 
-                Text("开始后将按实际经过时间计时：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。")
+                Text("开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。")
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
@@ -211,11 +283,11 @@ struct CheckInView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let displayedSession = session.reconciled(at: context.date)
             SwissPanel {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 18) {
                     HStack {
                         Label(
-                            displayedSession.status == .active ? "运动进行中" : "运动已结束",
-                            systemImage: displayedSession.status == .active ? "figure.run.circle.fill" : "checkmark.circle.fill"
+                            sessionStatusTitle(displayedSession),
+                            systemImage: sessionStatusIcon(displayedSession)
                         )
                         .font(.headline.weight(.medium))
                         .foregroundStyle(BNBUTheme.primary)
@@ -223,45 +295,195 @@ struct CheckInView: View {
                         StatusBadge(text: displayedSession.category.title, filled: true)
                     }
 
-                    Text(formatDuration(displayedSession.elapsed(at: context.date)))
-                        .font(.system(size: 42, weight: .medium, design: .monospaced))
-                        .contentTransition(.numericText())
-                        .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
+                    // Business rule 3.5: the check-in page centres on the
+                    // timer. No distance, pace, calories or map in v1.
+                    VStack(spacing: 8) {
+                        Text(formatDuration(displayedSession.elapsed(at: context.date)))
+                            .font(.system(size: 56, weight: .medium, design: .monospaced))
+                            .contentTransition(.numericText())
+                            .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
+
+                        Text(creditSummary(for: displayedSession, at: context.date))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+                        if displayedSession.isPaused {
+                            Text("运动已暂停 · 暂停时间不计入运动时长")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(BNBUTheme.muted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
 
                     VStack(alignment: .leading, spacing: 8) {
                         sessionDetailRow(title: "运动项目", value: displayedSession.resolvedSportName)
                         sessionDetailRow(title: "开始时间", value: displayedSession.startTime.formatted(date: .omitted, time: .shortened))
+                        if displayedSession.pausedDuration(at: context.date) > 0 {
+                            sessionDetailRow(title: "暂停累计", value: formatDuration(displayedSession.pausedDuration(at: context.date)))
+                        }
                         sessionDetailRow(
                             title: "位置记录",
                             value: displayedSession.locationStatus == .available ? "已获取" : "未获取（不影响计时）"
                         )
                         if displayedSession.status == .completed {
+                            sessionDetailRow(title: "结束时间", value: (displayedSession.endTime ?? context.date).formatted(date: .omitted, time: .shortened))
                             sessionDetailRow(title: "可计学时", value: displayedSession.creditedHours().hourText)
                         }
                     }
 
                     if displayedSession.status == .active {
-                        SecondaryActionButton(title: "结束运动", systemImage: "stop.fill") {
-                            _ = appState.endExerciseSession()
+                        // Camera stays available while exercising and paused
+                        // (business rule 5.5); captures land in the draft pool.
+                        exerciseCaptureSection
+
+                        HStack(spacing: 10) {
+                            if displayedSession.isPaused {
+                                SecondaryActionButton(title: "继续运动", systemImage: "play.fill") {
+                                    appState.resumeExerciseSession()
+                                }
+                                .accessibilityIdentifier("checkin.exercise.resume")
+                            } else {
+                                SecondaryActionButton(title: "暂停", systemImage: "pause.fill") {
+                                    appState.pauseExerciseSession()
+                                }
+                                .accessibilityIdentifier("checkin.exercise.pause")
+                            }
+
+                            SecondaryActionButton(title: "结束运动", systemImage: "stop.fill") {
+                                requestEndExercise(displayedSession, at: context.date)
+                            }
+                            .accessibilityIdentifier("checkin.exercise.end")
                         }
-                        .accessibilityIdentifier("checkin.exercise.end")
+
+                        Button {
+                            confirmAbandon = true
+                        } label: {
+                            Text("放弃本次运动")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(BNBUTheme.muted)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("checkin.exercise.abandon")
                     } else if displayedSession.creditedHours() == 0 {
-                        Text("本次运动不足 1 小时，不计入体育学时，也不能提交凭证。")
+                        Text("本次运动不足 1 小时，不计入体育学时，不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(BNBUTheme.muted)
                         SecondaryActionButton(title: "完成并返回", systemImage: "arrow.counterclockwise") {
-                            appState.discardExerciseSession()
+                            appState.finishUncreditedExerciseSession()
                             resetFormAfterSubmit()
                         }
+                        .accessibilityIdentifier("checkin.exercise.finish.uncredited")
                     }
                 }
             }
             .task(id: displayedSession.status) {
                 if displayedSession.status == .completed, session.status == .active {
+                    autoEndAlert = session.reachedDailyCap(at: context.date) ? .dailyCap : .pauseTimeout
                     appState.reconcileExerciseSession(at: context.date)
                 }
             }
         }
+    }
+
+    private var exerciseCaptureSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("运动过程拍摄")
+                    .font(.headline.weight(.medium))
+                Spacer()
+                StatusBadge(text: "照片草稿 \(appState.exercisePhotoDraftCount)/\(ExerciseMediaDraftRule.maximumPhotoDrafts)")
+            }
+            Text("凭证只能通过相机实时拍摄，照片和视频先保存为本地草稿，结束打卡时可选择作为凭证。")
+                .font(.caption.weight(.regular))
+                .foregroundStyle(BNBUTheme.muted)
+
+            ExerciseCameraCaptureButton(
+                title: "拍摄照片 / 录制视频",
+                accessibilityIdentifier: "checkin.capture.camera"
+            ) { attachment in
+                handleCapturedAttachment(attachment, autoSelect: false)
+            }
+
+            #if DEBUG
+            ExerciseSimulatedCaptureButton(
+                index: appState.exerciseMediaDrafts.count + 1,
+                accessibilityIdentifier: "checkin.capture.demo",
+                isDisabled: !appState.canAddExercisePhotoDraft
+            ) { attachment in
+                handleCapturedAttachment(attachment, autoSelect: false)
+            }
+            #endif
+        }
+    }
+
+    private func sessionStatusTitle(_ session: ExerciseSession) -> String {
+        if session.status == .completed { return "运动已结束" }
+        return session.isPaused ? "运动已暂停" : "运动进行中"
+    }
+
+    private func sessionStatusIcon(_ session: ExerciseSession) -> String {
+        if session.status == .completed { return "checkmark.circle.fill" }
+        return session.isPaused ? "pause.circle.fill" : "figure.run.circle.fill"
+    }
+
+    private func creditSummary(for session: ExerciseSession, at date: Date) -> String {
+        switch session.creditedHours(at: date) {
+        case 2: return "当前可计学时：2 小时（已达今日上限）"
+        case 1: return "当前可计学时：1 小时 · 满 2 小时自动结束"
+        default: return "不足 1 小时不计入 · 满 1 小时计 1 小时"
+        }
+    }
+
+    private func requestEndExercise(_ session: ExerciseSession, at date: Date) {
+        if session.creditedHours(at: date) == 0 {
+            confirmUnderHourEnd = true
+        } else {
+            _ = appState.endExerciseSession(at: date)
+        }
+    }
+
+    /// Business rule 5.6: an under-one-hour end closes the session without a
+    /// record or quota usage, but keeps the captured drafts for later today.
+    private func endUnderOneHourExercise() {
+        guard appState.endExerciseSession() else { return }
+        appState.finishUncreditedExerciseSession()
+        resetFormAfterSubmit()
+    }
+
+    private func handleCapturedAttachment(_ attachment: ProofAttachment, autoSelect: Bool) {
+        let added: Bool
+        switch attachment.type {
+        case .image:
+            guard let data = attachment.uploadData else { return }
+            added = appState.addExercisePhotoDraft(
+                imageData: data,
+                thumbnailData: attachment.thumbnailData
+            )
+        case .video:
+            guard let fileURL = attachment.sourceFileURL else { return }
+            added = appState.addExerciseVideoDraft(
+                fileURL: fileURL,
+                byteCount: attachment.byteCount ?? 0,
+                durationSeconds: attachment.durationSeconds,
+                thumbnailData: attachment.thumbnailData
+            )
+        }
+        guard added, autoSelect, let newDraft = appState.exerciseMediaDrafts.last else { return }
+        let selectedImages = appState.exerciseMediaDrafts
+            .filter { selectedDraftIDs.contains($0.id) && $0.type == .image }.count
+        let selectedVideos = appState.exerciseMediaDrafts
+            .filter { selectedDraftIDs.contains($0.id) && $0.type == .video }.count
+        if newDraft.type == .image, selectedImages < ProofUploadRule.maxImageCount {
+            selectedDraftIDs.insert(newDraft.id)
+        } else if newDraft.type == .video, selectedVideos < ProofUploadRule.maxVideoCount {
+            selectedDraftIDs.insert(newDraft.id)
+        }
+    }
+
+    private func deleteDraft(_ mediaDraft: ExerciseMediaDraft) {
+        selectedDraftIDs.remove(mediaDraft.id)
+        appState.removeExerciseMediaDraft(id: mediaDraft.id)
     }
 
     private func evidenceSubmissionForm(_ session: ExerciseSession) -> some View {
@@ -281,7 +503,7 @@ struct CheckInView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("补充说明")
+                            Text("运动说明")
                                 .font(.headline.weight(.medium))
                             Spacer()
                             if focusedField == .note {
@@ -300,8 +522,8 @@ struct CheckInView: View {
                         }
                         TextEditor(text: $note)
                             .bnbuInputText()
-                            .accessibilityLabel("补充说明")
-                            .accessibilityHint("可选，最多 2000 个字符")
+                            .accessibilityLabel("运动说明")
+                            .accessibilityHint("可选，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符")
                             .focused($focusedField, equals: .note)
                             .frame(minHeight: 100)
                             .padding(8)
@@ -309,13 +531,13 @@ struct CheckInView: View {
                             .background(BNBUTheme.pale)
                             .bnbuOutlinedSurface()
                             .onChange(of: note) { _, value in
-                                if value.count > 2_000 {
-                                    note = String(value.prefix(2_000))
+                                if value.count > CheckInInputRule.maximumDescriptionLength {
+                                    note = String(value.prefix(CheckInInputRule.maximumDescriptionLength))
                                 }
                             }
                     }
 
-                    ProofAttachmentPanel(attachments: $proofAttachments)
+                    evidenceProofSection
 
                     if appState.isSubmittingCheckIn {
                         CheckInSubmissionProgressPanel(phase: appState.checkInSubmissionPhase)
@@ -349,6 +571,49 @@ struct CheckInView: View {
                 }
             }
         }
+    }
+
+    private var evidenceProofSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("打卡凭证")
+                    .font(.headline.weight(.medium))
+                Text("至少选择 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 凭证只能通过相机实时拍摄，不支持从相册选择。")
+                    .font(.caption.weight(.regular))
+                    .foregroundStyle(BNBUTheme.muted)
+            }
+
+            ExerciseCameraCaptureButton(
+                title: "现场拍摄照片 / 视频",
+                accessibilityIdentifier: "checkin.capture.camera"
+            ) { attachment in
+                handleCapturedAttachment(attachment, autoSelect: true)
+            }
+
+            #if DEBUG
+            ExerciseSimulatedCaptureButton(
+                index: appState.exerciseMediaDrafts.count + 1,
+                accessibilityIdentifier: "proof.demo.add",
+                isDisabled: !appState.canAddExercisePhotoDraft
+            ) { attachment in
+                handleCapturedAttachment(attachment, autoSelect: true)
+            }
+            #endif
+
+            ExerciseProofSelectionPanel(
+                drafts: appState.exerciseMediaDrafts,
+                selectedDraftIDs: $selectedDraftIDs
+            ) { mediaDraft in
+                deleteDraft(mediaDraft)
+            }
+        }
+        .padding(16)
+        .background(BNBUTheme.blueSoft)
+        .overlay(
+            Rectangle()
+                .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                .foregroundStyle(BNBUTheme.line)
+        )
     }
 
     private var recordList: some View {
@@ -403,7 +668,7 @@ struct CheckInView: View {
             return inputMessage
         }
         if proofAttachments.isEmpty {
-            return "请至少添加 1 个图片或视频凭证。"
+            return "请至少选择或拍摄 1 张照片或 1 个视频作为凭证。"
         }
         if let proofLimitMessage = ProofUploadRule.validationMessage(for: proofAttachments) {
             return proofLimitMessage
@@ -415,11 +680,15 @@ struct CheckInView: View {
         return nil
     }
 
+    // Business rule 5.8: the confirmation summary shows category, sport,
+    // start/end time, actual duration, credited hours and proof count.
     private var submitConfirmationMessage: String {
         guard let session = appState.exerciseSession, submissionContext != nil else {
             return "请先完成运动后再提交。"
         }
-        return "\(session.category.title) · \(session.creditedHours().hourText) · \(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
+        let startText = session.startTime.formatted(date: .omitted, time: .shortened)
+        let endText = (session.endTime ?? Date()).formatted(date: .omitted, time: .shortened)
+        return "\(session.category.title) · \(session.resolvedSportName)\n运动时间 \(startText) – \(endText)，实际运动 \(formatDuration(session.elapsed()))，计入 \(session.creditedHours().hourText)。\n\(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
     }
 
     private var canResumePendingUpload: Bool {
@@ -482,7 +751,11 @@ struct CheckInView: View {
             return
         }
         note = draft.note
-        proofAttachments = draft.proofAttachments
+        // Proof bytes live in the media draft pool; restore the selection by
+        // intersecting the saved attachment ids with what is still on disk.
+        let poolIDs = Set(appState.exerciseMediaDrafts.map(\.id))
+        selectedDraftIDs = Set(draft.proofAttachments.map(\.id)).intersection(poolIDs)
+        rebuildProofAttachments()
         selectedSegment = .submit
         draftSaved = false
     }
@@ -506,6 +779,7 @@ struct CheckInView: View {
         note = ""
         selectedSportType = nil
         customSportType = ""
+        selectedDraftIDs = []
         proofAttachments = []
         draftSaved = false
     }
@@ -515,6 +789,7 @@ struct CheckInView: View {
         selectedSportType = nil
         selectedCategory = .general
         customSportType = ""
+        selectedDraftIDs = []
         proofAttachments = []
         draftSaved = false
     }
@@ -557,6 +832,9 @@ struct CheckInView: View {
     private func startExercise() {
         guard startValidationMessage == nil else { return }
         appState.clearDraft()
+        // Retained media drafts from an earlier <1h attempt stay in the pool;
+        // only the form selection resets for the new session.
+        selectedDraftIDs = []
         proofAttachments = []
         note = ""
         draftSaved = false
@@ -596,6 +874,71 @@ struct CheckInView: View {
     private func formatDurationForVoiceOver(_ duration: TimeInterval) -> String {
         let seconds = max(Int(duration), 0)
         return "\(seconds / 3_600) 小时 \((seconds % 3_600) / 60) 分 \(seconds % 60) 秒"
+    }
+}
+
+/// Session-lifecycle dialogs, split out so the compiler can type-check the
+/// main body in reasonable time.
+private struct CheckInSessionDialogs: ViewModifier {
+    @Binding var confirmUnderHourEnd: Bool
+    @Binding var confirmAbandon: Bool
+    @Binding var autoEndAlert: ExerciseAutoEndAlert?
+    @Binding var showHealthReminder: Bool
+    let healthReminderKey: String
+    let endUnderOneHourAction: () -> Void
+    let abandonAction: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog(
+                "结束运动",
+                isPresented: $confirmUnderHourEnd,
+                titleVisibility: .visible
+            ) {
+                Button("结束（本次不计入）", role: .destructive) {
+                    endUnderOneHourAction()
+                }
+                .accessibilityIdentifier("checkin.exercise.end.confirm")
+                Button("继续运动", role: .cancel) {}
+            } message: {
+                Text("运动时长未满 1 小时，结束后本次不计入有效打卡时长，也不占用今日打卡次数。已拍摄的照片/视频草稿会保留，今天继续运动后仍可选用。")
+            }
+            .confirmationDialog(
+                "放弃本次运动",
+                isPresented: $confirmAbandon,
+                titleVisibility: .visible
+            ) {
+                Button("放弃并清除草稿", role: .destructive) {
+                    abandonAction()
+                }
+                .accessibilityIdentifier("checkin.exercise.abandon.confirm")
+                Button("继续运动", role: .cancel) {}
+            } message: {
+                Text("放弃后本次计时不保留，不占用今日打卡次数；本次运动中拍摄的照片/视频草稿将被清除。")
+            }
+            .alert(item: $autoEndAlert) { alert in
+                switch alert {
+                case .dailyCap:
+                    return Alert(
+                        title: Text("已达到今日计时上限"),
+                        message: Text("运动时长已满 2 小时，计时已自动结束并按 2 小时计入。请补充说明和凭证完成提交。"),
+                        dismissButton: .default(Text("好"))
+                    )
+                case .pauseTimeout:
+                    return Alert(
+                        title: Text("运动已自动结束"),
+                        message: Text("暂停超过 6 小时未恢复，本次计时已自动结束，按暂停前的实际运动时长处理。"),
+                        dismissButton: .default(Text("好"))
+                    )
+                }
+            }
+            .alert("健康提醒", isPresented: $showHealthReminder) {
+                Button("我知道了") {
+                    UserDefaults.standard.set(true, forKey: healthReminderKey)
+                }
+            } message: {
+                Text("请根据自身身体状况适量运动。如感不适应立即停止，必要时及时就医。")
+            }
     }
 }
 

@@ -54,6 +54,36 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["打卡照片 / 视频"].exists)
     }
 
+    // Business rules 3.2.1/5.5/5.6: pause/resume, in-session capture drafts,
+    // and the under-one-hour end path that keeps drafts and reopens the form.
+    func testExercisePauseCaptureAndUnderHourEndFlow() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise"]
+        app.launch()
+
+        login()
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        app.segmentedControls.buttons["提交"].tap()
+        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 5))
+
+        // In-session simulated camera capture lands in the draft pool.
+        scrollToAndTap(app.buttons["checkin.capture.demo"])
+        XCTAssertTrue(app.staticTexts["照片草稿 1/6"].waitForExistence(timeout: 3))
+
+        // Pause freezes the timer; resume brings the session back.
+        scrollToAndTap(app.buttons["checkin.exercise.pause"])
+        XCTAssertTrue(app.staticTexts["运动已暂停"].waitForExistence(timeout: 3))
+        scrollToAndTap(app.buttons["checkin.exercise.resume"])
+        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 3))
+
+        // Ending under one hour warns, keeps drafts, and reopens the form.
+        scrollToAndTap(app.buttons["checkin.exercise.end"])
+        XCTAssertTrue(app.staticTexts["结束运动"].firstMatch.waitForExistence(timeout: 3))
+        app.buttons.matching(identifier: "checkin.exercise.end.confirm").firstMatch.tap()
+        XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 5))
+    }
+
     func testSubmittedHistoryNoticeReadAndLogoutFlow() throws {
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
@@ -206,7 +236,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.segmentedControls.buttons["提交"].tap()
         XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 5))
 
-        let noteEditor = app.textViews["补充说明"]
+        let noteEditor = app.textViews["运动说明"]
         if noteEditor.waitForExistence(timeout: 3) {
             noteEditor.tap()
             noteEditor.typeText("iOS联调测试 20260719 提交读回闭环，可忽略或清理")

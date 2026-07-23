@@ -19,6 +19,9 @@ struct BNBUStudentApp: App {
         if arguments.contains("-ui-testing-completed-exercise") {
             state.installCompletedExerciseSessionForUITesting()
         }
+        if arguments.contains("-ui-testing-active-exercise") {
+            state.installActiveExerciseSessionForUITesting()
+        }
 #endif
         _appState = StateObject(wrappedValue: state)
     }

@@ -306,9 +306,27 @@ enum ExerciseLocationStatus: String, Hashable, Codable {
     case unavailable
 }
 
+/// One pause window inside an exercise session. `resumedAt == nil` means the
+/// pause is still open. Business rules require every pause/resume instant to
+/// be recorded, so pauses are never merged or dropped.
+struct ExercisePause: Hashable, Codable {
+    let startedAt: Date
+    var resumedAt: Date?
+
+    /// Paused time that overlaps [rangeStart, rangeEnd]; an open pause is
+    /// treated as lasting until rangeEnd.
+    func overlap(from rangeStart: Date, to rangeEnd: Date) -> TimeInterval {
+        let start = max(startedAt, rangeStart)
+        let end = min(resumedAt ?? rangeEnd, rangeEnd)
+        return max(end.timeIntervalSince(start), 0)
+    }
+}
+
 struct ExerciseSession: Identifiable, Hashable, Codable {
     static let oneHour: TimeInterval = 60 * 60
     static let maximumDuration: TimeInterval = 2 * oneHour
+    /// A pause left open this long auto-ends the session (business rule 3.2.1).
+    static let maximumPauseBeforeAutoEnd: TimeInterval = 6 * oneHour
 
     let id: String
     let studentID: String
@@ -322,6 +340,55 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
     var locationStatus: ExerciseLocationStatus
     var latitude: Double?
     var longitude: Double?
+    var pauses: [ExercisePause]
+
+    init(
+        id: String,
+        studentID: String,
+        category: ExerciseCategory,
+        sportType: ExerciseSportType,
+        customSportName: String?,
+        courseID: String?,
+        startTime: Date,
+        endTime: Date? = nil,
+        status: ExerciseSessionStatus,
+        locationStatus: ExerciseLocationStatus,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        pauses: [ExercisePause] = []
+    ) {
+        self.id = id
+        self.studentID = studentID
+        self.category = category
+        self.sportType = sportType
+        self.customSportName = customSportName
+        self.courseID = courseID
+        self.startTime = startTime
+        self.endTime = endTime
+        self.status = status
+        self.locationStatus = locationStatus
+        self.latitude = latitude
+        self.longitude = longitude
+        self.pauses = pauses
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        studentID = try container.decode(String.self, forKey: .studentID)
+        category = try container.decode(ExerciseCategory.self, forKey: .category)
+        sportType = try container.decode(ExerciseSportType.self, forKey: .sportType)
+        customSportName = try container.decodeIfPresent(String.self, forKey: .customSportName)
+        courseID = try container.decodeIfPresent(String.self, forKey: .courseID)
+        startTime = try container.decode(Date.self, forKey: .startTime)
+        endTime = try container.decodeIfPresent(Date.self, forKey: .endTime)
+        status = try container.decode(ExerciseSessionStatus.self, forKey: .status)
+        locationStatus = try container.decode(ExerciseLocationStatus.self, forKey: .locationStatus)
+        latitude = try container.decodeIfPresent(Double.self, forKey: .latitude)
+        longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
+        // Sessions persisted before the pause feature carry no pauses key.
+        pauses = try container.decodeIfPresent([ExercisePause].self, forKey: .pauses) ?? []
+    }
 
     var resolvedSportName: String {
         if sportType == .other {
@@ -330,9 +397,29 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         return sportType.title
     }
 
+    /// The currently open pause, if the session is paused right now.
+    var openPause: ExercisePause? {
+        guard let last = pauses.last, last.resumedAt == nil else { return nil }
+        return last
+    }
+
+    var isPaused: Bool {
+        status == .active && openPause != nil
+    }
+
+    /// Actual exercise duration: wall-clock time minus accumulated pauses,
+    /// capped at the 2-hour daily maximum.
     func elapsed(at date: Date = Date()) -> TimeInterval {
-        let effectiveEnd = min(endTime ?? date, startTime.addingTimeInterval(Self.maximumDuration))
-        return min(max(effectiveEnd.timeIntervalSince(startTime), 0), Self.maximumDuration)
+        let effectiveEnd = max(endTime ?? date, startTime)
+        let wallClock = effectiveEnd.timeIntervalSince(startTime)
+        let paused = pauses.reduce(0) { $0 + $1.overlap(from: startTime, to: effectiveEnd) }
+        return min(max(wallClock - paused, 0), Self.maximumDuration)
+    }
+
+    /// Total paused time so far, for UI display.
+    func pausedDuration(at date: Date = Date()) -> TimeInterval {
+        let effectiveEnd = max(endTime ?? date, startTime)
+        return pauses.reduce(0) { $0 + $1.overlap(from: startTime, to: effectiveEnd) }
     }
 
     func creditedHours(at date: Date = Date()) -> Double {
@@ -342,21 +429,80 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         return 0
     }
 
+    /// The wall-clock instant at which active exercise time reaches the
+    /// 2-hour cap, walking the segments between pauses. Returns nil while an
+    /// open pause exists and the cap was not reached before it started.
+    func activeDurationCapInstant() -> Date? {
+        var accumulated: TimeInterval = 0
+        var cursor = startTime
+        for pause in pauses {
+            let segmentEnd = max(pause.startedAt, cursor)
+            let segmentLength = segmentEnd.timeIntervalSince(cursor)
+            if accumulated + segmentLength >= Self.maximumDuration {
+                return cursor.addingTimeInterval(Self.maximumDuration - accumulated)
+            }
+            accumulated += segmentLength
+            guard let resumedAt = pause.resumedAt else { return nil }
+            cursor = max(resumedAt, segmentEnd)
+        }
+        return cursor.addingTimeInterval(Self.maximumDuration - accumulated)
+    }
+
+    /// Auto-completion: active time reached the 2-hour cap, or an open pause
+    /// exceeded 6 hours (in which case the exercise ends at the pause start).
     func reconciled(at date: Date = Date()) -> ExerciseSession {
-        guard status == .active,
-              date >= startTime.addingTimeInterval(Self.maximumDuration) else {
+        guard status == .active else { return self }
+        if let openPause {
+            if date.timeIntervalSince(openPause.startedAt) >= Self.maximumPauseBeforeAutoEnd {
+                return ended(at: openPause.startedAt)
+            }
             return self
         }
+        if let capInstant = activeDurationCapInstant(), date >= capInstant {
+            return ended(at: capInstant)
+        }
+        return self
+    }
+
+    /// Whether reconciliation at `date` would auto-complete this session
+    /// because the 2-hour active-time cap was reached (not the pause timeout).
+    func reachedDailyCap(at date: Date = Date()) -> Bool {
+        guard status == .active, openPause == nil else { return false }
+        guard let capInstant = activeDurationCapInstant() else { return false }
+        return date >= capInstant
+    }
+
+    /// Ends the session. Ending while paused stops the exercise at the pause
+    /// start; the stop time never exceeds the active-time cap instant.
+    func ended(at date: Date = Date()) -> ExerciseSession {
         var updated = self
-        updated.endTime = startTime.addingTimeInterval(Self.maximumDuration)
+        var stopTime = max(date, startTime)
+        if let openPause {
+            stopTime = min(stopTime, max(openPause.startedAt, startTime))
+        }
+        if let capInstant = activeDurationCapInstant(), capInstant < stopTime {
+            stopTime = capInstant
+        }
+        updated.endTime = stopTime
         updated.status = .completed
         return updated
     }
 
-    func ended(at date: Date = Date()) -> ExerciseSession {
+    /// Opens a pause. Returns nil when the session is not active or already paused.
+    func paused(at date: Date = Date()) -> ExerciseSession? {
+        guard status == .active, openPause == nil else { return nil }
+        let lastResume = pauses.last?.resumedAt ?? startTime
         var updated = self
-        updated.endTime = min(max(date, startTime), startTime.addingTimeInterval(Self.maximumDuration))
-        updated.status = .completed
+        updated.pauses.append(ExercisePause(startedAt: max(date, lastResume), resumedAt: nil))
+        return updated
+    }
+
+    /// Closes the open pause. Returns nil when the session is not paused.
+    func resumed(at date: Date = Date()) -> ExerciseSession? {
+        guard status == .active, let lastIndex = pauses.indices.last,
+              pauses[lastIndex].resumedAt == nil else { return nil }
+        var updated = self
+        updated.pauses[lastIndex].resumedAt = max(date, pauses[lastIndex].startedAt)
         return updated
     }
 }
@@ -371,6 +517,37 @@ enum ExerciseSessionInputRule {
         if normalized.isEmpty { return "请填写其他运动项目名称。" }
         if normalized.count > maximumCustomSportNameLength { return "其他运动项目名称不能超过 32 个字符。" }
         return nil
+    }
+}
+
+/// A camera capture taken during or right after an exercise session. Media
+/// bytes live in a protected on-device file (or inline for small test
+/// payloads); drafts never upload until the student selects them as proof.
+struct ExerciseMediaDraft: Identifiable, Hashable, Codable {
+    let id: String
+    let studentID: String
+    /// Session that produced this capture. Abandoning a session removes only
+    /// its own drafts; drafts retained from an earlier <1h attempt survive.
+    let sessionID: String
+    let type: ProofMediaType
+    let fileName: String
+    /// File name inside the exercise-media draft directory. Nil when the
+    /// bytes are stored inline (unit tests without file storage).
+    let storedFileName: String?
+    var inlineData: Data?
+    var thumbnailData: Data?
+    let byteCount: Int
+    let durationSeconds: Double?
+    let capturedAt: Date
+}
+
+enum ExerciseMediaDraftRule {
+    /// Business rule 5.5/7: at most 6 photo drafts per check-in lifecycle.
+    /// Video recordings do not count toward the photo cap.
+    static let maximumPhotoDrafts = 6
+
+    static func canAddPhoto(to drafts: [ExerciseMediaDraft]) -> Bool {
+        drafts.filter { $0.type == .image }.count < maximumPhotoDrafts
     }
 }
 
@@ -1070,11 +1247,12 @@ enum ExemptionProofRule {
 }
 
 enum CheckInInputRule {
-    static let maximumDescriptionLength = 2_000
+    /// Business rule 5.7: the optional sport note is capped at 200 characters.
+    static let maximumDescriptionLength = 200
 
     static func validationMessage(note: String) -> String? {
         if note.trimmingCharacters(in: .whitespacesAndNewlines).count > maximumDescriptionLength {
-            return "补充说明不能超过 2000 个字符。"
+            return "运动说明不能超过 \(maximumDescriptionLength) 个字符。"
         }
         return nil
     }
