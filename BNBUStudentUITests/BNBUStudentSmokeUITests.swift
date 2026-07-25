@@ -43,11 +43,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     func testSystemLanguageChineseUpdatesCoreNavigation() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["tab.dashboard"].label, "首页")
-        XCTAssertEqual(app.buttons["tab.courses"].label, "课程")
-        XCTAssertEqual(app.buttons["tab.checkin"].label, "打卡")
-        XCTAssertEqual(app.buttons["tab.grades"].label, "成绩")
-        XCTAssertEqual(app.buttons["tab.profile"].label, "我的")
+        XCTAssertEqual(tabButton("tab.dashboard").label, "首页")
+        XCTAssertEqual(tabButton("tab.courses").label, "课程")
+        XCTAssertEqual(tabButton("tab.checkin").label, "打卡")
+        XCTAssertEqual(tabButton("tab.grades").label, "成绩")
+        XCTAssertEqual(tabButton("tab.profile").label, "我的")
     }
 
     func testSystemLanguageEnglishUpdatesCoreNavigation() throws {
@@ -63,11 +63,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["tab.dashboard"].label, "Home")
-        XCTAssertEqual(app.buttons["tab.courses"].label, "Courses")
-        XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
-        XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
-        XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+        XCTAssertEqual(tabButton("tab.dashboard").label, "Home")
+        XCTAssertEqual(tabButton("tab.courses").label, "Courses")
+        XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
+        XCTAssertEqual(tabButton("tab.grades").label, "Grades")
+        XCTAssertEqual(tabButton("tab.profile").label, "Profile")
 
         XCTAssertTrue(app.staticTexts["Current Risk Notice"].waitForExistence(timeout: 3))
         XCTAssertTrue(
@@ -77,7 +77,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         )
         XCTAssertFalse(app.staticTexts["当前风险提示"].exists)
 
-        app.buttons["tab.grades"].tap()
+        tabButton("tab.grades").tap()
         XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))
         for title in [
             "PE Check-In",
@@ -110,11 +110,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         attachScreenshot(named: "english-home")
 
-        app.buttons["tab.courses"].tap()
+        tabButton("tab.courses").tap()
         XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 3))
         attachScreenshot(named: "english-courses")
 
-        app.buttons["tab.checkin"].tap()
+        tabButton("tab.checkin").tap()
         XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
         for label in ["Start Time", "Location", "End Time", "Eligible Hours"] {
             XCTAssertTrue(
@@ -124,14 +124,14 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
         attachScreenshot(named: "english-checkin")
 
-        app.buttons["tab.grades"].tap()
+        tabButton("tab.grades").tap()
         XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))
         attachScreenshot(named: "english-grades")
 
         app.swipeUp()
         attachScreenshot(named: "english-grades-lower")
 
-        app.buttons["tab.profile"].tap()
+        tabButton("tab.profile").tap()
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
         assertProfileNavigationCardsAligned()
         attachScreenshot(named: "english-profile")
@@ -150,11 +150,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["tab.dashboard"].label, "Home")
-        XCTAssertEqual(app.buttons["tab.courses"].label, "Courses")
-        XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
-        XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
-        XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+        XCTAssertEqual(tabButton("tab.dashboard").label, "Home")
+        XCTAssertEqual(tabButton("tab.courses").label, "Courses")
+        XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
+        XCTAssertEqual(tabButton("tab.grades").label, "Grades")
+        XCTAssertEqual(tabButton("tab.profile").label, "Profile")
     }
 
     func testManualLanguageSwitchUpdatesNavigationWithoutRelaunch() throws {
@@ -170,17 +170,17 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         let homeLabelUpdated = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "Home"),
-            object: app.buttons["tab.dashboard"]
+            object: tabButton("tab.dashboard")
         )
         XCTAssertEqual(
             XCTWaiter.wait(for: [homeLabelUpdated], timeout: 3),
             .completed
         )
-        XCTAssertEqual(app.buttons["tab.dashboard"].label, "Home")
-        XCTAssertEqual(app.buttons["tab.courses"].label, "Courses")
-        XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
-        XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
-        XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+        XCTAssertEqual(tabButton("tab.dashboard").label, "Home")
+        XCTAssertEqual(tabButton("tab.courses").label, "Courses")
+        XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
+        XCTAssertEqual(tabButton("tab.grades").label, "Grades")
+        XCTAssertEqual(tabButton("tab.profile").label, "Profile")
     }
 
     func testSubmitDraftAndSubmittedRecordFlow() throws {
@@ -594,8 +594,17 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         case "成绩": identifier = "tab.grades"
         default: identifier = "tab.profile"
         }
-        app.buttons[identifier].tap()
+        tabButton(identifier).tap()
         XCTAssertTrue(screen(screenIdentifier).waitForExistence(timeout: 3))
+    }
+
+    /// The native tab bar publishes its accessibility identifiers slightly after
+    /// the first tab's content appears, so waiting here keeps a relaunch
+    /// followed by an immediate tab switch from racing the tab bar.
+    private func tabButton(_ identifier: String, timeout: TimeInterval = 5) -> XCUIElement {
+        let button = app.buttons[identifier]
+        _ = button.waitForExistence(timeout: timeout)
+        return button
     }
 
     private func login() {
