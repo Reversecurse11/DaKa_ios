@@ -289,16 +289,7 @@ struct CheckInView: View {
             let displayedSession = session.reconciled(at: context.date)
             SwissPanel {
                 VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        Label(
-                            sessionStatusTitle(displayedSession),
-                            systemImage: sessionStatusIcon(displayedSession)
-                        )
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(BNBUTheme.primary)
-                        Spacer()
-                        StatusBadge(text: displayedSession.category.title, filled: true)
-                    }
+                    sessionHeader(displayedSession)
 
                     // Business rule 3.5: the check-in page centres on the
                     // timer. No distance, pace, calories or map in v1.
@@ -306,6 +297,8 @@ struct CheckInView: View {
                         Text(formatDuration(displayedSession.elapsed(at: context.date)))
                             .font(.system(size: 56, weight: .medium, design: .monospaced))
                             .contentTransition(.numericText())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.55)
                             .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
 
                         Text(creditSummary(for: displayedSession, at: context.date))
@@ -321,18 +314,26 @@ struct CheckInView: View {
                     .frame(maxWidth: .infinity)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        sessionDetailRow(title: "运动项目", value: displayedSession.resolvedSportName)
+                        sessionDetailRow(
+                            title: "运动项目",
+                            value: BNBUL10n.dynamicText(displayedSession.resolvedSportName)
+                        )
                         sessionDetailRow(title: "开始时间", value: formattedTime(displayedSession.startTime))
                         if displayedSession.pausedDuration(at: context.date) > 0 {
                             sessionDetailRow(title: "暂停累计", value: formatDuration(displayedSession.pausedDuration(at: context.date)))
                         }
                         sessionDetailRow(
                             title: "位置记录",
-                            value: displayedSession.locationStatus == .available ? "已获取" : "未获取（不影响计时）"
+                            value: displayedSession.locationStatus == .available
+                                ? BNBUL10n.text("已获取")
+                                : BNBUL10n.text("未获取（不影响计时）")
                         )
                         if displayedSession.status == .completed {
                             sessionDetailRow(title: "结束时间", value: formattedTime(displayedSession.endTime ?? context.date))
-                            sessionDetailRow(title: "可计学时", value: displayedSession.creditedHours().hourText)
+                            sessionDetailRow(
+                                title: "可计学时",
+                                value: displayedSession.creditedHours().localizedHourText
+                            )
                         }
                     }
 
@@ -391,6 +392,27 @@ struct CheckInView: View {
         }
     }
 
+    private func sessionHeader(_ session: ExerciseSession) -> some View {
+        let status = sessionStatusTitle(session)
+        let category = BNBUL10n.dynamicText(session.category.title)
+
+        return ViewThatFits(in: .horizontal) {
+            HStack {
+                Label(status, systemImage: sessionStatusIcon(session))
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.primary)
+                Spacer(minLength: 8)
+                StatusBadge(text: category, filled: true)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Label(status, systemImage: sessionStatusIcon(session))
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.primary)
+                StatusBadge(text: category, filled: true)
+            }
+        }
+    }
+
     private var exerciseCaptureSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -414,8 +436,10 @@ struct CheckInView: View {
     }
 
     private func sessionStatusTitle(_ session: ExerciseSession) -> String {
-        if session.status == .completed { return "运动已结束" }
-        return session.isPaused ? "运动已暂停" : "运动进行中"
+        if session.status == .completed { return BNBUL10n.text("运动已结束") }
+        return session.isPaused
+            ? BNBUL10n.text("运动已暂停")
+            : BNBUL10n.text("运动进行中")
     }
 
     private func sessionStatusIcon(_ session: ExerciseSession) -> String {
@@ -425,9 +449,9 @@ struct CheckInView: View {
 
     private func creditSummary(for session: ExerciseSession, at date: Date) -> String {
         switch session.creditedHours(at: date) {
-        case 2: return "当前可计学时：2 小时（已达今日上限）"
-        case 1: return "当前可计学时：1 小时 · 满 2 小时自动结束"
-        default: return "不足 1 小时不计入 · 满 1 小时计 1 小时"
+        case 2: return BNBUL10n.text("当前可计学时：2 小时（已达今日上限）")
+        case 1: return BNBUL10n.text("当前可计学时：1 小时 · 满 2 小时自动结束")
+        default: return BNBUL10n.text("不足 1 小时不计入 · 满 1 小时计 1 小时")
         }
     }
 
@@ -651,26 +675,30 @@ struct CheckInView: View {
     private var validationMessage: String? {
         guard let session = appState.exerciseSession else { return nil }
         if appState.hasSubmittedCheckInToday() {
-            return "今日已打卡，每天只能提交一次。"
+            return BNBUL10n.text("今日已打卡，每天只能提交一次。")
         }
         if submissionContext == nil {
-            return "本次运动关联的课程已失效，请刷新课程后重试。"
+            return BNBUL10n.text("本次运动关联的课程已失效，请刷新课程后重试。")
         }
         if session.creditedHours() != 1 && session.creditedHours() != 2 {
-            return "运动不足 1 小时，不能提交。"
+            return BNBUL10n.text("运动不足 1 小时，不能提交。")
         }
         if let inputMessage = CheckInInputRule.validationMessage(note: submissionNote(for: session)) {
             return inputMessage
         }
         if proofAttachments.isEmpty {
-            return "请至少选择或拍摄 1 张照片或 1 个视频作为凭证。"
+            return BNBUL10n.text("请至少选择或拍摄 1 张照片或 1 个视频作为凭证。")
         }
         if let proofLimitMessage = ProofUploadRule.validationMessage(for: proofAttachments) {
             return proofLimitMessage
         }
         if !canResumePendingUpload,
            let invalidProof = proofAttachments.first(where: { !$0.isValidForUpload }) {
-            return "\(invalidProof.fileName) 不符合要求：\(invalidProof.validationMessage ?? "凭证无效")。"
+            return BNBUL10n.formatted(
+                "%@ 不符合要求：%@。",
+                invalidProof.fileName,
+                invalidProof.validationMessage ?? BNBUL10n.text("凭证无效")
+            )
         }
         return nil
     }
@@ -679,11 +707,29 @@ struct CheckInView: View {
     // start/end time, actual duration, credited hours and proof count.
     private var submitConfirmationMessage: String {
         guard let session = appState.exerciseSession, submissionContext != nil else {
-            return "请先完成运动后再提交。"
+            return BNBUL10n.text("请先完成运动后再提交。")
         }
         let startText = formattedTime(session.startTime)
         let endText = formattedTime(session.endTime ?? Date())
-        return "\(session.category.title) · \(session.resolvedSportName)\n运动时间 \(startText) – \(endText)，实际运动 \(formatDuration(session.elapsed()))，计入 \(session.creditedHours().hourText)。\n\(proofAttachments.count) 个凭证。提交后可在打卡记录中查看。"
+        let proofSummary: String
+        if proofAttachments.count == 1 {
+            proofSummary = BNBUL10n.text("1 个凭证。提交后可在打卡记录中查看。")
+        } else {
+            proofSummary = BNBUL10n.formatted(
+                "%lld 个凭证。提交后可在打卡记录中查看。",
+                proofAttachments.count
+            )
+        }
+        return BNBUL10n.formatted(
+            "%@ · %@\n运动时间 %@ – %@，实际运动 %@，计入 %@。\n%@",
+            BNBUL10n.dynamicText(session.category.title),
+            BNBUL10n.dynamicText(session.resolvedSportName),
+            startText,
+            endText,
+            formatDuration(session.elapsed()),
+            session.creditedHours().localizedHourText,
+            proofSummary
+        )
     }
 
     private var canResumePendingUpload: Bool {
@@ -874,13 +920,21 @@ struct CheckInView: View {
 
     @ViewBuilder
     private func sessionDetailRow(title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(LocalizedStringKey(title))
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            Spacer(minLength: 16)
-            Text(value)
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(BNBUTheme.onSurface)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(verbatim: BNBUL10n.dynamicText(title))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                Spacer(minLength: 16)
+                Text(verbatim: value)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(BNBUTheme.onSurface)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: BNBUL10n.dynamicText(title))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                Text(verbatim: value)
+                    .foregroundStyle(BNBUTheme.onSurface)
+            }
         }
         .font(.subheadline.weight(.regular))
     }
@@ -1156,7 +1210,7 @@ private struct DraftBanner: View {
                     StatusBadge(text: draft.updatedAt)
                 }
 
-                Text("已保存 \(draft.hours.hourText)，包含 \(draft.proofAttachments.count) 个凭证。")
+                Text(verbatim: summaryText)
                     .font(.subheadline.weight(.regular))
                     .foregroundStyle(BNBUTheme.muted)
 
@@ -1166,6 +1220,20 @@ private struct DraftBanner: View {
                 }
             }
         }
+    }
+
+    private var summaryText: String {
+        if draft.proofAttachments.count == 1 {
+            return BNBUL10n.formatted(
+                "已保存 %@，包含 1 个凭证。",
+                draft.hours.localizedHourText
+            )
+        }
+        return BNBUL10n.formatted(
+            "已保存 %@，包含 %lld 个凭证。",
+            draft.hours.localizedHourText,
+            draft.proofAttachments.count
+        )
     }
 }
 

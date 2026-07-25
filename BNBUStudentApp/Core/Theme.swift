@@ -140,7 +140,28 @@ enum BNBUL10n {
         String(localized: key, bundle: languageBundle, locale: locale)
     }
 
-    private static var languageBundle: Bundle {
+    /// Localizes a runtime key such as a server enum value. Unknown values are
+    /// returned unchanged so names and other free-form server content remain
+    /// verbatim.
+    static func dynamicText(_ key: String) -> String {
+        languageBundle.localizedString(forKey: key, value: key, table: nil)
+    }
+
+    static func formatted(_ key: String.LocalizationValue, _ arguments: CVarArg...) -> String {
+        String(format: text(key), locale: locale, arguments: arguments)
+    }
+
+    static func hourText(_ value: Double) -> String {
+        let number: String
+        if value.rounded(.down) == value {
+            number = String(Int(value))
+        } else {
+            number = String(format: "%.1f", locale: locale, value)
+        }
+        return locale.identifier.hasPrefix("zh") ? "\(number) 小时" : "\(number) hr"
+    }
+
+    static var languageBundle: Bundle {
         let code = locale.identifier.hasPrefix("zh") ? "zh-Hans" : "en"
         guard let path = Bundle.main.path(forResource: code, ofType: "lproj"),
               let bundle = Bundle(path: path) else {
@@ -243,5 +264,9 @@ extension Double {
             return "\(Int(self))h"
         }
         return String(format: "%.1fh", self)
+    }
+
+    var localizedHourText: String {
+        BNBUL10n.hourText(self)
     }
 }

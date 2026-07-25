@@ -103,6 +103,8 @@ struct CoursesView: View {
 }
 
 private struct CourseCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let course: Course
     let academicYear: String
     let term: String
@@ -111,24 +113,29 @@ private struct CourseCard: View {
     var body: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(course.displayTitle)
-                            .font(.title3.weight(.medium))
-                            .foregroundStyle(BNBUTheme.ink)
-                        Text(course.name)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(BNBUTheme.muted)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top) {
+                        courseIdentity
+                        Spacer(minLength: 8)
+                        StatusBadge(text: localizedTerm(course.semester))
                     }
-                    Spacer()
-                    StatusBadge(text: course.semester)
+                    VStack(alignment: .leading, spacing: 8) {
+                        courseIdentity
+                        StatusBadge(text: localizedTerm(course.semester))
+                    }
                 }
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    CourseFact(label: "任课老师", value: course.teacher.isEmpty ? "待公布" : course.teacher)
+                LazyVGrid(columns: factColumns, spacing: 10) {
+                    CourseFact(
+                        label: "任课老师",
+                        value: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
+                    )
                     CourseFact(label: "学年", value: academicYear.replacingOccurrences(of: " 学年", with: ""))
-                    CourseFact(label: "学期", value: term)
-                    CourseFact(label: "选课状态", value: isCurrent ? "修读中" : "已完成")
+                    CourseFact(label: "学期", value: localizedTerm(term))
+                    CourseFact(
+                        label: "选课状态",
+                        value: isCurrent ? BNBUL10n.text("修读中") : BNBUL10n.text("已完成")
+                    )
                 }
 
                 HStack {
@@ -143,6 +150,34 @@ private struct CourseCard: View {
             }
         }
     }
+
+    private var courseIdentity: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(course.displayTitle)
+                .font(.title3.weight(.medium))
+                .foregroundStyle(BNBUTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(course.name)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BNBUTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var factColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+        return [GridItem(.flexible()), GridItem(.flexible())]
+    }
+
+    private func localizedTerm(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "春季学期", with: BNBUL10n.text("春季学期"))
+            .replacingOccurrences(of: "秋季学期", with: BNBUL10n.text("秋季学期"))
+            .replacingOccurrences(of: "SPRING", with: BNBUL10n.text("春季学期"))
+            .replacingOccurrences(of: "FALL", with: BNBUL10n.text("秋季学期"))
+    }
 }
 
 private struct CourseFact: View {
@@ -151,14 +186,13 @@ private struct CourseFact: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
+            Text(LocalizedStringKey(label))
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(BNBUTheme.muted)
-            Text(value)
+            Text(verbatim: value)
                 .font(.headline.weight(.medium))
                 .foregroundStyle(BNBUTheme.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

@@ -38,6 +38,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertTrue(app.staticTexts["申请与审核"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["组织认证与抵扣记录"].exists)
+        assertProfileNavigationCardsAligned()
     }
 
     func testSystemLanguageChineseUpdatesCoreNavigation() throws {
@@ -67,6 +68,73 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(app.buttons["tab.checkin"].label, "Check In")
         XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
         XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
+
+        XCTAssertTrue(app.staticTexts["Current Risk Notice"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts.containing(
+                NSPredicate(format: "label CONTAINS %@", "4 hr more course-related exercise")
+            ).firstMatch.exists
+        )
+        XCTAssertFalse(app.staticTexts["当前风险提示"].exists)
+
+        app.buttons["tab.grades"].tap()
+        XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))
+        for title in [
+            "PE Check-In",
+            "Specialized Exam",
+            "Class Performance / Attendance",
+            "Physical Fitness Test"
+        ] {
+            let componentTitle = app.staticTexts[title]
+            var found = componentTitle.waitForExistence(timeout: 1)
+            if !found {
+                app.swipeUp()
+                found = componentTitle.waitForExistence(timeout: 1)
+            }
+            XCTAssertTrue(found, "Missing localized grade component: \(title)")
+        }
+    }
+
+    func testEnglishLayoutRegressionScreenshots() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-completed-exercise",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        attachScreenshot(named: "english-home")
+
+        app.buttons["tab.courses"].tap()
+        XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 3))
+        attachScreenshot(named: "english-courses")
+
+        app.buttons["tab.checkin"].tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
+        for label in ["Start Time", "Location", "End Time", "Eligible Hours"] {
+            XCTAssertTrue(
+                app.staticTexts[label].waitForExistence(timeout: 2),
+                "Missing localized check-in field: \(label)"
+            )
+        }
+        attachScreenshot(named: "english-checkin")
+
+        app.buttons["tab.grades"].tap()
+        XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))
+        attachScreenshot(named: "english-grades")
+
+        app.swipeUp()
+        attachScreenshot(named: "english-grades-lower")
+
+        app.buttons["tab.profile"].tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
+        assertProfileNavigationCardsAligned()
+        attachScreenshot(named: "english-profile")
     }
 
     func testUnsupportedSystemLanguageFallsBackToEnglishNavigation() throws {
@@ -544,6 +612,18 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     private func screen(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
+    }
+
+    private func assertProfileNavigationCardsAligned(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let exemptionCard = app.buttons["profile.exemption.button"]
+        let enduranceCard = app.buttons["profile.endurance.button"]
+        XCTAssertTrue(exemptionCard.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertTrue(enduranceCard.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertEqual(exemptionCard.frame.minX, enduranceCard.frame.minX, accuracy: 1, file: file, line: line)
+        XCTAssertEqual(exemptionCard.frame.width, enduranceCard.frame.width, accuracy: 1, file: file, line: line)
     }
 
     private func scrollToAndTap(_ element: XCUIElement, maxSwipes: Int = 6) {

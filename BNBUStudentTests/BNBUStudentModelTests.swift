@@ -35,6 +35,23 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(RepositoryError.unauthorized.errorDescription, "登录已过期，请重新登录")
     }
 
+    func testRuntimeInterfaceValuesFollowAppLanguage() {
+        BNBUL10n.localeOverride = Locale(identifier: "en")
+        XCTAssertEqual(BNBUL10n.dynamicText("正常"), "Active")
+        XCTAssertEqual(BNBUL10n.dynamicText("春季学期"), "Spring Semester")
+        XCTAssertEqual(BNBUL10n.dynamicText("开始时间"), "Start Time")
+        XCTAssertEqual(BNBUL10n.dynamicText("可计学时"), "Eligible Hours")
+        XCTAssertEqual(4.0.localizedHourText, "4 hr")
+        XCTAssertEqual(
+            BNBUL10n.formatted("还差 %@", 4.0.localizedHourText),
+            "4 hr remaining"
+        )
+
+        BNBUL10n.localeOverride = Locale(identifier: "zh-Hans")
+        XCTAssertEqual(BNBUL10n.dynamicText("正常"), "正常")
+        XCTAssertEqual(4.0.localizedHourText, "4 小时")
+    }
+
     func testExerciseSessionCreditsOnlyCompletedWholeHoursAndCapsAtTwoHours() {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let session = ExerciseSession(
