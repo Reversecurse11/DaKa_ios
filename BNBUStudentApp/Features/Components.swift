@@ -35,7 +35,15 @@ struct GridBackground: View {
 
 struct BNBUPageBackground: View {
     var body: some View {
-        BNBUTheme.background
+        LinearGradient(
+            colors: [
+                BNBUTheme.background,
+                BNBUTheme.surface.opacity(0.96),
+                BNBUTheme.surfaceVariant.opacity(0.32)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
             .ignoresSafeArea()
     }
 }
@@ -50,6 +58,29 @@ extension View {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .stroke(BNBUTheme.outline.opacity(lineWidth == 0 ? 0 : 0.45), lineWidth: lineWidth)
             }
+    }
+
+    func bnbuGlassSurface(
+        radius: CGFloat = BNBURadius.large,
+        shadowOpacity: Double = 0.08
+    ) -> some View {
+        background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(BNBUTheme.surface.opacity(0.82), lineWidth: 1)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(BNBUTheme.primary.opacity(0.08), lineWidth: 0.5)
+        }
+        .shadow(
+            color: BNBUTheme.onSurface.opacity(shadowOpacity),
+            radius: 16,
+            y: 8
+        )
     }
 }
 
@@ -90,11 +121,11 @@ struct BrandMark: View {
             .resizable()
             .scaledToFit()
             .padding(compact ? 5 : 7)
-            .background(BNBUTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+            .background(.ultraThinMaterial, in: Circle())
+            .clipShape(Circle())
             .overlay {
-                RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous)
-                    .stroke(BNBUTheme.outline.opacity(0.55), lineWidth: 1)
+                Circle()
+                    .stroke(BNBUTheme.surface.opacity(0.9), lineWidth: 1)
             }
         .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
         .accessibilityLabel("BNBU 校徽")
@@ -111,9 +142,7 @@ struct SwissPanel<Content: View>: View {
     var body: some View {
         content
             .padding(BNBUSpacing.panel)
-            .background(BNBUTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .shadow(color: BNBUTheme.onSurface.opacity(0.06), radius: 2, y: 1)
+            .bnbuGlassSurface(radius: BNBURadius.extraLarge, shadowOpacity: 0.055)
     }
 }
 
@@ -123,9 +152,9 @@ struct SectionTitle: View {
 
     var body: some View {
         Text(LocalizedStringKey(title))
-            .font(.title2.weight(.regular))
+            .font(.title2.weight(.semibold))
             .foregroundStyle(BNBUTheme.onSurface)
-        .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -142,7 +171,7 @@ struct StatusBadge: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(filled ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.extraSmall, style: .continuous))
+            .clipShape(Capsule())
     }
 }
 
@@ -213,7 +242,7 @@ struct PrimaryActionButton: View {
                 .padding(.vertical, 14)
                 .foregroundStyle(BNBUTheme.onPrimary)
                 .background(BNBUTheme.primary)
-                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.extraLarge, style: .continuous))
+                .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier ?? title)
@@ -236,8 +265,11 @@ struct SecondaryActionButton: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .foregroundStyle(BNBUTheme.onSurface)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(radius: BNBURadius.extraLarge, lineWidth: 1.5)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(BNBUTheme.surface.opacity(0.85), lineWidth: 1)
+                }
         }
         .buttonStyle(.plain)
     }
@@ -262,7 +294,7 @@ struct DisabledAwareButton: View {
                 .padding(.vertical, 14)
                 .foregroundStyle(isDisabled ? BNBUTheme.onSurfaceVariant : BNBUTheme.onPrimaryContainer)
                 .background(isDisabled ? BNBUTheme.surfaceVariant : BNBUTheme.primaryContainer)
-                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.large, style: .continuous))
+                .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)

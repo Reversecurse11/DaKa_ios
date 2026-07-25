@@ -23,8 +23,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     func testStudentShellSmokeFlow() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["体育学时进度"].exists)
-        XCTAssertTrue(app.staticTexts["最近打卡"].exists)
+        XCTAssertTrue(app.staticTexts["本学期进度"].exists)
+        XCTAssertTrue(app.buttons["dashboard.start.button"].exists)
+        XCTAssertTrue(app.buttons["dashboard.records.button"].exists)
+        XCTAssertTrue(app.buttons["dashboard.progress.course"].exists)
+        XCTAssertTrue(app.buttons["dashboard.progress.general"].exists)
 
         openTab(label: "课程", screenIdentifier: "screen.courses")
         XCTAssertTrue(app.staticTexts["我的课程"].waitForExistence(timeout: 3))
@@ -39,6 +42,57 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["申请与审核"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["组织认证与抵扣记录"].exists)
         assertProfileNavigationCardsAligned()
+    }
+
+    func testRedesignedDashboardActionsOpenExpectedCheckInSegment() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+
+        app.buttons["dashboard.start.button"].tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 3))
+
+        app.buttons["tab.dashboard"].tap()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 3))
+
+        app.buttons["dashboard.records.button"].tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 3))
+    }
+
+    func testGlassRedesignVisualRegression() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        attachScreenshot(named: "glass-home-zh")
+
+        app.buttons["dashboard.notifications.button"].tap()
+        XCTAssertTrue(screen("screen.notifications").waitForExistence(timeout: 3))
+        attachScreenshot(named: "glass-notifications-zh")
+        app.buttons["关闭"].tap()
+
+        openTab(label: "课程", screenIdentifier: "screen.courses")
+        attachScreenshot(named: "glass-courses-zh")
+
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        attachScreenshot(named: "glass-checkin-zh")
+
+        openTab(label: "成绩", screenIdentifier: "screen.grades")
+        attachScreenshot(named: "glass-grades-zh")
+
+        openTab(label: "我的", screenIdentifier: "screen.profile")
+        attachScreenshot(named: "glass-profile-zh")
+    }
+
+    func testUnreadNotificationFilterKeepsDetailNavigationStable() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        app.buttons["dashboard.notifications.button"].tap()
+        XCTAssertTrue(screen("screen.notifications").waitForExistence(timeout: 3))
+
+        app.buttons["notifications.filter.未读"].tap()
+        let firstUnread = app.buttons["notifications.notice.n1"]
+        XCTAssertTrue(firstUnread.waitForExistence(timeout: 3))
+        firstUnread.tap()
+
+        XCTAssertTrue(app.staticTexts["本学期学时提醒"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["标记为已读"].exists)
     }
 
     func testSystemLanguageChineseUpdatesCoreNavigation() throws {
@@ -69,12 +123,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(app.buttons["tab.grades"].label, "Grades")
         XCTAssertEqual(app.buttons["tab.profile"].label, "Profile")
 
-        XCTAssertTrue(app.staticTexts["Current Risk Notice"].waitForExistence(timeout: 3))
-        XCTAssertTrue(
-            app.staticTexts.containing(
-                NSPredicate(format: "label CONTAINS %@", "4 hr more course-related exercise")
-            ).firstMatch.exists
-        )
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 3))
+        let remainingHeadline = app.staticTexts["dashboard.remaining.headline"]
+        XCTAssertTrue(remainingHeadline.waitForExistence(timeout: 3))
+        XCTAssertTrue(remainingHeadline.label.contains("4 hr"))
         XCTAssertFalse(app.staticTexts["当前风险提示"].exists)
 
         app.buttons["tab.grades"].tap()
@@ -109,6 +161,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         attachScreenshot(named: "english-home")
+
+        app.buttons["dashboard.notifications.button"].tap()
+        XCTAssertTrue(screen("screen.notifications").waitForExistence(timeout: 3))
+        attachScreenshot(named: "english-notifications")
+        app.buttons["Close"].tap()
 
         app.buttons["tab.courses"].tap()
         XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 3))
@@ -594,7 +651,12 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         case "成绩": identifier = "tab.grades"
         default: identifier = "tab.profile"
         }
-        app.buttons[identifier].tap()
+        let identifiedTab = app.buttons[identifier]
+        if identifiedTab.waitForExistence(timeout: 2) {
+            identifiedTab.tap()
+        } else {
+            app.buttons[label].tap()
+        }
         XCTAssertTrue(screen(screenIdentifier).waitForExistence(timeout: 3))
     }
 
@@ -629,7 +691,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     private func scrollToAndTap(_ element: XCUIElement, maxSwipes: Int = 6) {
         for _ in 0..<maxSwipes {
             if element.waitForExistence(timeout: 0.5), element.isHittable {
-                tapCenter(of: element)
+                element.tap()
                 return
             }
             app.swipeUp()

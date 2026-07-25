@@ -1,0 +1,62 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "F081D561-FC8B-47EF-95F5-81D313448766.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "english-profile_0_B2B47EB0-EBF2-474D-8FF0-86602D1F0975.png",
+        "timestamp" : 1784981852.335
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "55C6699E-C9FD-4075-BD97-9526C6A717C6.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "english-grades-lower_0_EADEEABA-B6A7-478A-81A5-C1E227310E5A.png",
+        "timestamp" : 1784981845.725
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "82A19398-5186-4659-A3B3-54453CC9C1F8.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "english-grades_0_E9361082-C10D-422B-A651-3F092A6D01F2.png",
+        "timestamp" : 1784981844.207
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "AAF2507B-3090-4524-8735-B032EAD2B1F9.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "english-checkin_0_D56A1B92-5818-4A17-A4E6-62056F5B7B81.png",
+        "timestamp" : 1784981840.756
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "71645B4C-6153-4FD5-B2C9-43708C24F181.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "english-courses_0_A2867BFD-B7D4-45D5-B974-79A975CB1C3C.png",
+        "timestamp" : 1784981833.083
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "14BD0397-4696-4A9F-914E-7D611B318463.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "english-home_0_A959A609-1745-4011-A64B-E88F725AF2B2.png",
+        "timestamp" : 1784981829.673
+      }
+    ],
+    "testIdentifier" : "BNBUStudentSmokeUITests/testEnglishLayoutRegressionScreenshots()",
+    "testIdentifierURL" : "test://com.apple.xcode/BNBUStudent/BNBUStudentUITests/BNBUStudentSmokeUITests/testEnglishLayoutRegressionScreenshots"
+  }
+]
