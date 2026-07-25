@@ -36,6 +36,13 @@ struct BNBUStudentApp: App {
             // Flow tests must not depend on the wall clock.
             state.enforcesCheckInTimeWindow = false
         }
+#if DEBUG
+        // Live demos often run outside the 06:00-22:00 window; this only lifts
+        // that gate so the rest of the flow stays authentic.
+        if arguments.contains("-demo-relax-time-window") {
+            state.enforcesCheckInTimeWindow = false
+        }
+#endif
         if arguments.contains("-ui-testing-authenticated") {
             state.demoLogin()
         }
