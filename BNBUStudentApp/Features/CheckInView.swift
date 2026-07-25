@@ -45,7 +45,7 @@ struct CheckInView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
     @FocusState private var focusedField: CheckInFormField?
-    @State private var selectedSegment: CheckInSegment = .submit
+    @Binding var selectedSegment: CheckInSegment
     @State private var selectedCategory: ExerciseCategory = .general
     @State private var note = ""
     @State private var selectedSportType: ExerciseSportType?
@@ -75,15 +75,21 @@ struct CheckInView: View {
         ZStack {
             BNBUPageBackground()
 
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 Picker("打卡", selection: $selectedSegment) {
                     ForEach(CheckInSegment.allCases) { segment in
                         Text(LocalizedStringKey(segment.rawValue)).tag(segment)
                     }
                 }
                 .pickerStyle(.segmented)
-                .padding([.horizontal, .top], 18)
-                .padding(.bottom, 10)
+                .padding(4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(BNBUTheme.surface.opacity(0.86), lineWidth: 1)
+                }
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.bottom, 8)
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -91,12 +97,16 @@ struct CheckInView: View {
                     }
                     .padding(BNBUSpacing.screen)
                 }
+                .scrollIndicators(.hidden)
                 .scrollDismissesKeyboard(.immediately)
                 .refreshable {
                     await appState.refreshRemoteWorkspace()
                 }
             }
         }
+        .navigationTitle("运动打卡")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .accessibilityIdentifier("screen.checkin")
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -652,6 +662,7 @@ struct CheckInView: View {
                 .buttonStyle(.plain)
             }
         }
+        .accessibilityIdentifier("checkin.records.content")
     }
 
     private var submissionContext: (creditType: CreditType, courseId: String?)? {

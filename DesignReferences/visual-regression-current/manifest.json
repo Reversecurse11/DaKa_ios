@@ -1,0 +1,62 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "BC4774EA-8850-484C-AE1E-96ED7F141F9C.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "glass-profile-zh_0_3D68A4C4-8453-4B22-9C82-852E74D60407.png",
+        "timestamp" : 1784981727.315
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "0F3AF2AA-FAE5-41C5-8F38-5C4D339E91C8.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "glass-grades-zh_0_BD30096C-5B10-4F42-8DC3-207C39870552.png",
+        "timestamp" : 1784981723.72
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "976F415B-6069-4A2D-A5CA-2EE79228E896.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "glass-checkin-zh_0_5302349A-C332-4232-B9AC-D94700A5B714.png",
+        "timestamp" : 1784981720.391
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "5B26C128-20EE-42E1-994B-911DFAE29A9E.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "glass-courses-zh_0_A72E1E59-0C0A-4919-A3E3-DF10C1356551.png",
+        "timestamp" : 1784981716.84
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "2306747E-EE47-4698-AE1D-217056EDA839.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "glass-notifications-zh_0_2D853766-F6C1-4FA7-AA22-3E03453E7AB3.png",
+        "timestamp" : 1784981712.646
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "1A0E5BA3-0D02-462D-994B-EF67CBCF154D",
+        "deviceName" : "iPhone 17",
+        "exportedFileName" : "94ECC9BD-FA40-41AB-B32B-C17B88A8AF3F.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "glass-home-zh_0_DCF4DE62-E8DE-4149-9EAF-0CED5522AD9F.png",
+        "timestamp" : 1784981708.981
+      }
+    ],
+    "testIdentifier" : "BNBUStudentSmokeUITests/testGlassRedesignVisualRegression()",
+    "testIdentifierURL" : "test://com.apple.xcode/BNBUStudent/BNBUStudentUITests/BNBUStudentSmokeUITests/testGlassRedesignVisualRegression"
+  }
+]

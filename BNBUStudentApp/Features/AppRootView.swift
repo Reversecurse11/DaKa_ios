@@ -32,6 +32,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
 struct AppRootView: View {
     @State private var selectedTab: AppTab = .dashboard
+    @State private var selectedCheckInSegment: CheckInSegment = .submit
 
     var body: some View {
         if #available(iOS 26.0, *) {
@@ -63,6 +64,9 @@ struct AppRootView: View {
                 .tag(tab)
             }
         }
+        .tint(BNBUTheme.primary)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         .onReceive(NotificationCenter.default.publisher(for: .bnbuOpenDestination)) { notification in
             if let destination = notification.object as? AppTab {
                 selectedTab = destination
@@ -75,14 +79,21 @@ struct AppRootView: View {
         switch tab {
         case .dashboard:
             DashboardView(
-                openCheckIn: { selectedTab = .checkin },
+                openCheckIn: {
+                    selectedCheckInSegment = .submit
+                    selectedTab = .checkin
+                },
+                openRecords: {
+                    selectedCheckInSegment = .records
+                    selectedTab = .checkin
+                },
                 openGrades: { selectedTab = .grades },
                 openProfile: { selectedTab = .profile }
             )
         case .courses:
             CoursesView()
         case .checkin:
-            CheckInView()
+            CheckInView(selectedSegment: $selectedCheckInSegment)
         case .grades:
             GradesView()
         case .profile:

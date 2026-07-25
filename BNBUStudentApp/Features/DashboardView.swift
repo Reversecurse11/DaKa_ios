@@ -4,6 +4,415 @@ struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showNotifications = false
     var openCheckIn: () -> Void = {}
+    var openRecords: () -> Void = {}
+    var openGrades: () -> Void = {}
+    var openProfile: () -> Void = {}
+
+    var body: some View {
+        ZStack {
+            BNBUPageBackground()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    Text("今天")
+                        .font(.system(size: 42, weight: .bold))
+                        .foregroundStyle(BNBUTheme.onSurface)
+                        .accessibilityIdentifier("dashboard.title")
+
+                    heroProgress
+
+                    if let errorMessage = appState.errorMessage {
+                        BNBUErrorPanel(message: errorMessage) {
+                            Task { await appState.refreshRemoteWorkspace() }
+                        }
+                    }
+
+                    priorityGlass
+                    progressSection
+                }
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
+            }
+            .accessibilityIdentifier("screen.dashboard")
+            .refreshable {
+                await appState.refreshRemoteWorkspace()
+            }
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Image("bnbu_emblem")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 32, height: 32)
+                    .accessibilityLabel("BNBU 校徽")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                notificationButton
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            actionGlass
+        }
+        .sheet(isPresented: $showNotifications) {
+            NotificationCenterSheet()
+                .environmentObject(appState)
+        }
+    }
+
+    private var heroProgress: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(verbatim: remainingHeadline)
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(BNBUTheme.onSurface)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+                .accessibilityIdentifier("dashboard.remaining.headline")
+
+            Text(verbatim: completedSummary)
+                .font(.title3.weight(.regular))
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            DashboardGlassProgressBar(value: appState.completionRatio)
+                .accessibilityLabel("体育学时进度")
+                .accessibilityValue("\(Int(appState.completionRatio * 100))%")
+        }
+    }
+
+    private var priorityGlass: some View {
+        Label {
+            Text(verbatim: priorityText)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(BNBUTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: prioritySystemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(BNBUTheme.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 17)
+        .bnbuGlassSurface(radius: BNBURadius.extraLarge)
+        .accessibilityIdentifier("dashboard.priority")
+    }
+
+    private var progressSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("本学期进度")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+            VStack(spacing: 0) {
+                Button(action: openCheckIn) {
+                    DashboardGlassProgressRow(
+                        title: "课程相关",
+                        systemImage: "book.closed.fill",
+                        value: progressValue(
+                            completed: appState.workspace.progress.course,
+                            required: appState.hourRule.courseRequired
+                        ),
+                        status: appState.courseRemaining == 0
+                            ? BNBUL10n.text("已完成")
+                            : BNBUL10n.formatted(
+                                "还差 %@",
+                                appState.courseRemaining.localizedHourText
+                            ),
+                        secondary: nil
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dashboard.progress.course")
+
+                Divider()
+                    .overlay(BNBUTheme.outline.opacity(0.24))
+                    .padding(.leading, 66)
+
+                Button(action: openCheckIn) {
+                    DashboardGlassProgressRow(
+                        title: "其他运动",
+                        systemImage: "figure.run",
+                        value: progressValue(
+                            completed: appState.workspace.progress.general,
+                            required: appState.hourRule.generalRequired
+                        ),
+                        status: appState.generalRemaining == 0
+                            ? BNBUL10n.text("已完成")
+                            : BNBUL10n.formatted(
+                                "还差 %@",
+                                appState.generalRemaining.localizedHourText
+                            ),
+                        secondary: organizationCreditText
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dashboard.progress.general")
+            }
+            .padding(.horizontal, 16)
+            .bnbuGlassSurface(radius: BNBURadius.extraLarge)
+        }
+    }
+
+    private var notificationButton: some View {
+        Button {
+            showNotifications = true
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: appState.unreadNoticeCount > 0 ? "bell.fill" : "bell")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(BNBUTheme.surface.opacity(0.85), lineWidth: 1)
+                    }
+                    .padding(2)
+
+                if appState.unreadNoticeCount > 0 {
+                    Text(appState.unreadNoticeCount > 99 ? "99+" : "\(appState.unreadNoticeCount)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(BNBUTheme.onPrimary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(BNBUTheme.primary)
+                        .clipShape(Capsule())
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(BNBUTheme.surface, lineWidth: 1.5)
+                        }
+                        .offset(x: -1, y: 2)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("dashboard.notifications.button")
+        .accessibilityLabel("打开通知")
+    }
+
+    private var actionGlass: some View {
+        HStack(spacing: 14) {
+            Button(action: openCheckIn) {
+                Label("开始运动", systemImage: "figure.run")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(BNBUTheme.primary, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("dashboard.start.button")
+
+            Button(action: openRecords) {
+                Text("查看记录")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.primary)
+                    .frame(width: 116)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("dashboard.records.button")
+        }
+        .padding(12)
+        .bnbuGlassSurface(radius: BNBURadius.extraLarge, shadowOpacity: 0.1)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
+    private var remainingHeadline: String {
+        guard appState.totalRemaining > 0 else {
+            return BNBUL10n.text("全部学时已完成")
+        }
+        return BNBUL10n.formatted(
+            "还差 %@",
+            appState.totalRemaining.localizedHourText
+        )
+    }
+
+    private var completedSummary: String {
+        "\(BNBUL10n.text("已完成")) \(appState.totalCompleted.localizedHourText) / \(appState.hourRule.total.localizedHourText)"
+    }
+
+    private var priorityText: String {
+        if appState.courseRemaining > 0 {
+            return BNBUL10n.text("优先完成课程相关运动")
+        }
+        if appState.generalRemaining > 0 {
+            return BNBUL10n.formatted(
+                "其他运动还差 %@",
+                appState.generalRemaining.localizedHourText
+            )
+        }
+        return BNBUL10n.text("全部学时已完成")
+    }
+
+    private var prioritySystemImage: String {
+        appState.totalRemaining > 0
+            ? "exclamationmark.circle.fill"
+            : "checkmark.circle.fill"
+    }
+
+    private var organizationCreditText: String? {
+        let progress = appState.workspace.progress
+        let creditedHours = max(progress.general - progress.rawGeneral, 0)
+        if creditedHours > 0 {
+            return "\(BNBUL10n.text("组织认证")) +\(creditedHours.localizedHourText)"
+        }
+        if progress.organizationCredit != nil {
+            return BNBUL10n.text("组织认证")
+        }
+        return nil
+    }
+
+    private func progressValue(completed: Double, required: Double) -> String {
+        let completedText = compactHourNumber(completed)
+        let requiredText = compactHourNumber(required)
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(completedText) / \(requiredText) 小时"
+        }
+        return "\(completedText) / \(requiredText) hr"
+    }
+
+    private func compactHourNumber(_ value: Double) -> String {
+        if value.rounded(.down) == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", locale: BNBUL10n.locale, value)
+    }
+}
+
+private struct DashboardGlassProgressBar: View {
+    let value: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(BNBUTheme.surfaceVariant.opacity(0.86))
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(BNBUTheme.surface.opacity(0.78), lineWidth: 1)
+                    }
+
+                Capsule()
+                    .fill(BNBUTheme.primary)
+                    .frame(width: proxy.size.width * min(max(value, 0), 1))
+            }
+        }
+        .frame(height: 10)
+    }
+}
+
+private struct DashboardGlassProgressRow: View {
+    let title: String
+    let systemImage: String
+    let value: String
+    let status: String
+    let secondary: String?
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            horizontalLayout
+            verticalLayout
+        }
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+
+    private var horizontalLayout: some View {
+        HStack(spacing: 14) {
+            icon
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(LocalizedStringKey(title))
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                if let secondary {
+                    Text(verbatim: secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 10)
+
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(verbatim: value)
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(verbatim: status)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .layoutPriority(1)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BNBUTheme.onSurfaceVariant.opacity(0.7))
+        }
+    }
+
+    private var verticalLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                icon
+                Text(LocalizedStringKey(title))
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant.opacity(0.7))
+            }
+
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: value)
+                        .font(.subheadline.weight(.medium))
+                    if let secondary {
+                        Text(verbatim: secondary)
+                            .font(.caption)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+                }
+                Spacer()
+                Text(verbatim: status)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.primary)
+            }
+        }
+    }
+
+    private var icon: some View {
+        Image(systemName: systemImage)
+            .font(.title2.weight(.semibold))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(BNBUTheme.primary)
+            .frame(width: 36, height: 36)
+    }
+}
+
+private struct LegacyDashboardView: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var showNotifications = false
+    var openCheckIn: () -> Void = {}
     var openGrades: () -> Void = {}
     var openProfile: () -> Void = {}
 
@@ -411,36 +820,51 @@ struct NoticeRow: View {
     let notice: StudentNotice
 
     var body: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label {
-                        Text(LocalizedStringKey(notice.category.rawValue))
-                    } icon: {
-                        Image(systemName: notice.category.symbolName)
-                    }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(BNBUTheme.blue)
-                    Spacer()
-                    if notice.isUnread {
-                        Circle()
-                            .fill(BNBUTheme.blue)
-                            .frame(width: 9, height: 9)
-                    }
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: notice.category.symbolName)
+                .font(.body.weight(.semibold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 38, height: 38)
+                .background(BNBUTheme.primary.opacity(0.1), in: Circle())
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(notice.title)
+                        .font(.headline.weight(notice.isUnread ? .semibold : .medium))
+                        .foregroundStyle(BNBUTheme.onSurface)
+                        .lineLimit(2)
+                    Spacer(minLength: 4)
+                    Text(notice.time)
+                        .font(.caption)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
 
-                HStack(alignment: .firstTextBaseline) {
-                    Text(notice.title)
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(BNBUTheme.ink)
-                    Spacer()
-                    StatusBadge(text: notice.time)
-                }
                 Text(notice.message)
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(BNBUTheme.muted)
+                    .font(.subheadline)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineLimit(2)
+
+                Text(LocalizedStringKey(notice.category.rawValue))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(BNBUTheme.primary)
+            }
+
+            VStack(spacing: 8) {
+                if notice.isUnread {
+                    Circle()
+                        .fill(BNBUTheme.primary)
+                        .frame(width: 8, height: 8)
+                        .accessibilityLabel("未读")
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant.opacity(0.65))
             }
         }
+        .padding(16)
+        .bnbuGlassSurface(radius: BNBURadius.extraLarge, shadowOpacity: 0.045)
     }
 }
 
@@ -460,58 +884,100 @@ private struct NotificationCenterSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                HStack {
-                    Label("通知", systemImage: appState.unreadNoticeCount > 0 ? "bell.badge.fill" : "bell")
-                        .font(.title3.weight(.semibold))
-                    Spacer()
-                    StatusBadge(text: unreadBadgeText)
-                }
+            ZStack {
+                BNBUPageBackground()
 
-                HStack {
-                    Spacer()
-                    Button("全部标为已读") {
-                        appState.markAllNoticesRead()
+                VStack(spacing: 14) {
+                    HStack(spacing: 12) {
+                        Label {
+                            Text(verbatim: unreadBadgeText)
+                        } icon: {
+                            Image(systemName: appState.unreadNoticeCount > 0 ? "bell.fill" : "bell")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+                        Spacer()
+
+                        Button("全部标为已读") {
+                            appState.markAllNoticesRead()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BNBUTheme.primary)
+                        .disabled(appState.unreadNoticeCount == 0)
                     }
-                    .font(.subheadline.weight(.medium))
-                    .disabled(appState.unreadNoticeCount == 0)
-                }
+                    .padding(.horizontal, 4)
 
-                Picker("通知筛选", selection: $selectedFilter) {
-                    ForEach(DashboardNotificationFilter.allCases) { filter in
-                        Text(LocalizedStringKey(filter.rawValue)).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                if filteredNotices.isEmpty {
-                    EmptyPlaceholder(title: "暂无通知", message: "当前筛选条件下没有通知。")
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 10) {
-                            ForEach(filteredNotices) { notice in
-                                NavigationLink {
-                                    NoticeDetailView(notice: notice)
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(DashboardNotificationFilter.allCases) { filter in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.18)) {
+                                        selectedFilter = filter
+                                    }
                                 } label: {
-                                    NoticeRow(notice: notice)
+                                    Text(LocalizedStringKey(filter.rawValue))
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(
+                                            selectedFilter == filter
+                                                ? BNBUTheme.onPrimary
+                                                : BNBUTheme.onSurfaceVariant
+                                        )
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            selectedFilter == filter
+                                                ? BNBUTheme.primary
+                                                : BNBUTheme.surface.opacity(0.62),
+                                            in: Capsule()
+                                        )
+                                        .overlay {
+                                            if selectedFilter != filter {
+                                                Capsule()
+                                                    .strokeBorder(
+                                                        BNBUTheme.outline.opacity(0.22),
+                                                        lineWidth: 1
+                                                    )
+                                            }
+                                        }
                                 }
                                 .buttonStyle(.plain)
-                                .simultaneousGesture(TapGesture().onEnded {
-                                    if notice.isUnread {
-                                        appState.markNoticeRead(id: notice.id)
-                                    }
-                                })
+                                .accessibilityIdentifier("notifications.filter.\(filter.id)")
                             }
                         }
                     }
+                    .scrollIndicators(.hidden)
+
+                    if filteredNotices.isEmpty {
+                        EmptyPlaceholder(title: "暂无通知", message: "当前筛选条件下没有通知。")
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(filteredNotices) { notice in
+                                    NavigationLink {
+                                        NoticeDetailView(notice: notice)
+                                    } label: {
+                                        NoticeRow(notice: notice)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("notifications.notice.\(notice.id)")
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .scrollIndicators(.hidden)
+                    }
                 }
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, BNBUSpacing.screen)
-            .padding(.top, 8)
-            .background(BNBUTheme.background)
+            .navigationTitle("通知")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("screen.notifications")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
                 }
             }

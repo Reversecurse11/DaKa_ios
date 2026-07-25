@@ -201,6 +201,8 @@ struct NoticeDetailView: View {
         }
         .navigationTitle("通知详情")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 }
 

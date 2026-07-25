@@ -754,6 +754,22 @@
         }
       }
     },
+    "今天": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        }
+      }
+    },
     "今天已提交过该任务。请先刷新打卡记录，勿重复提交。": {
       "localizations": {
         "en": {
@@ -931,6 +947,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "任课老师"
+          }
+        }
+      }
+    },
+    "优先完成课程相关运动": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prioritize course-related exercise"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先完成课程相关运动"
           }
         }
       }
@@ -5957,6 +5989,22 @@
         }
       }
     },
+    "本学期进度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semester Progress"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本学期进度"
+          }
+        }
+      }
+    },
     "本次打卡记录已提交并保存。": {
       "localizations": {
         "en": {
@@ -9321,6 +9369,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "，"
+          }
+        }
+      }
+    },
+    "按课程代码和 Section 查看当前与历史教学班。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View current and past classes by course code and section."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按课程代码和 Section 查看当前与历史教学班。"
+          }
+        }
+      }
+    },
+    "成绩构成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grade Components"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成绩构成"
+          }
+        }
+      }
+    },
+    "查看计算说明" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Calculation Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看计算说明"
+          }
+        }
+      }
+    },
+    "学生信息" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student Information"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学生信息"
           }
         }
       }

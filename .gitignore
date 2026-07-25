@@ -1,6 +1,8 @@
 # Xcode build artifacts
 build/
 DerivedData/
+.derived-data/
+.derived-data-*/
 *.xcresult
 
 # Xcode user state

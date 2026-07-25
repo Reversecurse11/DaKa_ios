@@ -9,13 +9,10 @@ struct CoursesView: View {
             BNBUPageBackground()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: "My Courses", title: "我的课程")
-
-                    Text("教学班以课程代码 + Section 区分；同一课程代码的不同 Section 会作为不同教学班展示。")
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(BNBUTheme.muted)
-                        .lineSpacing(3)
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    Text("按课程代码和 Section 查看当前与历史教学班。")
+                        .font(.subheadline)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
                     if appState.workspace.courses.isEmpty {
                         EmptyPlaceholder(
@@ -23,7 +20,9 @@ struct CoursesView: View {
                             message: "当前账号还没有可展示的体育教学班；课程同步后会按课程代码和 Section 显示。"
                         )
                     } else {
-                        SectionTitle(eyebrow: "CURRENT", title: "当前学期课程")
+                        Text("当前学期课程")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
                         if currentCourses.isEmpty {
                             EmptyPlaceholder(title: "当前学期暂无课程", message: "历史课程仍可在下方展开查看。")
@@ -52,8 +51,7 @@ struct CoursesView: View {
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
-                                .background(BNBUTheme.surfaceVariant)
-                                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                                .bnbuGlassSurface(radius: BNBURadius.extraLarge, shadowOpacity: 0.04)
                             }
                             .buttonStyle(.plain)
 
@@ -67,10 +65,14 @@ struct CoursesView: View {
                 }
                 .padding(BNBUSpacing.screen)
             }
+            .scrollIndicators(.hidden)
             .refreshable {
                 await appState.refreshRemoteWorkspace()
             }
         }
+        .navigationTitle("我的课程")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .accessibilityIdentifier("screen.courses")
     }
 
@@ -112,40 +114,53 @@ private struct CourseCard: View {
 
     var body: some View {
         SwissPanel {
-            VStack(alignment: .leading, spacing: 16) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top) {
-                        courseIdentity
-                        Spacer(minLength: 8)
-                        StatusBadge(text: localizedTerm(course.semester))
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        courseIdentity
-                        StatusBadge(text: localizedTerm(course.semester))
-                    }
-                }
-
-                LazyVGrid(columns: factColumns, spacing: 10) {
-                    CourseFact(
-                        label: "任课老师",
-                        value: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
-                    )
-                    CourseFact(label: "学年", value: academicYear.replacingOccurrences(of: " 学年", with: ""))
-                    CourseFact(label: "学期", value: localizedTerm(term))
-                    CourseFact(
-                        label: "选课状态",
-                        value: isCurrent ? BNBUL10n.text("修读中") : BNBUL10n.text("已完成")
-                    )
-                }
-
-                HStack {
-                    Text(LocalizedStringKey(isCurrent ? "当前教学班" : "历史学期"))
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    Spacer()
-                    Label("查看课程详情", systemImage: "chevron.right")
-                        .font(.caption.weight(.medium))
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "book.closed.fill")
+                        .font(.title3.weight(.semibold))
+                        .symbolRenderingMode(.monochrome)
                         .foregroundStyle(BNBUTheme.primary)
+                        .frame(width: 42, height: 42)
+                        .background(BNBUTheme.primary.opacity(0.1), in: Circle())
+
+                    courseIdentity
+
+                    Spacer(minLength: 8)
+
+                    VStack(alignment: .trailing, spacing: 8) {
+                        StatusBadge(text: isCurrent ? "修读中" : "已完成", filled: isCurrent)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant.opacity(0.7))
+                    }
+                }
+
+                Divider()
+                    .overlay(BNBUTheme.outline.opacity(0.2))
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) {
+                        courseMeta(
+                            systemImage: "person.fill",
+                            value: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
+                        )
+                        Spacer(minLength: 8)
+                        courseMeta(
+                            systemImage: "calendar",
+                            value: "\(academicYear.replacingOccurrences(of: " 学年", with: "")) · \(localizedTerm(term))"
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        courseMeta(
+                            systemImage: "person.fill",
+                            value: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
+                        )
+                        courseMeta(
+                            systemImage: "calendar",
+                            value: "\(academicYear.replacingOccurrences(of: " 学年", with: "")) · \(localizedTerm(term))"
+                        )
+                    }
                 }
             }
         }
@@ -154,21 +169,27 @@ private struct CourseCard: View {
     private var courseIdentity: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(course.displayTitle)
-                .font(.title3.weight(.medium))
-                .foregroundStyle(BNBUTheme.ink)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(BNBUTheme.onSurface)
                 .fixedSize(horizontal: false, vertical: true)
             Text(course.name)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(BNBUTheme.muted)
+                .font(.subheadline)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var factColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible())]
+    private func courseMeta(systemImage: String, value: String) -> some View {
+        Label {
+            Text(verbatim: value)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(BNBUTheme.primary)
         }
-        return [GridItem(.flexible()), GridItem(.flexible())]
+        .font(.subheadline)
+        .foregroundStyle(BNBUTheme.onSurfaceVariant)
     }
 
     private func localizedTerm(_ value: String) -> String {

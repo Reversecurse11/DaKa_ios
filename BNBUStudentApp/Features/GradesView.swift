@@ -3,43 +3,38 @@ import SwiftUI
 struct GradesView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var calculationExpanded = false
 
     var body: some View {
         ZStack {
             BNBUPageBackground()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: "Grade Progress", title: "成绩进度")
-
+                LazyVStack(alignment: .leading, spacing: 20) {
                     totalPanel
                     components
-                    formulaPanel
                     missingPanel
-                    tracePanel
+                    formulaPanel
                 }
                 .padding(BNBUSpacing.screen)
             }
+            .scrollIndicators(.hidden)
             .refreshable {
                 await appState.refreshRemoteWorkspace()
             }
         }
+        .navigationTitle("成绩进度")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .accessibilityIdentifier("screen.grades")
     }
 
     private var totalPanel: some View {
         SwissPanel {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 16) {
-                    totalDescription
-                    Spacer(minLength: 8)
-                    totalScore
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    totalDescription
-                    totalScore
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
+            HStack(alignment: .center, spacing: 18) {
+                totalDescription
+                Spacer(minLength: 8)
+                totalScore
             }
         }
     }
@@ -47,107 +42,102 @@ struct GradesView: View {
     private var totalDescription: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("总分预估")
-                .font(.headline.weight(.medium))
+                .font(.headline.weight(.semibold))
             Text("基于当前已录入的四块成绩与权重规则展示，最终结果以教务汇总为准。")
-                .font(.subheadline.weight(.regular))
-                .foregroundStyle(BNBUTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(.caption)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .lineLimit(3)
         }
     }
 
     private var totalScore: some View {
         Text("\(appState.workspace.grades.total)")
-            .font(.system(size: 54, weight: .regular))
-            .foregroundStyle(BNBUTheme.ink)
+            .font(.system(size: 54, weight: .semibold))
+            .foregroundStyle(BNBUTheme.primary)
+            .contentTransition(.numericText())
     }
 
     private var components: some View {
-        LazyVGrid(columns: componentColumns, spacing: 12) {
-            ForEach(gradeComponents) { component in
-                GradeComponentCard(component: component)
-            }
-        }
-    }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("成绩构成")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
-    private var componentColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible())]
+            VStack(spacing: 0) {
+                ForEach(Array(gradeComponents.enumerated()), id: \.element.id) { index, component in
+                    GradeComponentCard(component: component)
+                    if index < gradeComponents.count - 1 {
+                        Divider()
+                            .overlay(BNBUTheme.outline.opacity(0.2))
+                            .padding(.leading, 58)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .bnbuGlassSurface(radius: BNBURadius.extraLarge, shadowOpacity: 0.055)
         }
-        return [GridItem(.flexible()), GridItem(.flexible())]
     }
 
     private var formulaPanel: some View {
         SwissPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        Text("总分计算")
-                            .font(.headline.weight(.medium))
-                        Spacer()
-                        StatusBadge(text: "透明预估")
+            DisclosureGroup(isExpanded: $calculationExpanded) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Divider()
+                        .overlay(BNBUTheme.outline.opacity(0.2))
+
+                    ForEach(gradeComponents) { component in
+                        GradeContributionRow(component: component)
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("总分计算")
-                            .font(.headline.weight(.medium))
-                        StatusBadge(text: "透明预估")
-                    }
+
+                    Divider()
+
+                    DetailFactRow(label: "加权合计", value: String(format: "%.1f", weightedTotal))
+                    DetailFactRow(label: "四舍五入", value: "\(appState.workspace.grades.total)")
+
+                    Label("来源追溯", systemImage: "scope")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BNBUTheme.primary)
+                    Text(verbatim: localizedSourceTrace(appState.workspace.grades.sourceTrace))
+                        .font(.caption)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
-
-                ForEach(gradeComponents) { component in
-                    GradeContributionRow(component: component)
-                }
-
-                Divider()
-
-                DetailFactRow(label: "加权合计", value: String(format: "%.1f", weightedTotal))
-                DetailFactRow(label: "四舍五入", value: "\(appState.workspace.grades.total)")
+                .padding(.top, 12)
+            } label: {
+                Label("查看计算说明", systemImage: "function")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurface)
             }
+            .tint(BNBUTheme.primary)
         }
     }
 
     private var missingPanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        Text("缺失项 / 风险")
-                            .font(.headline.weight(.medium))
-                        Spacer()
-                        StatusBadge(text: missingCountText)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("缺失项 / 风险")
-                            .font(.headline.weight(.medium))
-                        StatusBadge(text: missingCountText)
-                    }
-                }
+        Group {
+            if appState.workspace.grades.missingItems.isEmpty {
+                Label("当前没有阻塞项。", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .bnbuGlassSurface(radius: BNBURadius.extraLarge, shadowOpacity: 0.04)
+            } else {
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label("缺失项 / 风险", systemImage: "exclamationmark.circle.fill")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(BNBUTheme.onSurface)
+                            Spacer()
+                            StatusBadge(text: missingCountText)
+                        }
 
-                if appState.workspace.grades.missingItems.isEmpty {
-                    Text("当前没有阻塞项。")
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(BNBUTheme.muted)
-                } else {
                     ForEach(appState.workspace.grades.missingItems, id: \.self) { item in
                         Label(localizedMissingItem(item), systemImage: "exclamationmark.circle")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(BNBUTheme.ink)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(BNBUTheme.onSurface)
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    private var tracePanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("来源追溯", systemImage: "scope")
-                    .font(.headline.weight(.medium))
-                    .foregroundStyle(BNBUTheme.primary)
-                Text(verbatim: localizedSourceTrace(appState.workspace.grades.sourceTrace))
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(BNBUTheme.muted)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -264,47 +254,40 @@ private struct GradeComponentSummary: Identifiable, Hashable {
 }
 
 private struct GradeComponentCard: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     let component: GradeComponentSummary
 
     var body: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Image(systemName: component.systemImage)
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(BNBUTheme.blue)
-                    Spacer()
-                    StatusBadge(text: component.weightText)
-                }
+        HStack(spacing: 14) {
+            Image(systemName: component.systemImage)
+                .font(.title3.weight(.semibold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 42, height: 42)
+                .background(BNBUTheme.primary.opacity(0.1), in: Circle())
 
+            VStack(alignment: .leading, spacing: 5) {
                 Text(LocalizedStringKey(component.title))
-                    .font(.headline.weight(.medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 68,
-                        alignment: .topLeading
-                    )
-
-                Text("\(component.score)")
-                    .font(.system(size: 42, weight: .regular))
-                    .foregroundStyle(BNBUTheme.ink)
-
-                HourProgressBar(value: Double(component.score), total: 100)
-
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .lineLimit(2)
                 Text(LocalizedStringKey(component.note))
-                    .font(.caption.weight(.regular))
-                    .foregroundStyle(BNBUTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 52,
-                        alignment: .topLeading
-                    )
+                    .font(.caption)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineLimit(2)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 5) {
+                Text("\(component.score)")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Text(component.weightText)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(BNBUTheme.primary)
+            }
         }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.vertical, 14)
     }
 }
 
