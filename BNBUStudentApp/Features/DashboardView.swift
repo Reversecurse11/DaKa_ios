@@ -38,20 +38,39 @@ struct DashboardView: View {
     }
 
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                headerIdentity
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 6) {
+                    notificationButton
+                    StatusBadge(text: progressStatusText, filled: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                headerIdentity
+                HStack(spacing: 10) {
+                    StatusBadge(text: progressStatusText, filled: true)
+                    Spacer()
+                    notificationButton
+                }
+            }
+        }
+    }
+
+    private var headerIdentity: some View {
         HStack(alignment: .top, spacing: 14) {
             BrandMark(compact: true)
             VStack(alignment: .leading, spacing: 5) {
                 Text("你好，\(appState.workspace.student.name)")
                     .font(.title.weight(.medium))
                     .foregroundStyle(BNBUTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("\(appState.workspace.student.college) · \(appState.workspace.student.displayStudentNumber)")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(BNBUTheme.muted)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 6) {
-                notificationButton
-                StatusBadge(text: appState.workspace.progress.status, filled: true)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -89,16 +108,20 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 18) {
                 SectionTitle(eyebrow: "Sports Credit", title: "体育学时进度")
 
-                HStack(alignment: .firstTextBaseline) {
-                    Text(appState.totalCompleted.hourText)
-                        .font(.system(size: 46, weight: .regular))
-                    Text("/ \(appState.hourRule.total.hourText)")
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(BNBUTheme.muted)
-                    Spacer()
-                    Text("\(Int(appState.completionRatio * 100))%")
-                        .font(.title2.weight(.medium))
-                        .foregroundStyle(BNBUTheme.blue)
+                ViewThatFits(in: .horizontal) {
+                    progressTotalLine
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(verbatim: appState.totalCompleted.localizedHourText)
+                                .font(.system(size: 42, weight: .regular))
+                            Text(verbatim: "/ \(appState.hourRule.total.localizedHourText)")
+                                .font(.title3.weight(.medium))
+                                .foregroundStyle(BNBUTheme.muted)
+                        }
+                        Text("\(Int(appState.completionRatio * 100))%")
+                            .font(.title2.weight(.medium))
+                            .foregroundStyle(BNBUTheme.blue)
+                    }
                 }
 
                 HourProgressBar(value: appState.totalCompleted, total: appState.hourRule.total)
@@ -108,25 +131,49 @@ struct DashboardView: View {
                         title: "课程相关",
                         value: appState.workspace.progress.course,
                         total: appState.hourRule.courseRequired,
-                        detail: "还差 \(appState.courseRemaining.hourText)"
+                        detail: BNBUL10n.formatted(
+                            "还差 %@",
+                            appState.courseRemaining.localizedHourText
+                        )
                     )
                     ProgressLine(
                         title: "其他运动",
                         value: appState.workspace.progress.general,
                         total: appState.hourRule.generalRequired,
-                        detail: appState.generalRemaining == 0 ? "已完成" : "还差 \(appState.generalRemaining.hourText)"
+                        detail: appState.generalRemaining == 0
+                            ? BNBUL10n.text("已完成")
+                            : BNBUL10n.formatted(
+                                "还差 %@",
+                                appState.generalRemaining.localizedHourText
+                            )
                     )
                 }
             }
         }
     }
 
+    private var progressTotalLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(verbatim: appState.totalCompleted.localizedHourText)
+                .font(.system(size: 46, weight: .regular))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(verbatim: "/ \(appState.hourRule.total.localizedHourText)")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(BNBUTheme.muted)
+            Spacer(minLength: 8)
+            Text("\(Int(appState.completionRatio * 100))%")
+                .font(.title2.weight(.medium))
+                .foregroundStyle(BNBUTheme.blue)
+        }
+    }
+
     private var riskPanel: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 8) {
-                Text(hasHourRisk ? "当前风险提示" : "当前状态稳定")
+                Text(LocalizedStringKey(hasHourRisk ? "当前风险提示" : "当前状态稳定"))
                     .font(.headline.weight(.medium))
-                Text(riskText)
+                Text(verbatim: riskText)
                     .font(.subheadline.weight(.regular))
                     .foregroundStyle(BNBUTheme.muted)
                     .lineSpacing(3)
@@ -171,20 +218,23 @@ struct DashboardView: View {
         if appState.courseRemaining > 0 {
             items.append(
                 FocusPlanItem(
-                    title: "优先补齐课程相关 \(appState.courseRemaining.hourText)",
-                    detail: "课程相关不能被组织抵扣替代，建议在课程相关运动中完成计时打卡。",
+                    title: BNBUL10n.formatted(
+                        "优先补齐课程相关 %@",
+                        appState.courseRemaining.localizedHourText
+                    ),
+                    detail: BNBUL10n.text("课程相关不能被组织抵扣替代，建议在课程相关运动中完成计时打卡。"),
                     systemImage: "target",
-                    status: "高优先级"
+                    status: BNBUL10n.text("高优先级")
                 )
             )
         }
         if items.isEmpty {
             items.append(
                 FocusPlanItem(
-                    title: "当前没有阻塞事项",
-                    detail: "保持运动记录连续性，关注下一次课程任务发布。",
+                    title: BNBUL10n.text("当前没有阻塞事项"),
+                    detail: BNBUL10n.text("保持运动记录连续性，关注下一次课程任务发布。"),
                     systemImage: "checkmark.seal",
-                    status: "稳定"
+                    status: BNBUL10n.text("稳定")
                 )
             )
         }
@@ -197,15 +247,41 @@ struct DashboardView: View {
 
     private var riskText: String {
         if appState.courseRemaining > 0 && appState.generalRemaining > 0 {
-            return "课程相关还差 \(appState.courseRemaining.hourText)，其他运动还差 \(appState.generalRemaining.hourText)。请优先关注课程任务和可计入的自主运动。"
+            return BNBUL10n.formatted(
+                "课程相关还差 %@，其他运动还差 %@。请优先关注课程任务和可计入的自主运动。",
+                appState.courseRemaining.localizedHourText,
+                appState.generalRemaining.localizedHourText
+            )
         }
         if appState.courseRemaining > 0 {
-            return "课程相关还差 \(appState.courseRemaining.hourText)。其他运动已由组织认证完成，但不能替代课程相关学时。"
+            return BNBUL10n.formatted(
+                "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。",
+                appState.courseRemaining.localizedHourText
+            )
         }
         if appState.generalRemaining > 0 {
-            return "其他运动还差 \(appState.generalRemaining.hourText)。可通过自主运动打卡或有效组织认证完成。"
+            return BNBUL10n.formatted(
+                "其他运动还差 %@。可通过自主运动打卡或有效组织认证完成。",
+                appState.generalRemaining.localizedHourText
+            )
         }
-        return "课程相关与其他运动均达到本学期要求，请继续关注课程任务和成绩缺失项。"
+        return BNBUL10n.text("课程相关与其他运动均达到本学期要求，请继续关注课程任务和成绩缺失项。")
+    }
+
+    private var progressStatusText: String {
+        if appState.courseRemaining > 0 {
+            return BNBUL10n.formatted(
+                "课程还差 %@",
+                appState.courseRemaining.localizedHourText
+            )
+        }
+        if appState.generalRemaining > 0 {
+            return BNBUL10n.formatted(
+                "其他运动还差 %@",
+                appState.generalRemaining.localizedHourText
+            )
+        }
+        return BNBUL10n.text("全部学时已完成")
     }
 
 }
@@ -229,14 +305,22 @@ private struct FocusPlanRow: View {
                 .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(item.title)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BNBUTheme.ink)
-                    Spacer()
-                    StatusBadge(text: item.status)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(verbatim: item.title)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(BNBUTheme.ink)
+                        Spacer()
+                        StatusBadge(text: item.status)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(verbatim: item.title)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(BNBUTheme.ink)
+                        StatusBadge(text: item.status)
+                    }
                 }
-                Text(item.detail)
+                Text(verbatim: item.detail)
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.muted)
                     .lineSpacing(2)
@@ -298,13 +382,25 @@ private struct ProgressLine: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(LocalizedStringKey(title))
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text("\(value.hourText) / \(total.hourText)")
-                    .font(.subheadline.weight(.medium))
-                StatusBadge(text: detail)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Text(LocalizedStringKey(title))
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    Text(verbatim: "\(value.localizedHourText) / \(total.localizedHourText)")
+                        .font(.subheadline.weight(.medium))
+                    StatusBadge(text: detail)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(LocalizedStringKey(title))
+                        .font(.subheadline.weight(.medium))
+                    HStack {
+                        Text(verbatim: "\(value.localizedHourText) / \(total.localizedHourText)")
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        StatusBadge(text: detail)
+                    }
+                }
             }
             HourProgressBar(value: value, total: total)
         }
@@ -369,7 +465,7 @@ private struct NotificationCenterSheet: View {
                     Label("通知", systemImage: appState.unreadNoticeCount > 0 ? "bell.badge.fill" : "bell")
                         .font(.title3.weight(.semibold))
                     Spacer()
-                    StatusBadge(text: appState.unreadNoticeCount > 0 ? "\(appState.unreadNoticeCount) 条未读" : "暂无未读")
+                    StatusBadge(text: unreadBadgeText)
                 }
 
                 HStack {
@@ -422,6 +518,17 @@ private struct NotificationCenterSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    private var unreadBadgeText: String {
+        let count = appState.unreadNoticeCount
+        if count == 0 {
+            return BNBUL10n.text("暂无未读")
+        }
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(count) 条未读"
+        }
+        return count == 1 ? "1 unread" : "\(count) unread"
     }
 
     private var filteredNotices: [StudentNotice] {

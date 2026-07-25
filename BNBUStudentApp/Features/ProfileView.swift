@@ -25,12 +25,13 @@ struct ProfileView: View {
                     teacherPanel
                     identityPanel
                     settingsPanel
-                    // Keep the last action fully above the custom bottom bar
-                    // after the settings section grows.
-                    Spacer(minLength: 120)
+                    Spacer(minLength: 24)
                 }
                 .padding(BNBUSpacing.screen)
             }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            BNBUTheme.background.frame(height: 2)
         }
         .accessibilityIdentifier("screen.profile")
         .sheet(isPresented: $showExemptionCenter) {
@@ -96,27 +97,43 @@ struct ProfileView: View {
         let student = appState.workspace.student
         let tags = [
             student.className,
-            student.gender.title,
-            appState.academicProjection.grade
+            BNBUL10n.dynamicText(student.gender.title),
+            BNBUL10n.dynamicText(appState.academicProjection.grade)
         ].filter { !$0.isEmpty }.joined(separator: " · ")
 
         return SwissPanel {
-            HStack(alignment: .center, spacing: 14) {
-                BrandMark(compact: true)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(student.name)
-                        .font(.title2.weight(.medium))
-                    Text("\(student.displayStudentNumber) · \(student.college)")
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    if !tags.isEmpty {
-                        Text(tags)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 14) {
+                    profileIdentity(student: student, tags: tags)
+                    Spacer(minLength: 8)
+                    StatusBadge(text: student.status, filled: true)
                 }
-                Spacer()
-                StatusBadge(text: student.status, filled: true)
+                VStack(alignment: .leading, spacing: 10) {
+                    profileIdentity(student: student, tags: tags)
+                    StatusBadge(text: student.status, filled: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func profileIdentity(student: StudentProfile, tags: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            BrandMark(compact: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(student.name)
+                    .font(.title2.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(student.displayStudentNumber) · \(student.college)")
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !tags.isEmpty {
+                    Text(verbatim: tags)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -164,16 +181,14 @@ struct ProfileView: View {
                                 Image(systemName: summary.isServerConfirmed ? "checkmark.circle.fill" : "arrow.clockwise.circle.fill")
                                     .foregroundStyle(BNBUTheme.primary)
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(summary.title)
+                                    Text(verbatim: BNBUL10n.dynamicText(summary.title))
                                         .font(.headline.weight(.medium))
                                     if let target = summary.target, !target.isEmpty {
                                         Text("对象：\(target)")
                                             .font(.caption.weight(.regular))
                                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     }
-                                    Text(summary.isServerConfirmed
-                                        ? "服务器已确认成功；当前仅需清理本地标记，请勿重新提交。"
-                                        : "已安全保留 \(summary.uploadedProofCount) 个上传凭证引用")
+                                    Text(verbatim: pendingMutationDetail(summary))
                                         .font(.caption.weight(.regular))
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                 }
@@ -186,10 +201,13 @@ struct ProfileView: View {
                                         _ = await appState.retryPendingRemoteMutation(scope: summary.scope)
                                     }
                                 } label: {
-                                    Label(
-                                        summary.isServerConfirmed ? "仅清理本地标记" : "继续安全重试",
-                                        systemImage: summary.isServerConfirmed ? "trash.slash" : "arrow.clockwise"
-                                    )
+                                    Label {
+                                        Text(LocalizedStringKey(
+                                            summary.isServerConfirmed ? "仅清理本地标记" : "继续安全重试"
+                                        ))
+                                    } icon: {
+                                        Image(systemName: summary.isServerConfirmed ? "trash.slash" : "arrow.clockwise")
+                                    }
                                         .frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -213,6 +231,17 @@ struct ProfileView: View {
             }
             .accessibilityIdentifier("profile.pending.mutations")
         }
+    }
+
+    private func pendingMutationDetail(_ summary: PendingRemoteMutationSummary) -> String {
+        if summary.isServerConfirmed {
+            return BNBUL10n.text("服务器已确认成功；当前仅需清理本地标记，请勿重新提交。")
+        }
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "已安全保留 \(summary.uploadedProofCount) 个上传凭证引用"
+        }
+        let noun = summary.uploadedProofCount == 1 ? "proof reference" : "proof references"
+        return "\(summary.uploadedProofCount) uploaded \(noun) safely retained"
     }
 
     @ViewBuilder
@@ -292,10 +321,22 @@ struct ProfileView: View {
                     SettingLine(label: "学生姓名", value: student.name)
                     SettingLine(label: "学号", value: student.displayStudentNumber)
                     SettingLine(label: "学院", value: student.college)
-                    SettingLine(label: "班级", value: student.className.isEmpty ? "待完善" : student.className)
-                    SettingLine(label: "入学年份", value: student.enrollmentYear.map(String.init) ?? "待完善")
-                    SettingLine(label: "当前年级", value: appState.academicProjection.grade)
-                    SettingLine(label: "计算年份", value: appState.academicProjection.academicYear)
+                    SettingLine(
+                        label: "班级",
+                        value: student.className.isEmpty ? BNBUL10n.text("待完善") : student.className
+                    )
+                    SettingLine(
+                        label: "入学年份",
+                        value: student.enrollmentYear.map(String.init) ?? BNBUL10n.text("待完善")
+                    )
+                    SettingLine(
+                        label: "当前年级",
+                        value: BNBUL10n.dynamicText(appState.academicProjection.grade)
+                    )
+                    SettingLine(
+                        label: "计算年份",
+                        value: localizedAcademicYear(appState.academicProjection.academicYear)
+                    )
                     SettingLine(label: "App 版本", value: "BNBU Student MVP 1.0")
                 }
             }
@@ -365,6 +406,11 @@ struct ProfileView: View {
         }
     }
 
+    private func localizedAcademicYear(_ value: String) -> String {
+        guard !BNBUL10n.locale.identifier.hasPrefix("zh") else { return value }
+        return value.replacingOccurrences(of: " 学年", with: "")
+    }
+
     private var languageSelection: Binding<String> {
         Binding(
             get: { languageSettings.mode.rawValue },
@@ -385,27 +431,39 @@ private struct ProfileNavigationCard: View {
     var body: some View {
         Button(action: action) {
             SwissPanel {
-                HStack(spacing: 12) {
-                    Image(systemName: systemImage)
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(BNBUTheme.primary)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(LocalizedStringKey(title))
-                            .font(.headline.weight(.medium))
-                            .foregroundStyle(BNBUTheme.onSurface)
-                        Text(LocalizedStringKey(detail))
-                            .font(.caption.weight(.regular))
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    }
-                    Spacer()
+                HStack(alignment: .top, spacing: 12) {
+                    navigationIdentity
+                        .layoutPriority(1)
+                    Spacer(minLength: 8)
                     Image(systemName: "chevron.right")
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .padding(.top, 2)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private var navigationIdentity: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.medium))
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(LocalizedStringKey(title))
+                    .font(.headline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(LocalizedStringKey(detail))
+                    .font(.caption.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
@@ -414,14 +472,23 @@ struct SettingLine: View {
     let value: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(LocalizedStringKey(label))
-                .font(.subheadline.weight(.medium))
-            Spacer()
-            Text(value)
-                .font(.subheadline.weight(.regular))
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                .multilineTextAlignment(.trailing)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                Text(LocalizedStringKey(label))
+                    .font(.subheadline.weight(.medium))
+                Spacer(minLength: 12)
+                Text(verbatim: value)
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .multilineTextAlignment(.trailing)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(LocalizedStringKey(label))
+                    .font(.subheadline.weight(.medium))
+                Text(verbatim: value)
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            }
         }
     }
 }

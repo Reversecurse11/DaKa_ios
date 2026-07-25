@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GradesView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ZStack {
@@ -28,38 +29,68 @@ struct GradesView: View {
 
     private var totalPanel: some View {
         SwissPanel {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("总分预估")
-                        .font(.headline.weight(.medium))
-                    Text("基于当前已录入的四块成绩与权重规则展示，最终结果以教务汇总为准。")
-                        .font(.subheadline.weight(.regular))
-                        .foregroundStyle(BNBUTheme.muted)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 16) {
+                    totalDescription
+                    Spacer(minLength: 8)
+                    totalScore
                 }
-                Spacer()
-                Text("\(appState.workspace.grades.total)")
-                    .font(.system(size: 54, weight: .regular))
-                    .foregroundStyle(BNBUTheme.ink)
+                VStack(alignment: .leading, spacing: 12) {
+                    totalDescription
+                    totalScore
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
         }
     }
 
+    private var totalDescription: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("总分预估")
+                .font(.headline.weight(.medium))
+            Text("基于当前已录入的四块成绩与权重规则展示，最终结果以教务汇总为准。")
+                .font(.subheadline.weight(.regular))
+                .foregroundStyle(BNBUTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var totalScore: some View {
+        Text("\(appState.workspace.grades.total)")
+            .font(.system(size: 54, weight: .regular))
+            .foregroundStyle(BNBUTheme.ink)
+    }
+
     private var components: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+        LazyVGrid(columns: componentColumns, spacing: 12) {
             ForEach(gradeComponents) { component in
                 GradeComponentCard(component: component)
             }
         }
     }
 
+    private var componentColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+        return [GridItem(.flexible()), GridItem(.flexible())]
+    }
+
     private var formulaPanel: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("总分计算")
-                        .font(.headline.weight(.medium))
-                    Spacer()
-                    StatusBadge(text: "透明预估")
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        Text("总分计算")
+                            .font(.headline.weight(.medium))
+                        Spacer()
+                        StatusBadge(text: "透明预估")
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("总分计算")
+                            .font(.headline.weight(.medium))
+                        StatusBadge(text: "透明预估")
+                    }
                 }
 
                 ForEach(gradeComponents) { component in
@@ -77,11 +108,18 @@ struct GradesView: View {
     private var missingPanel: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("缺失项 / 风险")
-                        .font(.headline.weight(.medium))
-                    Spacer()
-                    StatusBadge(text: appState.workspace.grades.missingItems.isEmpty ? "无缺失" : "\(appState.workspace.grades.missingItems.count) 项")
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        Text("缺失项 / 风险")
+                            .font(.headline.weight(.medium))
+                        Spacer()
+                        StatusBadge(text: missingCountText)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("缺失项 / 风险")
+                            .font(.headline.weight(.medium))
+                        StatusBadge(text: missingCountText)
+                    }
                 }
 
                 if appState.workspace.grades.missingItems.isEmpty {
@@ -90,7 +128,7 @@ struct GradesView: View {
                         .foregroundStyle(BNBUTheme.muted)
                 } else {
                     ForEach(appState.workspace.grades.missingItems, id: \.self) { item in
-                        Label(item, systemImage: "exclamationmark.circle")
+                        Label(localizedMissingItem(item), systemImage: "exclamationmark.circle")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(BNBUTheme.ink)
                     }
@@ -105,10 +143,11 @@ struct GradesView: View {
                 Label("来源追溯", systemImage: "scope")
                     .font(.headline.weight(.medium))
                     .foregroundStyle(BNBUTheme.primary)
-                Text(appState.workspace.grades.sourceTrace)
+                Text(verbatim: localizedSourceTrace(appState.workspace.grades.sourceTrace))
                     .font(.subheadline.weight(.regular))
                     .foregroundStyle(BNBUTheme.muted)
                     .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -125,6 +164,49 @@ struct GradesView: View {
     private var weightedTotal: Double {
         gradeComponents.reduce(0) { partialResult, component in
             partialResult + component.contribution
+        }
+    }
+
+    private var missingCountText: String {
+        let count = appState.workspace.grades.missingItems.count
+        if count == 0 {
+            return BNBUL10n.text("无缺失")
+        }
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(count) 项"
+        }
+        return count == 1 ? "1 item" : "\(count) items"
+    }
+
+    private func localizedMissingItem(_ item: String) -> String {
+        let coursePrefix = "打卡未满：课程相关还差 "
+        if item.hasPrefix(coursePrefix) {
+            let rawHours = String(item.dropFirst(coursePrefix.count))
+            return BNBUL10n.formatted(
+                "打卡未满：课程相关还差 %@",
+                localizedHourValue(rawHours)
+            )
+        }
+        return BNBUL10n.dynamicText(item)
+    }
+
+    private func localizedHourValue(_ value: String) -> String {
+        let normalized = value
+            .replacingOccurrences(of: "小时", with: "")
+            .replacingOccurrences(of: "h", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let hours = Double(normalized) else { return value }
+        return hours.localizedHourText
+    }
+
+    private func localizedSourceTrace(_ trace: String) -> String {
+        switch trace {
+        case "server:grades-missing":
+            return BNBUL10n.text("服务器：成绩尚未返回")
+        case "API: /student/grades":
+            return BNBUL10n.text("服务器：学生成绩接口")
+        default:
+            return BNBUL10n.dynamicText(trace)
         }
     }
 }
@@ -182,6 +264,8 @@ private struct GradeComponentSummary: Identifiable, Hashable {
 }
 
 private struct GradeComponentCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let component: GradeComponentSummary
 
     var body: some View {
@@ -195,9 +279,13 @@ private struct GradeComponentCard: View {
                     StatusBadge(text: component.weightText)
                 }
 
-                Text(component.title)
+                Text(LocalizedStringKey(component.title))
                     .font(.headline.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 68,
+                        alignment: .topLeading
+                    )
 
                 Text("\(component.score)")
                     .font(.system(size: 42, weight: .regular))
@@ -205,13 +293,18 @@ private struct GradeComponentCard: View {
 
                 HourProgressBar(value: Double(component.score), total: 100)
 
-                Text(component.note)
+                Text(LocalizedStringKey(component.note))
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.muted)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 52,
+                        alignment: .topLeading
+                    )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -220,16 +313,29 @@ private struct GradeContributionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(component.title)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text("\(component.score) x \(component.weightText) = \(component.contributionText)")
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(BNBUTheme.muted)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(LocalizedStringKey(component.title))
+                        .font(.subheadline.weight(.medium))
+                    Spacer(minLength: 8)
+                    contributionFormula
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(LocalizedStringKey(component.title))
+                        .font(.subheadline.weight(.medium))
+                    contributionFormula
+                }
             }
             HourProgressBar(value: component.contribution, total: 30)
         }
+    }
+
+    private var contributionFormula: some View {
+        Text("\(component.score) × \(component.weightText) = \(component.contributionText)")
+            .font(.subheadline.weight(.regular))
+            .foregroundStyle(BNBUTheme.muted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 }
 

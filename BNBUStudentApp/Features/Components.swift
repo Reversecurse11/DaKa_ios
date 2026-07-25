@@ -134,7 +134,7 @@ struct StatusBadge: View {
     var filled = false
 
     var body: some View {
-        Text(LocalizedStringKey(text))
+        Text(verbatim: BNBUL10n.dynamicText(text))
             .font(.caption.weight(.medium))
             .foregroundStyle(filled ? BNBUTheme.onPrimaryContainer : BNBUTheme.onSurfaceVariant)
             .lineLimit(1)
@@ -188,7 +188,7 @@ struct MetricCell: View {
                 Text(LocalizedStringKey(footnote))
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1115,15 +1115,25 @@ struct DetailFactRow: View {
     let value: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(LocalizedStringKey(label))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(BNBUTheme.ink)
-            Spacer()
-            Text(value)
-                .font(.subheadline.weight(.regular))
-                .foregroundStyle(BNBUTheme.muted)
-                .multilineTextAlignment(.trailing)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(LocalizedStringKey(label))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.ink)
+                Spacer(minLength: 12)
+                Text(verbatim: value)
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.muted)
+                    .multilineTextAlignment(.trailing)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(LocalizedStringKey(label))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BNBUTheme.ink)
+                Text(verbatim: value)
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.muted)
+            }
         }
     }
 }

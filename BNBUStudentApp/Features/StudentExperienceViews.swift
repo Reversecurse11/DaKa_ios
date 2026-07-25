@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 enum BNBUOnboarding {
-    static let currentVersion = 2
+    static let currentVersion = 3
     static let defaultsKey = "bnbu.onboarding.completed-version"
 
     static func completedVersion(
@@ -67,7 +67,10 @@ struct OnboardingView: View {
                     ForEach(Array(pages.enumerated()), id: \.offset) { index, item in
                         VStack(spacing: 20) {
                             Spacer(minLength: 4)
-                            OnboardingScreenshotPreview(kind: item.preview)
+                            OnboardingScreenshotPreview(
+                                kind: item.preview,
+                                isActive: page == index
+                            )
                                 .frame(maxWidth: 360)
                                 .padding(.horizontal, 24)
                             VStack(spacing: 12) {
@@ -331,17 +334,41 @@ private enum OnboardingPreviewKind {
     case checkIn
     case grades
     case applications
+
+    var accessibilitySummary: String {
+        switch self {
+        case .checkIn:
+            return "运动打卡动态演示：展示定位、计时、暂停和继续运动。"
+        case .grades:
+            return "成绩查看动态演示：展示成绩同步和各项成绩逐步更新。"
+        case .applications:
+            return "申请中心动态演示：展示选择申请、提交材料和教师审核进度。"
+        }
+    }
 }
 
 private struct OnboardingScreenshotPreview: View {
     let kind: OnboardingPreviewKind
+    let isActive: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var animationStep = 0
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Capsule()
-                    .fill(BNBUTheme.onSurface.opacity(0.7))
-                    .frame(width: 34, height: 5)
+                HStack(spacing: 4) {
+                    ForEach(0..<4, id: \.self) { step in
+                        Circle()
+                            .fill(
+                                step == animationStep
+                                    ? BNBUTheme.primary
+                                    : BNBUTheme.outline.opacity(0.35)
+                            )
+                            .frame(width: step == animationStep ? 7 : 5, height: step == animationStep ? 7 : 5)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.3), value: animationStep)
                 Spacer()
                 Image(systemName: "wifi")
                 Image(systemName: "battery.100")
@@ -365,7 +392,20 @@ private struct OnboardingScreenshotPreview: View {
                 .stroke(BNBUTheme.outline.opacity(0.45), lineWidth: 1)
         }
         .shadow(color: Color.black.opacity(0.10), radius: 12, y: 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(LocalizedStringKey(kind.accessibilitySummary)))
+        .task(id: isActive && !reduceMotion) {
+            animationStep = 0
+            guard isActive, !reduceMotion else { return }
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_100_000_000)
+                guard !Task.isCancelled else { break }
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    animationStep = (animationStep + 1) % 4
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -384,7 +424,10 @@ private struct OnboardingScreenshotPreview: View {
         VStack(alignment: .leading, spacing: 10) {
             PreviewHeader(title: "运动打卡", symbol: "figure.run")
             HStack {
-                PreviewStatusPill(title: "今日可打卡", color: BNBUTheme.tertiary)
+                PreviewStatusPill(
+                    title: checkInStatus,
+                    color: animationStep == 2 ? BNBUTheme.secondary : BNBUTheme.tertiary
+                )
                 Spacer()
                 Text("剩余 12h")
                     .font(.caption.weight(.medium))
@@ -402,17 +445,23 @@ private struct OnboardingScreenshotPreview: View {
                         .foregroundStyle(BNBUTheme.primary)
                 }
                 .frame(width: 46, height: 46)
+                .scaleEffect(animationStep == 0 && isActive && !reduceMotion ? 1.12 : 1)
+                .animation(
+                    .easeInOut(duration: 0.55).repeatCount(2, autoreverses: true),
+                    value: animationStep
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("00:00:00")
+                    Text(verbatim: checkInElapsedTime)
                         .font(.title3.monospacedDigit().weight(.semibold))
-                    Text("开始后可暂停并现场拍摄")
+                        .contentTransition(.numericText())
+                    Text(LocalizedStringKey(checkInDetail))
                         .font(.caption2)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
             }
             Spacer(minLength: 0)
-            PreviewPrimaryButton(title: "开始运动", symbol: "play.fill")
+            PreviewPrimaryButton(title: checkInButtonTitle, symbol: checkInButtonSymbol)
         }
     }
 
@@ -427,15 +476,30 @@ private struct OnboardingScreenshotPreview: View {
                         .font(.headline)
                 }
                 Spacer()
-                PreviewStatusPill(title: "公示中", color: BNBUTheme.secondary)
+                PreviewStatusPill(
+                    title: animationStep == 3 ? "成绩已更新" : "成绩同步中",
+                    color: animationStep == 3 ? BNBUTheme.tertiary : BNBUTheme.secondary
+                )
             }
             .padding(10)
             .background(BNBUTheme.surfaceVariant)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            PreviewGradeRow(title: "体育打卡", value: "86")
-            PreviewGradeRow(title: "专项考试", value: "未录入")
-            PreviewGradeRow(title: "体质测试", value: "92")
+            PreviewGradeRow(
+                title: "体育打卡",
+                value: animationStep >= 1 ? "86" : "--",
+                highlighted: animationStep == 1
+            )
+            PreviewGradeRow(
+                title: "专项考试",
+                value: animationStep >= 2 ? "未录入" : "--",
+                highlighted: animationStep == 2
+            )
+            PreviewGradeRow(
+                title: "体质测试",
+                value: animationStep >= 3 ? "92" : "--",
+                highlighted: animationStep == 3
+            )
             Spacer(minLength: 0)
             HStack {
                 Label("查看历史课程", systemImage: "clock.arrow.circlepath")
@@ -457,15 +521,70 @@ private struct OnboardingScreenshotPreview: View {
             PreviewApplicationCard(
                 title: "体测免测申请",
                 detail: "800 米 / 1000 米",
-                symbol: "heart.text.square"
+                symbol: "heart.text.square",
+                highlighted: animationStep == 0
             )
             PreviewApplicationCard(
                 title: "校队 / 社团认证",
                 detail: "上传证明材料，由任课教师审核",
-                symbol: "person.3.fill"
+                symbol: "person.3.fill",
+                highlighted: animationStep == 1
             )
             Spacer(minLength: 0)
-            PreviewStatusPill(title: "可随时查看处理进度", color: BNBUTheme.tertiary)
+            PreviewStatusPill(title: applicationStatus, color: BNBUTheme.tertiary)
+        }
+    }
+
+    private var checkInStatus: String {
+        switch animationStep {
+        case 0: return "正在定位"
+        case 1: return "运动进行中"
+        case 2: return "运动已暂停"
+        default: return "运动进行中"
+        }
+    }
+
+    private var checkInElapsedTime: String {
+        switch animationStep {
+        case 0: return "00:00:00"
+        case 1: return "00:18:24"
+        default: return "00:42:08"
+        }
+    }
+
+    private var checkInDetail: String {
+        switch animationStep {
+        case 0: return "正在获取当前位置"
+        case 1: return "正在记录运动时长"
+        case 2: return "计时已暂停，可现场拍摄"
+        default: return "计时已继续，可随时结束"
+        }
+    }
+
+    private var checkInButtonTitle: String {
+        switch animationStep {
+        case 0: return "开始运动"
+        case 1: return "暂停运动"
+        case 2: return "继续运动"
+        default: return "结束运动"
+        }
+    }
+
+    private var checkInButtonSymbol: String {
+        switch animationStep {
+        case 0: return "play.fill"
+        case 1: return "pause.fill"
+        case 2: return "play.fill"
+        default: return "stop.fill"
+        }
+    }
+
+    private var applicationStatus: String {
+        switch animationStep {
+        case 0: return "选择申请类型"
+        case 1: return "填写并上传材料"
+        case 2: return "材料已提交"
+        default: return "教师审核中"
         }
     }
 }
@@ -539,6 +658,7 @@ private struct PreviewPrimaryButton: View {
 private struct PreviewGradeRow: View {
     let title: String
     let value: String
+    let highlighted: Bool
 
     var body: some View {
         HStack {
@@ -551,8 +671,9 @@ private struct PreviewGradeRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(BNBUTheme.surfaceVariant.opacity(0.72))
+        .background(highlighted ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant.opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 9))
+        .animation(.easeInOut(duration: 0.35), value: highlighted)
     }
 }
 
@@ -560,6 +681,7 @@ private struct PreviewApplicationCard: View {
     let title: String
     let detail: String
     let symbol: String
+    let highlighted: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -583,7 +705,9 @@ private struct PreviewApplicationCard: View {
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
         }
         .padding(10)
-        .background(BNBUTheme.surfaceVariant)
+        .background(highlighted ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .scaleEffect(highlighted ? 1.015 : 1)
+        .animation(.easeInOut(duration: 0.35), value: highlighted)
     }
 }
