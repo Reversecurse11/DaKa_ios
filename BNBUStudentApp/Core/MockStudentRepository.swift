@@ -109,7 +109,7 @@ struct MockStudentRepository: StudentRepository {
                     ProofAttachment(id: "pf-r1-2", type: .image, fileName: "run-week06-photo-2.jpg", byteCount: 790_000, source: "mock"),
                     ProofAttachment(id: "pf-r1-3", type: .video, fileName: "run-week06-video.mov", byteCount: 5_800_000, source: "mock")
                 ],
-                note: "操场跑步 40 分钟，配速截图已上传。",
+                note: "操场跑步，全程计时 2 小时。",
                 sportType: "running"
             ),
             CheckInRecord(
@@ -120,12 +120,12 @@ struct MockStudentRepository: StudentRepository {
                 hours: 2,
                 submittedAt: "2026.06.01 19:40",
                 validity: .valid,
-                proofSummary: "运动截图 + 场地照片",
+                proofSummary: "2 张现场照片",
                 proofPhotoCount: 2,
                 proofVideoCount: 0,
                 proofFiles: [
-                    ProofAttachment(id: "pf-r2-1", type: .image, fileName: "gym-workout-screen.jpg", byteCount: 680_000, source: "mock"),
-                    ProofAttachment(id: "pf-r2-2", type: .image, fileName: "gym-location.jpg", byteCount: 730_000, source: "mock")
+                    ProofAttachment(id: "pf-r2-1", type: .image, fileName: "gym-training-photo.jpg", byteCount: 680_000, source: "mock"),
+                    ProofAttachment(id: "pf-r2-2", type: .image, fileName: "gym-location-photo.jpg", byteCount: 730_000, source: "mock")
                 ],
                 note: "体育馆力量训练。",
                 sportType: "fitness"
@@ -153,11 +153,11 @@ struct MockStudentRepository: StudentRepository {
                 submittedAt: "2026.05.25 20:20",
                 validity: .invalid,
                 invalidReason: "图片哈希命中历史记录，本次不计入有效学时。",
-                proofSummary: "运动截图",
+                proofSummary: "1 张现场照片",
                 proofPhotoCount: 1,
                 proofVideoCount: 0,
                 proofFiles: [
-                    ProofAttachment(id: "pf-r4-1", type: .image, fileName: "duplicate-run-screen.jpg", byteCount: 640_000, source: "mock")
+                    ProofAttachment(id: "pf-r4-1", type: .image, fileName: "run-repeat-photo.jpg", byteCount: 640_000, source: "mock")
                 ],
                 note: "操场跑步记录。",
                 sportType: "running"
