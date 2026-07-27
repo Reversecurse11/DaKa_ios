@@ -108,7 +108,8 @@ struct WorkspacePayload: Decodable {
                 physical: 0,
                 total: 0,
                 sourceTrace: "server:grades-missing",
-                missingItems: [BNBUL10n.text("成绩暂未返回")]
+                missingItems: [BNBUL10n.text("成绩暂未返回")],
+                state: .ruleUnpublished
             ),
             memberships: memberships,
             notices: notices,
@@ -880,7 +881,8 @@ actor RemoteStudentRepository {
                 physical: 0,
                 total: 0,
                 sourceTrace: "服务器：成绩规则尚未发布",
-                missingItems: [BNBUL10n.text("成绩规则尚未发布")]
+                missingItems: [BNBUL10n.text("成绩规则尚未发布")],
+                state: .ruleUnpublished
             )
         let records = try decodeFlexible(SportRecordsPayload.self, from: recordsData).records
 

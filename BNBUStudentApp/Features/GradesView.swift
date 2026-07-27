@@ -12,9 +12,14 @@ struct GradesView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     SectionTitle(eyebrow: "Grade Progress", title: "成绩进度")
 
-                    totalPanel
-                    components
-                    formulaPanel
+                    statePanel
+                    if gradeState.showsOfficialTotal {
+                        totalPanel
+                    }
+                    if gradeState.showsComponents {
+                        components
+                        formulaPanel
+                    }
                     missingPanel
                     tracePanel
                 }
@@ -25,6 +30,36 @@ struct GradesView: View {
             }
         }
         .accessibilityIdentifier("screen.grades")
+    }
+
+    private var gradeState: CourseGradeState {
+        appState.workspace.grades.state
+    }
+
+    private var statePanel: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        Text("成绩状态")
+                            .font(.headline.weight(.medium))
+                        Spacer()
+                        StatusBadge(text: gradeState.title, filled: true)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("成绩状态")
+                            .font(.headline.weight(.medium))
+                        StatusBadge(text: gradeState.title, filled: true)
+                    }
+                }
+                Text(verbatim: BNBUL10n.dynamicText(gradeState.studentNotice))
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityIdentifier("grades.state.panel")
     }
 
     private var totalPanel: some View {
@@ -103,7 +138,20 @@ struct GradesView: View {
                 Divider()
 
                 DetailFactRow(label: "加权合计", value: String(format: "%.1f", weightedTotal))
-                DetailFactRow(label: "四舍五入", value: "\(appState.workspace.grades.total)")
+                if gradeState.showsOfficialTotal {
+                    DetailFactRow(label: "四舍五入", value: "\(appState.workspace.grades.total)")
+                }
+
+                if !unrecordedComponents.isEmpty {
+                    Text(verbatim: BNBUL10n.formatted(
+                        "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。",
+                        unrecordedComponents.count
+                    ))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(BNBUTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("grades.items.unrecorded")
+                }
 
                 if !weightsAreComplete {
                     Text(verbatim: BNBUL10n.formatted(
@@ -178,6 +226,10 @@ struct GradesView: View {
 
     private var weightSum: Double {
         gradeComponents.reduce(0) { $0 + $1.weight }
+    }
+
+    private var unrecordedComponents: [GradeComponent] {
+        gradeComponents.filter { !$0.countsTowardEstimate }
     }
 
     /// A teacher-configured breakdown can be published before every slice is
@@ -297,11 +349,21 @@ private struct GradeComponentCard: View {
                         alignment: .topLeading
                     )
 
-                Text("\(component.score)")
-                    .font(.system(size: 42, weight: .regular))
-                    .foregroundStyle(BNBUTheme.ink)
+                if component.entryState == .recorded {
+                    Text("\(component.score)")
+                        .font(.system(size: 42, weight: .regular))
+                        .foregroundStyle(BNBUTheme.ink)
+                } else {
+                    Text(verbatim: BNBUL10n.dynamicText(component.entryState.title))
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(BNBUTheme.muted)
+                        .frame(height: 50, alignment: .bottomLeading)
+                }
 
-                HourProgressBar(value: Double(component.score), total: 100)
+                HourProgressBar(
+                    value: component.entryState == .recorded ? Double(component.score) : 0,
+                    total: 100
+                )
 
                 Text(verbatim: BNBUL10n.dynamicText(component.note))
                     .font(.caption.weight(.regular))
@@ -340,8 +402,16 @@ private struct GradeContributionRow: View {
         }
     }
 
+    private var contributionText: String {
+        let weight = GradeWeightFormatter.percentText(component.weight)
+        guard component.entryState != .notRecorded else {
+            return "\(BNBUL10n.dynamicText(component.entryState.title)) × \(weight)"
+        }
+        return "\(component.score) × \(weight) = \(String(format: "%.1f", component.contribution))"
+    }
+
     private var contributionFormula: some View {
-        Text(verbatim: "\(component.score) × \(GradeWeightFormatter.percentText(component.weight)) = \(String(format: "%.1f", component.contribution))")
+        Text(verbatim: contributionText)
             .font(.subheadline.weight(.regular))
             .foregroundStyle(BNBUTheme.muted)
             .lineLimit(1)

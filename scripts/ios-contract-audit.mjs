@@ -281,6 +281,21 @@ requireText(gradesView, "appState.workspace.grades.resolvedComponents", "The gra
 rejectText(gradesView, "weight: 0.30", "The grades page no longer hardcodes slice weights");
 requireText(gradesView, "grades.weights.incomplete", "Incomplete published weights are disclosed to the student");
 requireText(modelTests, "testGradeCompositionFollowsThePublishedConfiguration", "Configurable grade composition is covered by XCTest");
+
+// Grade state machine (业务流程 §1.3/§1.4)
+requireText(models, "enum CourseGradeState", "The course grading pipeline is modelled client-side");
+requireText(models, "static let backwardCompatibleDefault = CourseGradeState.published", "Servers without a grade state keep showing published grades");
+requireText(models, "var showsComponents: Bool { self != .ruleUnpublished }", "The breakdown stays hidden until the rule is published");
+requireText(models, "case .ruleUnpublished, .recording: return false", "The official total is withheld while the teacher is still scoring");
+requireText(models, "enum GradeComponentEntryState", "Grade items carry their entry verdict (§1.3)");
+requireText(models, "entryState == .notRecorded ? 0 : Double(score) * weight", "An unrecorded item contributes nothing to the estimate");
+requireText(models, "entryState = decodedEntry ?? (hasScore ? .recorded : .notRecorded)", "A missing score is never inferred as a zero");
+requireText(remote, "state: .ruleUnpublished", "An unpublished grading rule is reported as such instead of a zero score");
+requireText(gradesView, "if gradeState.showsOfficialTotal {", "The grades page honours the published-total rule");
+requireText(gradesView, "grades.state.panel", "The grades page discloses the current grade state");
+requireText(gradesView, "grades.items.unrecorded", "Unrecorded items are disclosed alongside the estimate");
+requireText(modelTests, "testCourseGradeStateControlsWhatTheStudentSees", "Grade-state visibility is covered by XCTest");
+requireText(modelTests, "testUnrecordedGradeItemsNeverReadAsZero", "Unrecorded items are proven not to read as zeros");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
 requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");

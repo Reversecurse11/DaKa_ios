@@ -2472,6 +2472,115 @@ struct Membership: Identifiable, Hashable, Codable {
     }
 }
 
+/// Where a course sits in the grading pipeline (业务流程 §1.4). The state
+/// decides what the student may see, so it is decoded defensively and only
+/// widens visibility when the server says so.
+enum CourseGradeState: String, Codable, Hashable, CaseIterable {
+    case ruleUnpublished
+    case recording
+    case published
+    case pendingArchive
+    case archiveReview
+    case returned
+    case archived
+    case correctionReview
+
+    /// Servers that predate the state machine already return published
+    /// grades, so an absent value must not hide what students see today.
+    static let backwardCompatibleDefault = CourseGradeState.published
+
+    init?(serverValue: String) {
+        switch serverValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "rule_unpublished", "ruleunpublished", "rule_draft", "规则未发布":
+            self = .ruleUnpublished
+        case "recording", "in_progress", "scoring", "打卡与录入中", "录入中":
+            self = .recording
+        case "published", "publicity", "public", "公示中", "已发布":
+            self = .published
+        case "pending_archive", "pendingarchive", "待提交归档":
+            self = .pendingArchive
+        case "archive_review", "archivereview", "archiving", "归档审核中":
+            self = .archiveReview
+        case "returned", "rejected", "已退回":
+            self = .returned
+        case "archived", "已归档":
+            self = .archived
+        case "correction_review", "correctionreview", "修正审批中":
+            self = .correctionReview
+        default:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .ruleUnpublished: return "规则未发布"
+        case .recording: return "打卡与录入中"
+        case .published: return "公示中"
+        case .pendingArchive: return "待提交归档"
+        case .archiveReview: return "归档审核中"
+        case .returned: return "已退回"
+        case .archived: return "已归档"
+        case .correctionReview: return "修正审批中"
+        }
+    }
+
+    /// §1.4: the breakdown does not exist until the teacher publishes the rule.
+    var showsComponents: Bool { self != .ruleUnpublished }
+
+    /// §1.4: the official total is withheld while the teacher is still scoring,
+    /// so a server-side zero is never presented as a result.
+    var showsOfficialTotal: Bool {
+        switch self {
+        case .ruleUnpublished, .recording: return false
+        default: return true
+        }
+    }
+
+    var studentNotice: String {
+        switch self {
+        case .ruleUnpublished: return "请等待教师发布成绩规则。"
+        case .recording: return "教师正在录入成绩，正式总分发布后可见。"
+        case .published: return "成绩已发布，当前处于公示期。"
+        case .pendingArchive: return "公示期已结束，成绩等待归档。"
+        case .archiveReview: return "成绩归档审核中，当前为只读。"
+        case .returned: return "成绩已退回给教师修正，修正后会重新提交归档。"
+        case .archived: return "成绩已归档，为最终结果。"
+        case .correctionReview: return "成绩修正审批中，批准后会更新。"
+        }
+    }
+}
+
+/// Whether a teacher has reached a conclusion on one grade item (业务流程 §1.3).
+enum GradeComponentEntryState: String, Codable, Hashable {
+    case recorded
+    /// No score and no absence mark yet; must not read as a zero.
+    case notRecorded
+    /// Explicitly marked absent, which scores zero and does count.
+    case absent
+
+    init?(serverValue: String) {
+        switch serverValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "recorded", "scored", "entered", "已录入":
+            self = .recorded
+        case "not_recorded", "notrecorded", "pending", "empty", "未录入":
+            self = .notRecorded
+        case "absent", "missed", "缺考":
+            self = .absent
+        default:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .recorded: return "已录入"
+        case .notRecorded: return "未录入"
+        case .absent: return "缺考"
+        }
+    }
+}
+
 /// One configurable slice of the final grade (rule 4.3). The teacher decides
 /// how many slices exist, what they are called and how they are weighted, so
 /// the client renders whatever the server publishes instead of a fixed four.
@@ -2482,10 +2591,17 @@ struct GradeComponent: Identifiable, Hashable, Codable {
     /// Always a fraction of 1 after decoding, whatever the server sent.
     let weight: Double
     let note: String
+    let entryState: GradeComponentEntryState
 
     var id: String { key }
 
-    var contribution: Double { Double(score) * weight }
+    /// §1.3: an absence scores zero and still counts; an item the teacher has
+    /// not concluded on contributes nothing and is disclosed separately.
+    var contribution: Double {
+        entryState == .notRecorded ? 0 : Double(score) * weight
+    }
+
+    var countsTowardEstimate: Bool { entryState != .notRecorded }
 
     /// Legacy slices keep their icons; unknown server keys fall back to a
     /// neutral one rather than shipping an empty image.
@@ -2499,12 +2615,20 @@ struct GradeComponent: Identifiable, Hashable, Codable {
         }
     }
 
-    init(key: String, title: String, score: Int, weight: Double, note: String) {
+    init(
+        key: String,
+        title: String,
+        score: Int,
+        weight: Double,
+        note: String,
+        entryState: GradeComponentEntryState = .recorded
+    ) {
         self.key = key
         self.title = title
         self.score = score
         self.weight = GradeComponent.normalizedWeight(weight)
         self.note = note
+        self.entryState = entryState
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2521,6 +2645,9 @@ struct GradeComponent: Identifiable, Hashable, Codable {
         case percentage
         case note
         case description
+        case entryState
+        case state
+        case status
     }
 
     init(from decoder: Decoder) throws {
@@ -2544,6 +2671,15 @@ struct GradeComponent: Identifiable, Hashable, Codable {
         note = try container.decodeIfPresent(String.self, forKey: .note)
             ?? container.decodeIfPresent(String.self, forKey: .description)
             ?? ""
+        var decodedEntry: GradeComponentEntryState?
+        for key in [CodingKeys.entryState, .state, .status] {
+            guard decodedEntry == nil,
+                  let raw = try? container.decodeIfPresent(String.self, forKey: key) else { continue }
+            decodedEntry = GradeComponentEntryState(serverValue: raw)
+        }
+        // An item with neither a score nor an explicit state has no conclusion.
+        let hasScore = container.contains(.score) || container.contains(.value)
+        entryState = decodedEntry ?? (hasScore ? .recorded : .notRecorded)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2553,6 +2689,7 @@ struct GradeComponent: Identifiable, Hashable, Codable {
         try container.encode(score, forKey: .score)
         try container.encode(weight, forKey: .weight)
         try container.encode(note, forKey: .note)
+        try container.encode(entryState.rawValue, forKey: .entryState)
     }
 
     /// Weights arrive either as a fraction (0.25) or as a percentage (25); a
@@ -2576,6 +2713,8 @@ struct GradeRow: Identifiable, Hashable, Codable {
     let missingItems: [String]
     /// Empty until the server publishes a configurable breakdown (rule 4.3).
     let components: [GradeComponent]
+    /// Where the course sits in the grading pipeline (业务流程 §1.4).
+    let state: CourseGradeState
 
     init(
         studentId: String,
@@ -2587,7 +2726,8 @@ struct GradeRow: Identifiable, Hashable, Codable {
         total: Int,
         sourceTrace: String,
         missingItems: [String],
-        components: [GradeComponent] = []
+        components: [GradeComponent] = [],
+        state: CourseGradeState = .backwardCompatibleDefault
     ) {
         self.studentId = studentId
         self.studentName = studentName
@@ -2599,6 +2739,7 @@ struct GradeRow: Identifiable, Hashable, Codable {
         self.sourceTrace = sourceTrace
         self.missingItems = missingItems
         self.components = components
+        self.state = state
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2613,6 +2754,9 @@ struct GradeRow: Identifiable, Hashable, Codable {
         case missingItems
         case components
         case gradeComponents
+        case state
+        case gradeState
+        case courseGradeState
     }
 
     init(from decoder: Decoder) throws {
@@ -2630,6 +2774,13 @@ struct GradeRow: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent([GradeComponent].self, forKey: .gradeComponents)
             ?? []
         components = decoded.filter { $0.weight > 0 }
+        var decodedState: CourseGradeState?
+        for key in [CodingKeys.state, .gradeState, .courseGradeState] {
+            guard decodedState == nil,
+                  let raw = try? container.decodeIfPresent(String.self, forKey: key) else { continue }
+            decodedState = CourseGradeState(serverValue: raw)
+        }
+        state = decodedState ?? .backwardCompatibleDefault
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2644,6 +2795,7 @@ struct GradeRow: Identifiable, Hashable, Codable {
         try container.encode(sourceTrace, forKey: .sourceTrace)
         try container.encode(missingItems, forKey: .missingItems)
         try container.encode(components, forKey: .components)
+        try container.encode(state.rawValue, forKey: .state)
     }
 
     /// The breakdown to render: the published configuration when it exists,
@@ -2659,6 +2811,12 @@ struct GradeRow: Identifiable, Hashable, Codable {
     }
 
     var usesPublishedComponents: Bool { !components.isEmpty }
+
+    /// Items the teacher has not concluded on yet; the estimate stays short by
+    /// their weight until they are entered.
+    var unrecordedComponents: [GradeComponent] {
+        resolvedComponents.filter { !$0.countsTowardEstimate }
+    }
 }
 
 enum NoticeCategory: String, CaseIterable, Identifiable, Hashable, Codable {

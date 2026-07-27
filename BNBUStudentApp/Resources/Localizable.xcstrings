@@ -1230,6 +1230,22 @@
         }
       }
     },
+    "修正审批中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Correction under review"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修正审批中"
+          }
+        }
+      }
+    },
     "修读中": {
       "localizations": {
         "en": {
@@ -1636,6 +1652,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部标为已读"
+          }
+        }
+      }
+    },
+    "公示中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Under publicity"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公示中"
+          }
+        }
+      }
+    },
+    "公示期已结束，成绩等待归档。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The publicity period has ended; grades are awaiting archiving."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公示期已结束，成绩等待归档。"
           }
         }
       }
@@ -3104,6 +3152,22 @@
         }
       }
     },
+    "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld grade items are not recorded yet; the estimate updates once your teacher enters them."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。"
+          }
+        }
+      }
+    },
     "尚未上传的原始凭证已不可用；已保留待重试操作。请重新选择材料，或到“我的”中明确放弃。": {
       "localizations": {
         "en": {
@@ -3213,6 +3277,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "已完成"
+          }
+        }
+      }
+    },
+    "已归档": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已归档"
+          }
+        }
+      }
+    },
+    "已录入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recorded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已录入"
           }
         }
       }
@@ -3393,6 +3489,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已退出，但设备未能清理待提交操作。请释放存储空间后重启 App。"
+          }
+        }
+      }
+    },
+    "已退回": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Returned"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已退回"
           }
         }
       }
@@ -3594,6 +3706,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "开始运动后计时，允许时获取一次定位；结束后只能选择运动过程中拍摄的凭证。"
+          }
+        }
+      }
+    },
+    "归档审核中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive under review"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归档审核中"
           }
         }
       }
@@ -4054,6 +4182,22 @@
         }
       }
     },
+    "待提交归档": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Awaiting archiving"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待提交归档"
+          }
+        }
+      }
+    },
     "必填": {
       "localizations": {
         "en": {
@@ -4250,6 +4394,22 @@
         }
       }
     },
+    "成绩修正审批中，批准后会更新。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A grade correction is under review and will be applied once approved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩修正审批中，批准后会更新。"
+          }
+        }
+      }
+    },
     "成绩同步中": {
       "extractionState": "stale",
       "localizations": {
@@ -4283,6 +4443,38 @@
         }
       }
     },
+    "成绩已发布，当前处于公示期。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grades are published and currently under publicity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩已发布，当前处于公示期。"
+          }
+        }
+      }
+    },
+    "成绩已归档，为最终结果。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grades are archived and final."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩已归档，为最终结果。"
+          }
+        }
+      }
+    },
     "成绩已更新": {
       "extractionState": "stale",
       "localizations": {
@@ -4296,6 +4488,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "成绩已更新"
+          }
+        }
+      }
+    },
+    "成绩已退回给教师修正，修正后会重新提交归档。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grades were returned to your teacher for correction and will be resubmitted for archiving."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩已退回给教师修正，修正后会重新提交归档。"
+          }
+        }
+      }
+    },
+    "成绩归档审核中，当前为只读。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The archive is under review; grades are read-only."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩归档审核中，当前为只读。"
           }
         }
       }
@@ -4329,6 +4553,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "成绩查看动态演示：展示成绩同步和各项成绩逐步更新。"
+          }
+        }
+      }
+    },
+    "成绩状态": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grade status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩状态"
           }
         }
       }
@@ -4494,6 +4734,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打卡"
+          }
+        }
+      }
+    },
+    "打卡与录入中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check-in and scoring"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡与录入中"
           }
         }
       }
@@ -5346,6 +5602,22 @@
         }
       }
     },
+    "教师正在录入成绩，正式总分发布后可见。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your teacher is still entering grades. The official total appears once it is published."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "教师正在录入成绩，正式总分发布后可见。"
+          }
+        }
+      }
+    },
     "数据异常时怎么办？": {
       "extractionState": "stale",
       "localizations": {
@@ -6076,6 +6348,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未完成操作"
+          }
+        }
+      }
+    },
+    "未录入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not recorded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未录入"
           }
         }
       }
@@ -7760,6 +8048,22 @@
         }
       }
     },
+    "缺考": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Absent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺考"
+          }
+        }
+      }
+    },
     "网络连接已中断，请先刷新记录确认提交状态": {
       "localizations": {
         "en": {
@@ -8017,6 +8321,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "补充材料已提交，等待老师复审。"
+          }
+        }
+      }
+    },
+    "规则未发布": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule not published"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则未发布"
           }
         }
       }
@@ -8525,6 +8845,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请求超时，请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "请等待教师发布成绩规则。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please wait for your teacher to publish the grading rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请等待教师发布成绩规则。"
           }
         }
       }

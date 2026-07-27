@@ -632,6 +632,61 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(unweighted.usesPublishedComponents)
     }
 
+    func testCourseGradeStateControlsWhatTheStudentSees() throws {
+        // §1.4: the breakdown does not exist before the rule is published, and
+        // the official total is withheld while the teacher is still scoring.
+        XCTAssertFalse(CourseGradeState.ruleUnpublished.showsComponents)
+        XCTAssertFalse(CourseGradeState.ruleUnpublished.showsOfficialTotal)
+        XCTAssertTrue(CourseGradeState.recording.showsComponents)
+        XCTAssertFalse(CourseGradeState.recording.showsOfficialTotal)
+        for state in [CourseGradeState.published, .pendingArchive, .archiveReview, .returned, .archived, .correctionReview] {
+            XCTAssertTrue(state.showsComponents, "\(state) hides the breakdown")
+            XCTAssertTrue(state.showsOfficialTotal, "\(state) hides the total")
+        }
+
+        // Servers that predate the state machine keep showing what they show
+        // today rather than silently hiding published grades.
+        let legacy = try JSONDecoder().decode(GradeRow.self, from: Data("""
+        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
+         "attendance":90,"physical":60,"total":75,"sourceTrace":"","missingItems":[]}
+        """.utf8))
+        XCTAssertEqual(legacy.state, .published)
+
+        let scoring = try JSONDecoder().decode(GradeRow.self, from: Data("""
+        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":0,
+         "attendance":0,"physical":0,"total":0,"sourceTrace":"","missingItems":[],
+         "gradeState":"打卡与录入中"}
+        """.utf8))
+        XCTAssertEqual(scoring.state, .recording)
+        XCTAssertFalse(scoring.state.showsOfficialTotal)
+    }
+
+    func testUnrecordedGradeItemsNeverReadAsZero() throws {
+        let row = try JSONDecoder().decode(GradeRow.self, from: Data("""
+        {"studentId":"s1","studentName":"演示学生","checkinScore":0,"exam":0,
+         "attendance":0,"physical":0,"total":0,"sourceTrace":"","missingItems":[],
+         "components":[
+           {"key":"checkin","title":"体育打卡","score":80,"weight":0.5},
+           {"key":"exam","title":"专项考试","weight":0.3},
+           {"key":"physical","title":"体测","score":0,"weight":0.2,"status":"缺考"}
+         ]}
+        """.utf8))
+
+        let components = row.resolvedComponents
+        // A missing score with no verdict is "not recorded", not a zero.
+        XCTAssertEqual(components[1].entryState, .notRecorded)
+        XCTAssertFalse(components[1].countsTowardEstimate)
+        XCTAssertEqual(components[1].contribution, 0)
+        XCTAssertEqual(row.unrecordedComponents.map(\.key), ["exam"])
+
+        // §1.3: an explicit absence scores zero and does count.
+        XCTAssertEqual(components[2].entryState, .absent)
+        XCTAssertTrue(components[2].countsTowardEstimate)
+
+        XCTAssertEqual(components[0].entryState, .recorded)
+        XCTAssertEqual(components[0].contribution, 40, accuracy: 0.0001)
+    }
+
     func testGradeWeightFormatterRoundsWithoutInventingPrecision() {
         XCTAssertEqual(GradeWeightFormatter.percentText(0.25), "25%")
         XCTAssertEqual(GradeWeightFormatter.percentText(0.3), "30%")
