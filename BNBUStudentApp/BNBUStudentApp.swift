@@ -21,6 +21,10 @@ struct BNBUStudentApp: App {
                 BNBULanguage.defaultMode.rawValue,
                 forKey: BNBULanguage.defaultsKey
             )
+            UserDefaults.standard.set(
+                BNBUAppearanceMode.light.rawValue,
+                forKey: BNBUAppearanceMode.defaultsKey
+            )
         }
         if arguments.contains("-ui-testing-language-en") {
             UserDefaults.standard.set(
