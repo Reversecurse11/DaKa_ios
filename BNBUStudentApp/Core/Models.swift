@@ -682,6 +682,40 @@ struct SyncOperation: Identifiable, Hashable, Codable {
     var status: SyncOperationStatus
 }
 
+/// Business rule 4.2: a student joins a course by QR code or invite code and
+/// only gains a real course relationship once the teacher approves, so a
+/// pending enrolment must not produce check-ins or credited hours.
+enum CourseEnrollmentStatus: String, Codable, Hashable, CaseIterable {
+    case approved
+    case pending
+    case rejected
+
+    /// Servers that predate rule 4.2 send no status at all; those courses are
+    /// already real relationships, so an absent value means approved.
+    static let backwardCompatibleDefault = CourseEnrollmentStatus.approved
+
+    init?(serverValue: String) {
+        switch serverValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "approved", "active", "enrolled", "joined", "confirmed", "已通过", "正式":
+            self = .approved
+        case "pending", "pending_review", "pendingreview", "reviewing", "submitted", "待审核", "审核中":
+            self = .pending
+        case "rejected", "declined", "denied", "已驳回", "未通过":
+            self = .rejected
+        default:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .approved: return "已通过"
+        case .pending: return "待审核"
+        case .rejected: return "未通过"
+        }
+    }
+}
+
 struct Course: Identifiable, Hashable, Codable {
     let id: String
     let code: String
@@ -695,6 +729,12 @@ struct Course: Identifiable, Hashable, Codable {
     var deadline: String
     var teacher: String
     let isCurrent: Bool
+    var enrollmentStatus: CourseEnrollmentStatus
+
+    /// Only an approved enrolment can back a check-in (rule 4.2).
+    var allowsCheckIn: Bool { enrollmentStatus == .approved }
+
+    var isAwaitingEnrollmentReview: Bool { enrollmentStatus == .pending }
 
     init(
         id: String,
@@ -708,7 +748,8 @@ struct Course: Identifiable, Hashable, Codable {
         missing: Int,
         deadline: String,
         teacher: String,
-        isCurrent: Bool = true
+        isCurrent: Bool = true,
+        enrollmentStatus: CourseEnrollmentStatus = .approved
     ) {
         self.id = id
         self.code = code
@@ -722,6 +763,7 @@ struct Course: Identifiable, Hashable, Codable {
         self.deadline = deadline
         self.teacher = teacher
         self.isCurrent = isCurrent
+        self.enrollmentStatus = enrollmentStatus
     }
 
     enum CodingKeys: String, CodingKey {
@@ -744,6 +786,10 @@ struct Course: Identifiable, Hashable, Codable {
         case teacher
         case teacherName
         case isCurrent
+        case enrollmentStatus
+        case enrollment_status
+        case joinStatus
+        case join_status
     }
 
     init(from decoder: Decoder) throws {
@@ -780,6 +826,13 @@ struct Course: Identifiable, Hashable, Codable {
                 ?? ""
         }
         isCurrent = try container.decodeIfPresent(Bool.self, forKey: .isCurrent) ?? true
+        var decodedEnrollment: CourseEnrollmentStatus?
+        for key in [CodingKeys.enrollmentStatus, .enrollment_status, .joinStatus, .join_status] {
+            guard decodedEnrollment == nil,
+                  let raw = try? container.decodeIfPresent(String.self, forKey: key) else { continue }
+            decodedEnrollment = CourseEnrollmentStatus(serverValue: raw)
+        }
+        enrollmentStatus = decodedEnrollment ?? .backwardCompatibleDefault
     }
 
     func encode(to encoder: Encoder) throws {
@@ -796,10 +849,64 @@ struct Course: Identifiable, Hashable, Codable {
         try container.encode(deadline, forKey: .deadline)
         try container.encode(teacher, forKey: .teacher)
         try container.encode(isCurrent, forKey: .isCurrent)
+        try container.encode(enrollmentStatus.rawValue, forKey: .enrollmentStatus)
     }
 
     var displayTitle: String {
         "\(code) / Section \(section)"
+    }
+}
+
+/// Client-side handling of the course join code (rule 4.2). The authoritative
+/// format arrives with the OpenAPI document, so validation stays deliberately
+/// permissive: it only rejects input the server could never accept.
+enum CourseJoinCodeRule {
+    static let minimumLength = 4
+    static let maximumLength = 32
+
+    /// Codes are printed on posters and read aloud, so casing and separators
+    /// are cosmetic.
+    static func normalized(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .uppercased()
+    }
+
+    static func validationMessage(for raw: String) -> String? {
+        let code = normalized(raw)
+        if code.isEmpty {
+            return BNBUL10n.text("请输入课程邀请码。")
+        }
+        if code.count < minimumLength || code.count > maximumLength {
+            return BNBUL10n.formatted("邀请码长度应为 %lld–%lld 位。", minimumLength, maximumLength)
+        }
+        guard code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
+            return BNBUL10n.text("邀请码只能包含字母和数字。")
+        }
+        return nil
+    }
+
+    /// Course QR codes may encode a bare code or a deep link that carries it.
+    static func code(fromScannedPayload payload: String) -> String? {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let components = URLComponents(string: trimmed), components.scheme != nil {
+            let keys = ["code", "invitecode", "invite_code", "joincode", "join_code"]
+            if let queried = components.queryItems?.first(where: {
+                keys.contains($0.name.lowercased())
+            })?.value, validationMessage(for: queried) == nil {
+                return normalized(queried)
+            }
+            if let last = components.path.split(separator: "/").last.map(String.init),
+               validationMessage(for: last) == nil {
+                return normalized(last)
+            }
+            return nil
+        }
+
+        return validationMessage(for: trimmed) == nil ? normalized(trimmed) : nil
     }
 }
 

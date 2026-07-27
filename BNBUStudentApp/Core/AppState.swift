@@ -151,11 +151,83 @@ final class AppState: ObservableObject {
         workspace.notices.filter(\.isUnread).count
     }
 
+    /// Only an approved enrolment backs a check-in, so a course still awaiting
+    /// teacher review is never offered as the exercise course (rule 4.2).
     var currentExerciseCourse: Course? {
         workspace.courses
-            .filter(\.isCurrent)
+            .filter { $0.isCurrent && $0.allowsCheckIn }
             .sorted { $0.displayTitle < $1.displayTitle }
             .first
+    }
+
+    var pendingEnrollmentCourses: [Course] {
+        workspace.courses
+            .filter(\.isAwaitingEnrollmentReview)
+            .sorted { $0.displayTitle < $1.displayTitle }
+    }
+
+    var hasPendingEnrollmentOnly: Bool {
+        currentExerciseCourse == nil && !pendingEnrollmentCourses.isEmpty
+    }
+
+    /// Submits a course join application (rule 4.2). The request endpoint ships
+    /// with the pending OpenAPI update; until then remote mode reports that the
+    /// server side is unavailable instead of faking an approval-pending course.
+    @discardableResult
+    func submitCourseJoinRequest(rawCode: String) -> Bool {
+        if let validationMessage = CourseJoinCodeRule.validationMessage(for: rawCode) {
+            errorMessage = validationMessage
+            return false
+        }
+        let code = CourseJoinCodeRule.normalized(rawCode)
+
+        if let existing = workspace.courses.first(where: { matchesJoinCode($0, code: code) }) {
+            switch existing.enrollmentStatus {
+            case .approved:
+                errorMessage = BNBUL10n.text("你已加入该课程，无需重复申请。")
+            case .pending:
+                errorMessage = BNBUL10n.text("该课程的加入申请正在审核中，请等待老师处理。")
+            case .rejected:
+                errorMessage = BNBUL10n.text("该课程的加入申请未通过，请联系任课老师。")
+            }
+            return false
+        }
+
+        guard !isRemoteMode else {
+            errorMessage = BNBUL10n.text("课程加入申请接口尚未发布，请等待服务端上线后重试。")
+            return false
+        }
+
+        workspace.courses.append(pendingCourse(forJoinCode: code))
+        saveWorkspace(event: "课程加入申请已提交，等待老师审核")
+        return true
+    }
+
+    private func matchesJoinCode(_ course: Course, code: String) -> Bool {
+        let normalizedCode = CourseJoinCodeRule.normalized(course.code)
+        return normalizedCode == code
+            || CourseJoinCodeRule.normalized(course.id) == code
+            || CourseJoinCodeRule.normalized("\(course.code)\(course.section)") == code
+    }
+
+    /// Local placeholder for a submitted application. Every field the teacher
+    /// owns stays empty until the server returns the real course.
+    private func pendingCourse(forJoinCode code: String) -> Course {
+        Course(
+            id: "pending-\(code)",
+            code: code,
+            section: "----",
+            name: BNBUL10n.text("待审核课程"),
+            semester: workspace.courses.first?.semester ?? "",
+            students: 0,
+            pending: 0,
+            completion: 0,
+            missing: 0,
+            deadline: "",
+            teacher: "",
+            isCurrent: true,
+            enrollmentStatus: .pending
+        )
     }
 
     func startExerciseSession(
@@ -185,7 +257,9 @@ final class AppState: ObservableObject {
             return false
         }
         guard let currentCourse = currentExerciseCourse else {
-            errorMessage = BNBUL10n.text("当前学期没有在读体育课程，请先完成选课或联系体育部。")
+            errorMessage = hasPendingEnrollmentOnly
+                ? BNBUL10n.text("课程加入申请正在审核中，通过后才能开始运动。")
+                : BNBUL10n.text("当前学期没有在读体育课程，请先完成选课或联系体育部。")
             return false
         }
         guard let sportType else { return false }
@@ -556,7 +630,8 @@ final class AppState: ObservableObject {
             return (.general, nil)
         case .courseRelated:
             guard let courseID = session.courseID,
-                  workspace.courses.contains(where: { $0.id == courseID }) else { return nil }
+                  workspace.courses.contains(where: { $0.id == courseID && $0.allowsCheckIn })
+            else { return nil }
             return (.courseRelated, courseID)
         }
     }
@@ -567,7 +642,9 @@ final class AppState: ObservableObject {
         guard creditType != .organizationOffset else { return nil }
         guard hours.isFinite, hours == 1 || hours == 2 else { return nil }
         if creditType == .courseRelated {
-            guard let courseId, workspace.courses.contains(where: { $0.id == courseId }) else { return nil }
+            guard let courseId,
+                  workspace.courses.contains(where: { $0.id == courseId && $0.allowsCheckIn })
+            else { return nil }
             return CheckInSubmission(creditType: .courseRelated, courseId: courseId, hours: hours)
         }
         return CheckInSubmission(creditType: .general, courseId: nil, hours: hours)

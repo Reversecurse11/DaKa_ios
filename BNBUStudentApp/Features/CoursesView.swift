@@ -3,6 +3,7 @@ import SwiftUI
 struct CoursesView: View {
     @EnvironmentObject private var appState: AppState
     @State private var historyExpanded = false
+    @State private var isJoinSheetPresented = false
 
     var body: some View {
         ZStack {
@@ -16,6 +17,15 @@ struct CoursesView: View {
                         .font(.subheadline.weight(.regular))
                         .foregroundStyle(BNBUTheme.muted)
                         .lineSpacing(3)
+
+                    joinEntry
+
+                    if !pendingCourses.isEmpty {
+                        SectionTitle(eyebrow: "PENDING", title: "待审核课程")
+                        ForEach(pendingCourses) { course in
+                            PendingEnrollmentCard(course: course)
+                        }
+                    }
 
                     if appState.workspace.courses.isEmpty {
                         EmptyPlaceholder(
@@ -72,6 +82,31 @@ struct CoursesView: View {
             }
         }
         .accessibilityIdentifier("screen.courses")
+        .sheet(isPresented: $isJoinSheetPresented) {
+            CourseJoinSheet()
+                .environmentObject(appState)
+        }
+    }
+
+    private var joinEntry: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("加入新课程")
+                    .font(.headline.weight(.medium))
+                Text("扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。")
+                    .font(.subheadline.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineSpacing(3)
+                PrimaryActionButton(
+                    title: "扫码 / 邀请码加入",
+                    systemImage: "qrcode.viewfinder",
+                    accessibilityIdentifier: "courses.join.entry"
+                ) {
+                    appState.errorMessage = nil
+                    isJoinSheetPresented = true
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -89,16 +124,50 @@ struct CoursesView: View {
         .buttonStyle(.plain)
     }
 
+    /// Applications awaiting review get their own section so they are never
+    /// mistaken for a course the student can already check in against.
+    private var pendingCourses: [Course] {
+        appState.pendingEnrollmentCourses
+    }
+
     private var currentCourses: [Course] {
         appState.workspace.courses
-            .filter(\.isCurrent)
+            .filter { $0.isCurrent && !$0.isAwaitingEnrollmentReview }
             .sorted { $0.displayTitle < $1.displayTitle }
     }
 
     private var historyCourses: [Course] {
         appState.workspace.courses
-            .filter { !$0.isCurrent }
+            .filter { !$0.isCurrent && !$0.isAwaitingEnrollmentReview }
             .sorted { $0.semester > $1.semester }
+    }
+}
+
+private struct PendingEnrollmentCard: View {
+    let course: Course
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(verbatim: course.code)
+                            .font(.title3.weight(.medium))
+                            .foregroundStyle(BNBUTheme.ink)
+                        Text("等待任课老师审核")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(BNBUTheme.muted)
+                    }
+                    Spacer(minLength: 8)
+                    StatusBadge(text: course.enrollmentStatus.title)
+                }
+
+                Text("审核通过前不能开始运动打卡，本课程也不会产生有效学时。")
+                    .font(.caption.weight(.regular))
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineSpacing(3)
+            }
+        }
     }
 }
 

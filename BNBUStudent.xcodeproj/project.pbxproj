@@ -28,6 +28,7 @@
 		AA0000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000019 /* Assets.xcassets */; };
 		AA0000000000000000000020 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000022 /* PrivacyInfo.xcprivacy */; };
 		AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000023 /* ExerciseCaptureComponents.swift */; };
+		AA0000000000000000000028 /* CourseJoinViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000028 /* CourseJoinViews.swift */; };
 		AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000024 /* ExerciseLocationProvider.swift */; };
 		AA0000000000000000000025 /* StudentExperienceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000025 /* StudentExperienceViews.swift */; };
 		AA0000000000000000000026 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000026 /* Localizable.xcstrings */; };
@@ -78,6 +79,7 @@
 		BB0000000000000000000021 /* Info-Debug.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Debug.plist"; sourceTree = "<group>"; };
 		BB0000000000000000000022 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB0000000000000000000023 /* ExerciseCaptureComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCaptureComponents.swift; sourceTree = "<group>"; };
+		BB0000000000000000000028 /* CourseJoinViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseJoinViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000024 /* ExerciseLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLocationProvider.swift; sourceTree = "<group>"; };
 		BB0000000000000000000025 /* StudentExperienceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentExperienceViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000026 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -160,6 +162,7 @@
 				BB0000000000000000000010 /* CoursesView.swift */,
 				BB0000000000000000000011 /* CheckInView.swift */,
 				BB0000000000000000000023 /* ExerciseCaptureComponents.swift */,
+				BB0000000000000000000028 /* CourseJoinViews.swift */,
 				BB0000000000000000000012 /* GradesView.swift */,
 				BB0000000000000000000013 /* ProfileView.swift */,
 				BB0000000000000000000015 /* DetailViews.swift */,
@@ -376,6 +379,7 @@
 				AA0000000000000000000010 /* CoursesView.swift in Sources */,
 				AA0000000000000000000011 /* CheckInView.swift in Sources */,
 				AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */,
+				AA0000000000000000000028 /* CourseJoinViews.swift in Sources */,
 				AA0000000000000000000012 /* GradesView.swift in Sources */,
 				AA0000000000000000000013 /* ProfileView.swift in Sources */,
 				AA0000000000000000000014 /* StudentAPIClient.swift in Sources */,

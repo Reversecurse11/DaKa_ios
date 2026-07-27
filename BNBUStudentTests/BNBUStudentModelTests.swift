@@ -419,6 +419,127 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.exerciseSession?.creditedHours(), 1)
     }
 
+    // MARK: - Course join application (business rule 4.2)
+
+    func testCourseEnrollmentStatusDefaultsToApprovedForLegacyPayloads() throws {
+        let legacy = """
+        {"id":"c1","code":"GEPE101","section":"01","name":"体育","semester":"2026 春季学期",
+         "students":40,"pending":0,"completion":50,"missing":2,"deadline":"","teacher":"李老师"}
+        """
+        let legacyCourse = try JSONDecoder().decode(Course.self, from: Data(legacy.utf8))
+        XCTAssertEqual(legacyCourse.enrollmentStatus, .approved)
+        XCTAssertTrue(legacyCourse.allowsCheckIn)
+
+        let pending = """
+        {"id":"c2","code":"GEPE102","section":"02","name":"体育","semester":"2026 春季学期",
+         "students":0,"pending":0,"completion":0,"missing":0,"deadline":"","teacher":"",
+         "enrollment_status":"PENDING_REVIEW"}
+        """
+        let pendingCourse = try JSONDecoder().decode(Course.self, from: Data(pending.utf8))
+        XCTAssertEqual(pendingCourse.enrollmentStatus, .pending)
+        XCTAssertFalse(pendingCourse.allowsCheckIn)
+        XCTAssertTrue(pendingCourse.isAwaitingEnrollmentReview)
+
+        // Unknown values must not silently unlock check-in.
+        let unknown = """
+        {"id":"c3","code":"GEPE103","section":"03","name":"体育","semester":"2026 春季学期",
+         "students":0,"pending":0,"completion":0,"missing":0,"deadline":"","teacher":"",
+         "joinStatus":"waiting_for_teacher"}
+        """
+        let unknownCourse = try JSONDecoder().decode(Course.self, from: Data(unknown.utf8))
+        XCTAssertEqual(unknownCourse.enrollmentStatus, .approved)
+    }
+
+    func testCourseJoinCodeValidationAndQRPayloadParsing() {
+        XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "  "), "请输入课程邀请码。")
+        XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "ab"), "邀请码长度应为 4–32 位。")
+        XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "码码码码"), "邀请码只能包含字母和数字。")
+        XCTAssertNil(CourseJoinCodeRule.validationMessage(for: " bnbu-2026 "))
+        XCTAssertEqual(CourseJoinCodeRule.normalized(" bnbu-2026 "), "BNBU2026")
+
+        XCTAssertEqual(CourseJoinCodeRule.code(fromScannedPayload: "BNBU2026"), "BNBU2026")
+        XCTAssertEqual(
+            CourseJoinCodeRule.code(fromScannedPayload: "https://sports.bnbu.edu/join?code=bnbu2026"),
+            "BNBU2026"
+        )
+        XCTAssertEqual(
+            CourseJoinCodeRule.code(fromScannedPayload: "bnbu-sports://course/join/BNBU2026"),
+            "BNBU2026"
+        )
+        XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: "https://sports.bnbu.edu/"))
+        XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: ""))
+    }
+
+    func testPendingEnrollmentBlocksExerciseStartAndSubmission() throws {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.enforcesCheckInTimeWindow = false
+
+        let approvedCourse = try XCTUnwrap(appState.currentExerciseCourse)
+        XCTAssertTrue(appState.pendingEnrollmentCourses.isEmpty)
+
+        XCTAssertTrue(appState.submitCourseJoinRequest(rawCode: "bnbu-2026"))
+        XCTAssertEqual(appState.pendingEnrollmentCourses.map(\.code), ["BNBU2026"])
+        let pendingCourse = try XCTUnwrap(appState.pendingEnrollmentCourses.first)
+
+        // A pending course is never picked up as the exercise course and can
+        // never back a submission.
+        XCTAssertEqual(appState.currentExerciseCourse?.id, approvedCourse.id)
+        XCTAssertNil(appState.validatedSubmission(
+            creditType: .courseRelated,
+            courseId: pendingCourse.id,
+            hours: 1
+        ))
+        XCTAssertNotNil(appState.validatedSubmission(
+            creditType: .courseRelated,
+            courseId: approvedCourse.id,
+            hours: 1
+        ))
+
+        // Duplicate applications are rejected client-side.
+        XCTAssertFalse(appState.submitCourseJoinRequest(rawCode: "BNBU2026"))
+        XCTAssertEqual(appState.errorMessage, "该课程的加入申请正在审核中，请等待老师处理。")
+        XCTAssertFalse(appState.submitCourseJoinRequest(rawCode: approvedCourse.code))
+        XCTAssertEqual(appState.errorMessage, "你已加入该课程，无需重复申请。")
+    }
+
+    func testStudentWithOnlyPendingEnrollmentCannotStartExercise() throws {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.enforcesCheckInTimeWindow = false
+        appState.workspace.courses = [
+            Course(
+                id: "pending-BNBU2026",
+                code: "BNBU2026",
+                section: "----",
+                name: "待审核课程",
+                semester: "2026 春季学期",
+                students: 0,
+                pending: 0,
+                completion: 0,
+                missing: 0,
+                deadline: "",
+                teacher: "",
+                isCurrent: true,
+                enrollmentStatus: .pending
+            )
+        ]
+
+        XCTAssertNil(appState.currentExerciseCourse)
+        XCTAssertTrue(appState.hasPendingEnrollmentOnly)
+        XCTAssertFalse(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+        XCTAssertEqual(appState.errorMessage, "课程加入申请正在审核中，通过后才能开始运动。")
+        XCTAssertNil(appState.exerciseSession)
+    }
+
     // MARK: - Best-effort location (business rules 5.5/10.3)
 
     func testLocationAttachesOnlyToRunningSessionWithoutFix() throws {

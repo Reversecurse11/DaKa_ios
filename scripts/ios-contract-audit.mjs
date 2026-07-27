@@ -144,6 +144,7 @@ const components = read("BNBUStudentApp/Features/Components.swift");
 const loginView = read("BNBUStudentApp/Features/LoginView.swift");
 const profileView = read("BNBUStudentApp/Features/ProfileView.swift");
 const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
+const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
 const checkinView = read("BNBUStudentApp/Features/CheckInView.swift");
 const gradesView = read("BNBUStudentApp/Features/GradesView.swift");
 const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
@@ -220,7 +221,7 @@ requireText(appState, "guard creditType != .organizationOffset else { return nil
 requireText(appState, "func submissionContext(for session: ExerciseSession)", "Submission context derives from the completed exercise session");
 requireText(remote, "record.representsCompleteServerRecord", "MutationResult cannot masquerade as a complete record");
 requireText(remote, "application.representsCompleteServerApplication", "MutationResult cannot masquerade as a complete exemption");
-requireText(coursesView, ".filter(\\.isCurrent)", "Current courses use the backend scope flag");
+requireText(coursesView, "$0.isCurrent && !$0.isAwaitingEnrollmentReview", "Current courses use the backend scope flag and exclude pending applications");
 rejectText(coursesView, "currentSemesterKey", "Course scope no longer depends on an English semester label");
 
 rejectText(appState, "max(hours, 0.5)", "Submission hours cannot produce backend-invalid 0.5h values");
@@ -246,6 +247,22 @@ requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends sur
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
+
+// Course join application (business rule 4.2)
+requireText(models, "enum CourseEnrollmentStatus", "Course enrolment carries an approval state (4.2)");
+requireText(models, "static let backwardCompatibleDefault = CourseEnrollmentStatus.approved", "Servers predating 4.2 keep their existing course relationships");
+requireText(models, "var allowsCheckIn: Bool { enrollmentStatus == .approved }", "Only an approved enrolment can back a check-in");
+requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side rule");
+requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
+requireText(appState, "func submitCourseJoinRequest(rawCode: String)", "Students can submit a course join application");
+requireText(appState, "$0.isCurrent && $0.allowsCheckIn", "A pending course is never selected as the exercise course");
+requireText(appState, "workspace.courses.contains(where: { $0.id == courseId && $0.allowsCheckIn })", "Course-related submissions revalidate the approved enrolment");
+requireText(courseJoinViews, "CourseQRScannerView", "Course joining offers a QR scanning entry");
+requireText(courseJoinViews, "AVCaptureMetadataOutput", "The QR entry reads codes through live capture");
+requireText(courseJoinViews, "case .unavailable:", "The QR entry degrades gracefully without a camera");
+requireText(coursesView, "courses.join.entry", "The courses page exposes the join entry");
+requireText(coursesView, "PendingEnrollmentCard", "Pending applications render as their own state");
+requireText(modelTests, "testPendingEnrollmentBlocksExerciseStartAndSubmission", "Pending enrolments are proven not to produce check-ins");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
 requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");

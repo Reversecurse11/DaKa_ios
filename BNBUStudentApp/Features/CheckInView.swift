@@ -252,6 +252,11 @@ struct CheckInView: View {
                     Label(course.displayTitle, systemImage: "book.closed")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                } else if appState.hasPendingEnrollmentOnly {
+                    Label("课程加入申请审核中，老师通过后才能开始运动。", systemImage: "hourglass")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(BNBUTheme.muted)
+                        .accessibilityIdentifier("checkin.enrollment.pending")
                 } else {
                     Text("当前没有在读体育课程，暂时不能开始运动。")
                         .font(.subheadline.weight(.medium))
@@ -865,7 +870,9 @@ struct CheckInView: View {
             return CheckInTimeWindowRule.startBlockedMessage
         }
         if appState.currentExerciseCourse == nil {
-            return "当前学期没有在读体育课程。"
+            return appState.hasPendingEnrollmentOnly
+                ? "课程加入申请审核中，通过后才能开始运动。"
+                : "当前学期没有在读体育课程。"
         }
         return ExerciseSessionInputRule.validationMessage(
             sportType: selectedSportType,

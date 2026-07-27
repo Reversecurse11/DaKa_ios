@@ -720,6 +720,22 @@
         }
       }
     },
+    "二维码无法识别": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR code not recognised"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二维码无法识别"
+          }
+        }
+      }
+    },
     "五、政策更新": {
       "extractionState": "stale",
       "localizations": {
@@ -1101,6 +1117,22 @@
         }
       }
     },
+    "你已加入该课程，无需重复申请。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You have already joined this course; no new application is needed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已加入该课程，无需重复申请。"
+          }
+        }
+      }
+    },
     "你确定要结束本次运动吗？": {
       "localizations": {
         "en": {
@@ -1129,6 +1161,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你确定要结束本次运动吗？当前运动时长不足 1 小时，结束后本次不计入有效打卡时长。"
+          }
+        }
+      }
+    },
+    "例如：BNBU2026": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For example: BNBU2026"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：BNBU2026"
           }
         }
       }
@@ -2016,6 +2064,54 @@
         }
       }
     },
+    "加入新课程": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join a new course"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入新课程"
+          }
+        }
+      }
+    },
+    "加入申请已提交": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Application submitted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入申请已提交"
+          }
+        }
+      }
+    },
+    "加入课程": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join a course"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入课程"
+          }
+        }
+      }
+    },
     "加权合计": {
       "extractionState": "stale",
       "localizations": {
@@ -2407,6 +2503,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "填写并上传材料"
+          }
+        }
+      }
+    },
+    "填写老师提供的课程邀请码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the course invite code provided by your teacher"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写老师提供的课程邀请码"
           }
         }
       }
@@ -2879,6 +2991,22 @@
         }
       }
     },
+    "审核通过前不能开始运动打卡，本课程也不会产生有效学时。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You cannot start an exercise check-in before approval, and this course accrues no valid hours."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "审核通过前不能开始运动打卡，本课程也不会产生有效学时。"
+          }
+        }
+      }
+    },
     "密码": {
       "localizations": {
         "en": {
@@ -2940,6 +3068,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "将清理本机登录凭据、当前账号缓存、未提交草稿和全部待重试操作。"
+          }
+        }
+      }
+    },
+    "将课程二维码放入取景框": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Place the course QR code inside the frame"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将课程二维码放入取景框"
           }
         }
       }
@@ -3716,6 +3860,22 @@
         }
       }
     },
+    "当前设备无法扫码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device cannot scan QR codes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前设备无法扫码"
+          }
+        }
+      }
+    },
     "当前设备无法拍摄": {
       "localizations": {
         "en": {
@@ -3728,6 +3888,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前设备无法拍摄"
+          }
+        }
+      }
+    },
+    "当前设备策略不允许使用摄像头，请改用邀请码加入课程。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device policy blocks the camera. Use the invite code to join the course instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前设备策略不允许使用摄像头，请改用邀请码加入课程。"
           }
         }
       }
@@ -3842,6 +4018,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "待审核"
+          }
+        }
+      }
+    },
+    "待审核课程": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Courses pending review"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待审核课程"
           }
         }
       }
@@ -4519,6 +4711,102 @@
         }
       }
     },
+    "扫描二维码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan QR code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描二维码"
+          }
+        }
+      }
+    },
+    "扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanning the teacher's course QR code fills in the invite code automatically. Check-in unlocks once the teacher approves the application."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。"
+          }
+        }
+      }
+    },
+    "扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the course QR code from your teacher or enter the invite code to apply. The enrolment becomes official only after the teacher approves it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。"
+          }
+        }
+      }
+    },
+    "扫描课程二维码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the course QR code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描课程二维码"
+          }
+        }
+      }
+    },
+    "扫描课程二维码需要允许 BNBU Student 使用摄像头，也可以改用邀请码加入课程。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanning a course QR code requires camera access for BNBU Student. You can also join with the invite code instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描课程二维码需要允许 BNBU Student 使用摄像头，也可以改用邀请码加入课程。"
+          }
+        }
+      }
+    },
+    "扫码 / 邀请码加入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join by QR code or invite code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫码 / 邀请码加入"
+          }
+        }
+      }
+    },
     "抵扣: %@": {
       "localizations": {
         "en": {
@@ -4664,6 +4952,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "提交内容未通过校验，请确认任务状态、时间范围和凭证要求。"
+          }
+        }
+      }
+    },
+    "提交加入申请": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submit application"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交加入申请"
           }
         }
       }
@@ -5874,6 +6178,22 @@
         }
       }
     },
+    "未通过": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not approved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未通过"
+          }
+        }
+      }
+    },
     "本周行动计划": {
       "extractionState": "stale",
       "localizations": {
@@ -6179,6 +6499,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "模拟器或当前设备没有可用摄像头，可先添加占位凭证完成评审流程。"
+          }
+        }
+      }
+    },
+    "模拟器或当前设备没有可用摄像头，请改用邀请码加入课程。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The simulator or this device has no available camera. Use the invite code to join the course instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模拟器或当前设备没有可用摄像头，请改用邀请码加入课程。"
           }
         }
       }
@@ -7092,6 +7428,22 @@
         }
       }
     },
+    "等待任课老师审核": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for teacher review"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待任课老师审核"
+          }
+        }
+      }
+    },
     "等待服务器返回进度": {
       "localizations": {
         "en": {
@@ -7900,6 +8252,38 @@
         }
       }
     },
+    "该课程的加入申请未通过，请联系任课老师。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The application for this course was not approved. Please contact your teacher."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该课程的加入申请未通过，请联系任课老师。"
+          }
+        }
+      }
+    },
+    "该课程的加入申请正在审核中，请等待老师处理。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The application for this course is under review. Please wait for your teacher."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该课程的加入申请正在审核中，请等待老师处理。"
+          }
+        }
+      }
+    },
     "语言": {
       "localizations": {
         "en": {
@@ -8177,6 +8561,22 @@
         }
       }
     },
+    "请输入课程邀请码。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the course invite code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入课程邀请码。"
+          }
+        }
+      }
+    },
     "请连接校园体育服务器后使用成绩换算。": {
       "localizations": {
         "en": {
@@ -8289,6 +8689,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "课程与成绩"
+          }
+        }
+      }
+    },
+    "课程加入申请审核中，老师通过后才能开始运动。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Course application under review; you can start exercising once your teacher approves it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程加入申请审核中，老师通过后才能开始运动。"
+          }
+        }
+      }
+    },
+    "课程加入申请审核中，通过后才能开始运动。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Course application under review; you can start exercising once approved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程加入申请审核中，通过后才能开始运动。"
+          }
+        }
+      }
+    },
+    "课程加入申请接口尚未发布，请等待服务端上线后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The course application service is not published yet. Please try again once the server is live."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程加入申请接口尚未发布，请等待服务端上线后重试。"
+          }
+        }
+      }
+    },
+    "课程加入申请正在审核中，通过后才能开始运动。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your course application is under review. You can start exercising once it is approved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程加入申请正在审核中，通过后才能开始运动。"
           }
         }
       }
@@ -8456,6 +8920,22 @@
         }
       }
     },
+    "课程邀请码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Course invite code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程邀请码"
+          }
+        }
+      }
+    },
     "课程页可查看当前和历史课程，成绩页显示当前服务返回的成绩。公示状态、历史成绩版本和“未录入”区分仍需服务端接口支持。": {
       "extractionState": "stale",
       "localizations": {
@@ -8552,6 +9032,22 @@
           "stringUnit": {
             "state": "new",
             "value": "输入时间: %1$lld′%2$lld″"
+          }
+        }
+      }
+    },
+    "输入邀请码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter invite code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入邀请码"
           }
         }
       }
@@ -8881,6 +9377,22 @@
         }
       }
     },
+    "这不是有效的课程二维码，请向老师确认或改用邀请码加入课程。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is not a valid course QR code. Check with your teacher or join with the invite code instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是有效的课程二维码，请向老师确认或改用邀请码加入课程。"
+          }
+        }
+      }
+    },
     "进入首页": {
       "extractionState": "stale",
       "localizations": {
@@ -9090,6 +9602,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "通知详情"
+          }
+        }
+      }
+    },
+    "邀请码 %@ 的加入申请已提交，老师审核通过后即可开始打卡。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The application for invite code %@ has been submitted. You can start checking in once the teacher approves it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码 %@ 的加入申请已提交，老师审核通过后即可开始打卡。"
+          }
+        }
+      }
+    },
+    "邀请码只能包含字母和数字。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The invite code may contain only letters and digits."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码只能包含字母和数字。"
+          }
+        }
+      }
+    },
+    "邀请码长度应为 %lld–%lld 位。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The invite code must be %lld–%lld characters long."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码长度应为 %lld–%lld 位。"
           }
         }
       }
