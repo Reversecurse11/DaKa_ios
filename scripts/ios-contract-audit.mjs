@@ -263,6 +263,24 @@ requireText(courseJoinViews, "case .unavailable:", "The QR entry degrades gracef
 requireText(coursesView, "courses.join.entry", "The courses page exposes the join entry");
 requireText(coursesView, "PendingEnrollmentCard", "Pending applications render as their own state");
 requireText(modelTests, "testPendingEnrollmentBlocksExerciseStartAndSubmission", "Pending enrolments are proven not to produce check-ins");
+
+// Teacher-configurable hour targets (business rule 4.4)
+requireText(appState, "var hourRule: SportHourRule { workspace.hourRule }", "Hour targets follow the server rather than a client constant (4.4)");
+requireText(models, "var hourRule: SportHourRule", "The workspace carries the published hour targets");
+requireText(models, "decodeIfPresent(SportHourRule.self, forKey: .hourRule) ?? .standard", "Caches written before 4.4 still decode");
+requireText(models, "guard value.isFinite, value >= 0 else { return nil }", "Unusable hour targets never reach the progress math");
+requireText(remote, "hourRule: summary?.hourRule ?? .standard", "Remote workspaces adopt the published hour targets");
+requireText(modelTests, "testWorkspaceCachedBeforeHourTargetsStillDecodes", "Hour-target rollout is proven not to reset local caches");
+
+// Configurable grade composition (business rule 4.3)
+requireText(models, "struct GradeComponent", "Grade slices are a server-driven model (4.3)");
+requireText(models, "return value > 1 ? value / 100 : value", "Percentage and fraction weights both normalize");
+requireText(models, "var resolvedComponents: [GradeComponent]", "The grade breakdown resolves to the published configuration");
+requireText(models, "components = decoded.filter { $0.weight > 0 }", "Unweighted slices cannot dilute the estimate");
+requireText(gradesView, "appState.workspace.grades.resolvedComponents", "The grades page renders whatever the server publishes");
+rejectText(gradesView, "weight: 0.30", "The grades page no longer hardcodes slice weights");
+requireText(gradesView, "grades.weights.incomplete", "Incomplete published weights are disclosed to the student");
+requireText(modelTests, "testGradeCompositionFollowsThePublishedConfiguration", "Configurable grade composition is covered by XCTest");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
 requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");

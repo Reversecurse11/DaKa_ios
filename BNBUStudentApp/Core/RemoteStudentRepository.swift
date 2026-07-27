@@ -138,6 +138,7 @@ struct SportSummaryPayload: Decodable {
     let memberships: [Membership]
     let notices: [StudentNotice]
     let exemptions: [ExemptionApplication]
+    let hourRule: SportHourRule?
 
     enum CodingKeys: String, CodingKey {
         case student
@@ -145,6 +146,10 @@ struct SportSummaryPayload: Decodable {
         case user
         case progress
         case summary
+        case hourRule
+        case hourRules
+        case checkinSetting
+        case requirement
         case courses
         case records
         case grades
@@ -168,6 +173,14 @@ struct SportSummaryPayload: Decodable {
         courses = (try? container.decodeIfPresent([Course].self, forKey: .courses)) ?? []
         records = (try? container.decodeIfPresent([CheckInRecord].self, forKey: .records)) ?? []
         grades = try container.decodeIfPresent(GradeRow.self, forKey: .grades)
+        // Rule 4.4 targets may be published under the summary itself or under
+        // the teacher's check-in setting; an absent block keeps the standard.
+        var decodedHourRule: SportHourRule?
+        for key in [CodingKeys.hourRule, .hourRules, .checkinSetting, .requirement] {
+            guard decodedHourRule == nil else { break }
+            decodedHourRule = try? container.decodeIfPresent(SportHourRule.self, forKey: key)
+        }
+        hourRule = decodedHourRule
         var decodedMemberships = (try? container.decodeIfPresent([Membership].self, forKey: .memberships)) ?? []
         if let organizationCredit = try container.decodeIfPresent(Membership.self, forKey: .organizationCredit) {
             decodedMemberships.append(organizationCredit)
@@ -977,7 +990,8 @@ actor RemoteStudentRepository {
                     createdAt: RecentTimestamp.justNow,
                     status: .synced
                 )
-            ]
+            ],
+            hourRule: summary?.hourRule ?? .standard
         )
     }
 

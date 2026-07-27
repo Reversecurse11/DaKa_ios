@@ -2458,18 +2458,18 @@
         }
       }
     },
-    "基于当前已录入的四块成绩与权重规则展示，最终结果以教务汇总为准。": {
+    "基于当前已录入的 %lld 项成绩与权重规则展示，最终结果以教务汇总为准。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Based on the four currently recorded grade components and their weights. The registrar's final result prevails."
+            "value": "Based on the %lld grade items recorded so far and their weights. The registry's summary is authoritative."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "基于当前已录入的四块成绩与权重规则展示，最终结果以教务汇总为准。"
+            "value": "基于当前已录入的 %lld 项成绩与权重规则展示，最终结果以教务汇总为准。"
           }
         }
       }
@@ -3741,6 +3741,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前年级"
+          }
+        }
+      }
+    },
+    "当前成绩构成的权重合计为 %@，尚未覆盖满分，预估分仅供参考。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The published grade weights add up to %@ rather than a full score, so this estimate is indicative only."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前成绩构成的权重合计为 %@，尚未覆盖满分，预估分仅供参考。"
           }
         }
       }

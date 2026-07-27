@@ -66,7 +66,9 @@ final class AppState: ObservableObject {
     private var isRefreshingWorkspace = false
     private var mutationGate = InFlightMutationGate()
     private var pendingRemoteMutations: [String: PendingRemoteMutationAttempt] = [:]
-    let hourRule = SportHourRule.standard
+    /// Hour targets follow the server (rule 4.4) and fall back to the standard
+    /// 10 + 10 rule until a course publishes its own.
+    var hourRule: SportHourRule { workspace.hourRule }
     /// Business rule 3.3 gate on starting a session. Production keeps this
     /// on; UI tests disable it so flow tests are not wall-clock sensitive.
     var enforcesCheckInTimeWindow = true

@@ -540,6 +540,105 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(appState.exerciseSession)
     }
 
+    // MARK: - Teacher-configurable hour targets (business rule 4.4)
+
+    func testHourTargetsFollowTheServerAndFallBackToStandard() throws {
+        let decoder = JSONDecoder()
+
+        // Servers that publish nothing keep the shipped 10 + 10 rule.
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        XCTAssertEqual(appState.hourRule, .standard)
+
+        let customized = try decoder.decode(SportHourRule.self, from: Data("""
+        {"courseRequiredHours": 6, "otherRequired": 4, "dailyMaxHours": 3}
+        """.utf8))
+        XCTAssertEqual(customized.courseRequired, 6)
+        XCTAssertEqual(customized.generalRequired, 4)
+        XCTAssertEqual(customized.dailyLimit, 3)
+        // An absent total is derived from the parts rather than staying at 20.
+        XCTAssertEqual(customized.total, 10)
+
+        // Unusable values never reach the progress math.
+        let broken = try decoder.decode(SportHourRule.self, from: Data("""
+        {"total": -5, "courseRequired": 8}
+        """.utf8))
+        XCTAssertEqual(broken.courseRequired, 8)
+        XCTAssertEqual(broken.generalRequired, SportHourRule.standard.generalRequired)
+        XCTAssertEqual(broken.total, 8 + SportHourRule.standard.generalRequired)
+
+        appState.workspace.hourRule = customized
+        XCTAssertEqual(appState.hourRule.total, 10)
+        XCTAssertEqual(appState.courseRemaining, max(6 - appState.workspace.progress.course, 0))
+        XCTAssertEqual(appState.completionRatio, min(appState.totalCompleted / 10, 1))
+    }
+
+    func testWorkspaceCachedBeforeHourTargetsStillDecodes() throws {
+        let workspace = MockStudentRepository().loadWorkspace()
+        var payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try JSONEncoder().encode(workspace)) as? [String: Any]
+        )
+        payload.removeValue(forKey: "hourRule")
+        let legacy = try JSONDecoder().decode(
+            StudentWorkspace.self,
+            from: try JSONSerialization.data(withJSONObject: payload)
+        )
+        XCTAssertEqual(legacy.hourRule, .standard)
+    }
+
+    // MARK: - Configurable grade composition (business rule 4.3)
+
+    func testGradeCompositionFollowsThePublishedConfiguration() throws {
+        let decoder = JSONDecoder()
+
+        // Without a published breakdown the four legacy slices are rendered.
+        let legacy = try decoder.decode(GradeRow.self, from: Data("""
+        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
+         "attendance":90,"physical":60,"total":75,"sourceTrace":"API: /student/grades",
+         "missingItems":[]}
+        """.utf8))
+        XCTAssertFalse(legacy.usesPublishedComponents)
+        XCTAssertEqual(legacy.resolvedComponents.map(\.key), ["checkin", "exam", "attendance", "physical"])
+        XCTAssertEqual(legacy.resolvedComponents.map(\.weight), [0.25, 0.30, 0.20, 0.25])
+
+        // A published breakdown replaces it entirely, whatever the slice count.
+        let configured = try decoder.decode(GradeRow.self, from: Data("""
+        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
+         "attendance":90,"physical":60,"total":75,"sourceTrace":"API: /student/grades",
+         "missingItems":[],
+         "components":[
+           {"key":"checkin","name":"体育打卡","score":80,"percentage":40,"note":"有效学时"},
+           {"code":"exam","title":"专项考试","value":70,"weight":0.6}
+         ]}
+        """.utf8))
+        XCTAssertTrue(configured.usesPublishedComponents)
+        XCTAssertEqual(configured.resolvedComponents.count, 2)
+        // Percentages and fractions both normalize to a fraction of one.
+        XCTAssertEqual(configured.resolvedComponents[0].weight, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(configured.resolvedComponents[1].weight, 0.6, accuracy: 0.0001)
+        XCTAssertEqual(configured.resolvedComponents[1].title, "专项考试")
+        XCTAssertEqual(configured.resolvedComponents[1].score, 70)
+        // An unknown key still renders with an icon.
+        XCTAssertEqual(configured.resolvedComponents[1].symbolName, "figure.badminton")
+
+        // Unweighted slices cannot silently dilute the estimate.
+        let unweighted = try decoder.decode(GradeRow.self, from: Data("""
+        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
+         "attendance":90,"physical":60,"total":75,"sourceTrace":"","missingItems":[],
+         "components":[{"key":"checkin","title":"体育打卡","score":80,"weight":0}]}
+        """.utf8))
+        XCTAssertFalse(unweighted.usesPublishedComponents)
+    }
+
+    func testGradeWeightFormatterRoundsWithoutInventingPrecision() {
+        XCTAssertEqual(GradeWeightFormatter.percentText(0.25), "25%")
+        XCTAssertEqual(GradeWeightFormatter.percentText(0.3), "30%")
+        XCTAssertEqual(GradeWeightFormatter.percentText(0.125), "12.5%")
+        XCTAssertEqual(GradeWeightFormatter.percentText(1), "100%")
+    }
+
     // MARK: - Best-effort location (business rules 5.5/10.3)
 
     func testLocationAttachesOnlyToRunningSessionWithoutFix() throws {

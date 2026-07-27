@@ -591,6 +591,8 @@ struct StudentWorkspace: Codable {
     var notices: [StudentNotice]
     var exemptions: [ExemptionApplication]
     var syncOperations: [SyncOperation]
+    /// Teacher-customizable hour targets (rule 4.4).
+    var hourRule: SportHourRule
 
     init(
         student: StudentProfile,
@@ -601,7 +603,8 @@ struct StudentWorkspace: Codable {
         memberships: [Membership],
         notices: [StudentNotice],
         exemptions: [ExemptionApplication] = [],
-        syncOperations: [SyncOperation] = []
+        syncOperations: [SyncOperation] = [],
+        hourRule: SportHourRule = .standard
     ) {
         self.student = student
         self.courses = courses
@@ -612,6 +615,7 @@ struct StudentWorkspace: Codable {
         self.notices = notices
         self.exemptions = exemptions
         self.syncOperations = syncOperations
+        self.hourRule = hourRule
     }
 
     enum CodingKeys: String, CodingKey {
@@ -624,6 +628,7 @@ struct StudentWorkspace: Codable {
         case notices
         case exemptions
         case syncOperations
+        case hourRule
     }
 
     init(from decoder: Decoder) throws {
@@ -637,6 +642,8 @@ struct StudentWorkspace: Codable {
         notices = try container.decode([StudentNotice].self, forKey: .notices)
         exemptions = try container.decodeIfPresent([ExemptionApplication].self, forKey: .exemptions) ?? []
         syncOperations = try container.decodeIfPresent([SyncOperation].self, forKey: .syncOperations) ?? []
+        // Caches written before rule 4.4 carry no targets.
+        hourRule = try container.decodeIfPresent(SportHourRule.self, forKey: .hourRule) ?? .standard
     }
 }
 
@@ -2465,6 +2472,97 @@ struct Membership: Identifiable, Hashable, Codable {
     }
 }
 
+/// One configurable slice of the final grade (rule 4.3). The teacher decides
+/// how many slices exist, what they are called and how they are weighted, so
+/// the client renders whatever the server publishes instead of a fixed four.
+struct GradeComponent: Identifiable, Hashable, Codable {
+    let key: String
+    let title: String
+    let score: Int
+    /// Always a fraction of 1 after decoding, whatever the server sent.
+    let weight: Double
+    let note: String
+
+    var id: String { key }
+
+    var contribution: Double { Double(score) * weight }
+
+    /// Legacy slices keep their icons; unknown server keys fall back to a
+    /// neutral one rather than shipping an empty image.
+    var symbolName: String {
+        switch key {
+        case "checkin": return "checklist"
+        case "exam": return "figure.badminton"
+        case "attendance": return "person.crop.rectangle.stack"
+        case "physical": return "stopwatch"
+        default: return "chart.pie"
+        }
+    }
+
+    init(key: String, title: String, score: Int, weight: Double, note: String) {
+        self.key = key
+        self.title = title
+        self.score = score
+        self.weight = GradeComponent.normalizedWeight(weight)
+        self.note = note
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case key
+        case code
+        case id
+        case title
+        case name
+        case label
+        case score
+        case value
+        case weight
+        case ratio
+        case percentage
+        case note
+        case description
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decodeIfPresent(String.self, forKey: .key)
+            ?? container.decodeIfPresent(String.self, forKey: .code)
+            ?? container.decodeIfPresent(String.self, forKey: .id)
+            ?? UUID().uuidString
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+            ?? container.decodeIfPresent(String.self, forKey: .name)
+            ?? container.decodeIfPresent(String.self, forKey: .label)
+            ?? key
+        score = try container.decodeIfPresent(Int.self, forKey: .score)
+            ?? container.decodeIfPresent(Int.self, forKey: .value)
+            ?? 0
+        let rawWeight = try container.decodeIfPresent(Double.self, forKey: .weight)
+            ?? container.decodeIfPresent(Double.self, forKey: .ratio)
+            ?? container.decodeIfPresent(Double.self, forKey: .percentage)
+            ?? 0
+        weight = GradeComponent.normalizedWeight(rawWeight)
+        note = try container.decodeIfPresent(String.self, forKey: .note)
+            ?? container.decodeIfPresent(String.self, forKey: .description)
+            ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(key, forKey: .key)
+        try container.encode(title, forKey: .title)
+        try container.encode(score, forKey: .score)
+        try container.encode(weight, forKey: .weight)
+        try container.encode(note, forKey: .note)
+    }
+
+    /// Weights arrive either as a fraction (0.25) or as a percentage (25); a
+    /// value above 1 can only be the latter.
+    private static func normalizedWeight(_ value: Double) -> Double {
+        guard value.isFinite, value > 0 else { return 0 }
+        return value > 1 ? value / 100 : value
+    }
+}
+
 struct GradeRow: Identifiable, Hashable, Codable {
     var id: String { studentId }
     let studentId: String
@@ -2476,6 +2574,91 @@ struct GradeRow: Identifiable, Hashable, Codable {
     let total: Int
     let sourceTrace: String
     let missingItems: [String]
+    /// Empty until the server publishes a configurable breakdown (rule 4.3).
+    let components: [GradeComponent]
+
+    init(
+        studentId: String,
+        studentName: String,
+        checkinScore: Int,
+        exam: Int,
+        attendance: Int,
+        physical: Int,
+        total: Int,
+        sourceTrace: String,
+        missingItems: [String],
+        components: [GradeComponent] = []
+    ) {
+        self.studentId = studentId
+        self.studentName = studentName
+        self.checkinScore = checkinScore
+        self.exam = exam
+        self.attendance = attendance
+        self.physical = physical
+        self.total = total
+        self.sourceTrace = sourceTrace
+        self.missingItems = missingItems
+        self.components = components
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case studentId
+        case studentName
+        case checkinScore
+        case exam
+        case attendance
+        case physical
+        case total
+        case sourceTrace
+        case missingItems
+        case components
+        case gradeComponents
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        studentId = try container.decode(String.self, forKey: .studentId)
+        studentName = try container.decode(String.self, forKey: .studentName)
+        checkinScore = try container.decodeIfPresent(Int.self, forKey: .checkinScore) ?? 0
+        exam = try container.decodeIfPresent(Int.self, forKey: .exam) ?? 0
+        attendance = try container.decodeIfPresent(Int.self, forKey: .attendance) ?? 0
+        physical = try container.decodeIfPresent(Int.self, forKey: .physical) ?? 0
+        total = try container.decodeIfPresent(Int.self, forKey: .total) ?? 0
+        sourceTrace = try container.decodeIfPresent(String.self, forKey: .sourceTrace) ?? ""
+        missingItems = try container.decodeIfPresent([String].self, forKey: .missingItems) ?? []
+        let decoded = try container.decodeIfPresent([GradeComponent].self, forKey: .components)
+            ?? container.decodeIfPresent([GradeComponent].self, forKey: .gradeComponents)
+            ?? []
+        components = decoded.filter { $0.weight > 0 }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(studentId, forKey: .studentId)
+        try container.encode(studentName, forKey: .studentName)
+        try container.encode(checkinScore, forKey: .checkinScore)
+        try container.encode(exam, forKey: .exam)
+        try container.encode(attendance, forKey: .attendance)
+        try container.encode(physical, forKey: .physical)
+        try container.encode(total, forKey: .total)
+        try container.encode(sourceTrace, forKey: .sourceTrace)
+        try container.encode(missingItems, forKey: .missingItems)
+        try container.encode(components, forKey: .components)
+    }
+
+    /// The breakdown to render: the published configuration when it exists,
+    /// otherwise the four fixed slices the app shipped before rule 4.3.
+    var resolvedComponents: [GradeComponent] {
+        guard components.isEmpty else { return components }
+        return [
+            GradeComponent(key: "checkin", title: "体育打卡", score: checkinScore, weight: 0.25, note: "以服务器当前已计入的有效小时为准"),
+            GradeComponent(key: "exam", title: "专项考试", score: exam, weight: 0.30, note: "由任课老师录入专项成绩"),
+            GradeComponent(key: "attendance", title: "平时表现 / 签到", score: attendance, weight: 0.20, note: "课堂签到与平时表现"),
+            GradeComponent(key: "physical", title: "体测", score: physical, weight: 0.25, note: "体测数据录入后参与计算")
+        ]
+    }
+
+    var usesPublishedComponents: Bool { !components.isEmpty }
 }
 
 enum NoticeCategory: String, CaseIterable, Identifiable, Hashable, Codable {
@@ -2600,6 +2783,9 @@ struct StudentNotice: Identifiable, Hashable, Codable {
     }
 }
 
+/// Hour targets a teacher may customize per course (rule 4.4). Values arrive
+/// from the server; `standard` is the fallback for servers that do not publish
+/// them yet and for any field that arrives unusable.
 struct SportHourRule: Hashable, Codable {
     let total: Double
     let courseRequired: Double
@@ -2607,4 +2793,75 @@ struct SportHourRule: Hashable, Codable {
     let dailyLimit: Double
 
     static let standard = SportHourRule(total: 20, courseRequired: 10, generalRequired: 10, dailyLimit: 2)
+
+    init(total: Double, courseRequired: Double, generalRequired: Double, dailyLimit: Double) {
+        self.total = total
+        self.courseRequired = courseRequired
+        self.generalRequired = generalRequired
+        self.dailyLimit = dailyLimit
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case total
+        case totalRequired
+        case totalRequiredHours
+        case requiredHours
+        case courseRequired
+        case courseRequiredHours
+        case courseHours
+        case generalRequired
+        case generalRequiredHours
+        case otherRequired
+        case otherRequiredHours
+        case dailyLimit
+        case dailyLimitHours
+        case dailyMaxHours
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func hours(_ keys: [CodingKeys], fallback: Double) -> Double {
+            for key in keys {
+                guard let value = try? container.decodeIfPresent(Double.self, forKey: key) else { continue }
+                guard let sanitized = Self.sanitized(value) else { continue }
+                return sanitized
+            }
+            return fallback
+        }
+
+        courseRequired = hours(
+            [.courseRequired, .courseRequiredHours, .courseHours],
+            fallback: Self.standard.courseRequired
+        )
+        generalRequired = hours(
+            [.generalRequired, .generalRequiredHours, .otherRequired, .otherRequiredHours],
+            fallback: Self.standard.generalRequired
+        )
+        dailyLimit = hours(
+            [.dailyLimit, .dailyLimitHours, .dailyMaxHours],
+            fallback: Self.standard.dailyLimit
+        )
+        // Deriving an absent total from the parts keeps the progress ring and
+        // the remaining-hours copy consistent when a teacher customizes only
+        // the two component targets.
+        total = hours(
+            [.total, .totalRequired, .totalRequiredHours, .requiredHours],
+            fallback: courseRequired + generalRequired
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(total, forKey: .total)
+        try container.encode(courseRequired, forKey: .courseRequired)
+        try container.encode(generalRequired, forKey: .generalRequired)
+        try container.encode(dailyLimit, forKey: .dailyLimit)
+    }
+
+    /// Rejects values that would break progress math: a non-finite number or a
+    /// negative target.
+    private static func sanitized(_ value: Double) -> Double? {
+        guard value.isFinite, value >= 0 else { return nil }
+        return value
+    }
 }

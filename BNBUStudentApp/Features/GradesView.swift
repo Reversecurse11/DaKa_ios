@@ -48,7 +48,10 @@ struct GradesView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("总分预估")
                 .font(.headline.weight(.medium))
-            Text("基于当前已录入的四块成绩与权重规则展示，最终结果以教务汇总为准。")
+            Text(verbatim: BNBUL10n.formatted(
+                "基于当前已录入的 %lld 项成绩与权重规则展示，最终结果以教务汇总为准。",
+                gradeComponents.count
+            ))
                 .font(.subheadline.weight(.regular))
                 .foregroundStyle(BNBUTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -101,6 +104,17 @@ struct GradesView: View {
 
                 DetailFactRow(label: "加权合计", value: String(format: "%.1f", weightedTotal))
                 DetailFactRow(label: "四舍五入", value: "\(appState.workspace.grades.total)")
+
+                if !weightsAreComplete {
+                    Text(verbatim: BNBUL10n.formatted(
+                        "当前成绩构成的权重合计为 %@，尚未覆盖满分，预估分仅供参考。",
+                        GradeWeightFormatter.percentText(weightSum)
+                    ))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(BNBUTheme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("grades.weights.incomplete")
+                }
             }
         }
     }
@@ -152,19 +166,24 @@ struct GradesView: View {
         }
     }
 
-    private var gradeComponents: [GradeComponentSummary] {
-        [
-            GradeComponentSummary(title: "体育打卡", score: appState.workspace.grades.checkinScore, weight: 0.25, systemImage: "checklist", note: "以服务器当前已计入的有效小时为准"),
-            GradeComponentSummary(title: "专项考试", score: appState.workspace.grades.exam, weight: 0.30, systemImage: "figure.badminton", note: "由任课老师录入专项成绩"),
-            GradeComponentSummary(title: "平时表现 / 签到", score: appState.workspace.grades.attendance, weight: 0.20, systemImage: "person.crop.rectangle.stack", note: "课堂签到与平时表现"),
-            GradeComponentSummary(title: "体测", score: appState.workspace.grades.physical, weight: 0.25, systemImage: "stopwatch", note: "体测数据录入后参与计算")
-        ]
+    private var gradeComponents: [GradeComponent] {
+        appState.workspace.grades.resolvedComponents
     }
 
     private var weightedTotal: Double {
         gradeComponents.reduce(0) { partialResult, component in
             partialResult + component.contribution
         }
+    }
+
+    private var weightSum: Double {
+        gradeComponents.reduce(0) { $0 + $1.weight }
+    }
+
+    /// A teacher-configured breakdown can be published before every slice is
+    /// weighted, in which case the estimate is not comparable to a full score.
+    private var weightsAreComplete: Bool {
+        abs(weightSum - 1) < 0.005
     }
 
     private var missingCountText: String {
@@ -242,44 +261,35 @@ enum ExemptionSheetMode {
     }
 }
 
-private struct GradeComponentSummary: Identifiable, Hashable {
-    var id: String { title }
-    let title: String
-    let score: Int
-    let weight: Double
-    let systemImage: String
-    let note: String
-
-    var weightText: String {
-        "\(Int(weight * 100))%"
-    }
-
-    var contribution: Double {
-        Double(score) * weight
-    }
-
-    var contributionText: String {
-        String(format: "%.1f", contribution)
+/// Server-configured weights are not necessarily whole percentages, so they
+/// are rounded for display without inventing precision.
+enum GradeWeightFormatter {
+    static func percentText(_ weight: Double) -> String {
+        let percent = weight * 100
+        if abs(percent.rounded() - percent) < 0.05 {
+            return "\(Int(percent.rounded()))%"
+        }
+        return String(format: "%.1f%%", percent)
     }
 }
 
 private struct GradeComponentCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    let component: GradeComponentSummary
+    let component: GradeComponent
 
     var body: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Image(systemName: component.systemImage)
+                    Image(systemName: component.symbolName)
                         .font(.title3.weight(.medium))
                         .foregroundStyle(BNBUTheme.blue)
                     Spacer()
-                    StatusBadge(text: component.weightText)
+                    StatusBadge(text: GradeWeightFormatter.percentText(component.weight))
                 }
 
-                Text(LocalizedStringKey(component.title))
+                Text(verbatim: BNBUL10n.dynamicText(component.title))
                     .font(.headline.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(
@@ -293,7 +303,7 @@ private struct GradeComponentCard: View {
 
                 HourProgressBar(value: Double(component.score), total: 100)
 
-                Text(LocalizedStringKey(component.note))
+                Text(verbatim: BNBUL10n.dynamicText(component.note))
                     .font(.caption.weight(.regular))
                     .foregroundStyle(BNBUTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -309,19 +319,19 @@ private struct GradeComponentCard: View {
 }
 
 private struct GradeContributionRow: View {
-    let component: GradeComponentSummary
+    let component: GradeComponent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(LocalizedStringKey(component.title))
+                    Text(verbatim: BNBUL10n.dynamicText(component.title))
                         .font(.subheadline.weight(.medium))
                     Spacer(minLength: 8)
                     contributionFormula
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(LocalizedStringKey(component.title))
+                    Text(verbatim: BNBUL10n.dynamicText(component.title))
                         .font(.subheadline.weight(.medium))
                     contributionFormula
                 }
@@ -331,7 +341,7 @@ private struct GradeContributionRow: View {
     }
 
     private var contributionFormula: some View {
-        Text("\(component.score) × \(component.weightText) = \(component.contributionText)")
+        Text(verbatim: "\(component.score) × \(GradeWeightFormatter.percentText(component.weight)) = \(String(format: "%.1f", component.contribution))")
             .font(.subheadline.weight(.regular))
             .foregroundStyle(BNBUTheme.muted)
             .lineLimit(1)
