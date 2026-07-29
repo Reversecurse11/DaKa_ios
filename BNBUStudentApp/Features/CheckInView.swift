@@ -105,7 +105,7 @@ struct CheckInView: View {
                     focusedField = nil
                     dismissBNBUKeyboard()
                 }
-                .font(.subheadline.weight(.medium))
+                .font(BNBUFont.titleSmall)
             }
         }
         .alert("提交成功", isPresented: $submitted) {
@@ -239,7 +239,7 @@ struct CheckInView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("运动类型")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                     BNBUSegmentedControl(
                         values: ExerciseCategory.allCases,
                         selection: $selectedCategory,
@@ -250,29 +250,29 @@ struct CheckInView: View {
 
                 if let course = appState.currentExerciseCourse {
                     Label(course.displayTitle, systemImage: "book.closed")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 } else if appState.hasPendingEnrollmentOnly {
                     Label("课程加入申请审核中，老师通过后才能开始运动。", systemImage: "hourglass")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                         .foregroundStyle(BNBUTheme.muted)
                         .accessibilityIdentifier("checkin.enrollment.pending")
                 } else {
                     Text("当前没有在读体育课程，暂时不能开始运动。")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                         .foregroundStyle(BNBUTheme.muted)
                 }
 
                 SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
 
                 Text("每日开放时段 \(CheckInTimeWindowRule.displayText) 内可开始运动；开始后即使超出时段也可正常结束和提交。开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。开始时会尝试获取一次位置，获取失败不影响打卡。")
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
 
                 if let startValidationMessage {
                     Text(startValidationMessage)
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.muted)
                 }
 
@@ -300,19 +300,20 @@ struct CheckInView: View {
                     // timer. No distance, pace, calories or map in v1.
                     VStack(spacing: 8) {
                         Text(formatDuration(displayedSession.elapsed(at: context.date)))
-                            .font(.system(size: 56, weight: .medium, design: .monospaced))
+                            .font(.system(size: 52, weight: .semibold).monospacedDigit())
+                            .tracking(-1)
                             .contentTransition(.numericText())
                             .lineLimit(1)
                             .minimumScaleFactor(0.55)
                             .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
 
                         Text(creditSummary(for: displayedSession, at: context.date))
-                            .font(.caption.weight(.medium))
+                            .font(BNBUFont.labelMedium)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
                         if displayedSession.isPaused {
                             Text("运动已暂停 · 暂停时间不计入运动时长")
-                                .font(.caption.weight(.medium))
+                                .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                         }
                     }
@@ -370,7 +371,7 @@ struct CheckInView: View {
                             confirmAbandon = true
                         } label: {
                             Text("放弃本次运动")
-                                .font(.caption.weight(.medium))
+                                .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                                 .frame(maxWidth: .infinity)
                         }
@@ -378,7 +379,7 @@ struct CheckInView: View {
                         .accessibilityIdentifier("checkin.exercise.abandon")
                     } else if displayedSession.creditedHours() == 0 {
                         Text("本次运动不足 1 小时，不计入体育学时，不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
-                            .font(.caption.weight(.medium))
+                            .font(BNBUFont.labelMedium)
                             .foregroundStyle(BNBUTheme.muted)
                         SecondaryActionButton(title: "完成并返回", systemImage: "arrow.counterclockwise") {
                             appState.finishUncreditedExerciseSession()
@@ -404,14 +405,14 @@ struct CheckInView: View {
         return ViewThatFits(in: .horizontal) {
             HStack {
                 Label(status, systemImage: sessionStatusIcon(session))
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.primary)
                 Spacer(minLength: 8)
                 StatusBadge(text: category, filled: true)
             }
             VStack(alignment: .leading, spacing: 8) {
                 Label(status, systemImage: sessionStatusIcon(session))
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.primary)
                 StatusBadge(text: category, filled: true)
             }
@@ -422,12 +423,12 @@ struct CheckInView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("运动过程拍摄")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 Spacer()
                 StatusBadge(text: "照片草稿 \(appState.exercisePhotoDraftCount)/\(ExerciseMediaDraftRule.maximumPhotoDrafts)")
             }
             Text("凭证只能通过相机实时拍摄，照片和视频先保存为本地草稿，结束打卡时可选择作为凭证。")
-                .font(.caption.weight(.regular))
+                .font(BNBUFont.bodySmall)
                 .foregroundStyle(BNBUTheme.muted)
 
             ExerciseCameraCaptureButton(
@@ -526,18 +527,18 @@ struct CheckInView: View {
             SwissPanel {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("提交运动凭证")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text("运动说明")
-                                .font(.headline.weight(.medium))
+                                .font(BNBUFont.titleMedium)
                             Text("必填")
-                                .font(.caption.weight(.medium))
+                                .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                             Spacer()
                             Text("\(note.count)/\(CheckInInputRule.maximumDescriptionLength)")
-                                .font(.caption.monospacedDigit().weight(.medium))
+                                .font(BNBUFont.labelMedium.monospacedDigit())
                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                 .accessibilityLabel("已输入 \(note.count) 个字符，共可输入 \(CheckInInputRule.maximumDescriptionLength) 个字符")
                             if focusedField == .note {
@@ -546,7 +547,7 @@ struct CheckInView: View {
                                     dismissBNBUKeyboard()
                                 } label: {
                                     Image(systemName: "keyboard.chevron.compact.down")
-                                        .font(.headline.weight(.medium))
+                                        .font(BNBUFont.titleMedium)
                                         .foregroundStyle(BNBUTheme.blue)
                                         .frame(width: 34, height: 34)
                                 }
@@ -579,7 +580,7 @@ struct CheckInView: View {
 
                     if let validationMessage {
                         Text(validationMessage)
-                            .font(.caption.weight(.medium))
+                            .font(BNBUFont.labelMedium)
                             .foregroundStyle(BNBUTheme.muted)
                     }
 
@@ -611,9 +612,9 @@ struct CheckInView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("打卡凭证")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 Text("至少选择 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 凭证只能通过相机实时拍摄，不支持从相册选择。")
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
             }
 
@@ -943,7 +944,7 @@ struct CheckInView: View {
                     .foregroundStyle(BNBUTheme.onSurface)
             }
         }
-        .font(.subheadline.weight(.regular))
+        .font(BNBUFont.bodyMedium)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -1055,9 +1056,9 @@ private struct SportTypeSelector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("运动项目")
-                .font(.headline.weight(.medium))
+                .font(BNBUFont.titleMedium)
             Text("请选择本次运动项目。")
-                .font(.caption.weight(.regular))
+                .font(BNBUFont.bodySmall)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -1072,10 +1073,10 @@ private struct SportTypeSelector: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: option.systemImage)
-                                .font(.headline.weight(.medium))
+                                .font(BNBUFont.titleMedium)
                                 .foregroundStyle(selected == option ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
                             Text(LocalizedStringKey(option.title))
-                                .font(.subheadline.weight(selected == option ? .semibold : .regular))
+                                .font(selected == option ? BNBUFont.titleSmall : BNBUFont.bodyMedium)
                                 .foregroundStyle(BNBUTheme.onSurface)
                             Spacer(minLength: 0)
                         }
@@ -1098,7 +1099,7 @@ private struct SportTypeSelector: View {
                         showAll.toggle()
                     }
                 }
-                .font(.subheadline.weight(.medium))
+                .font(BNBUFont.titleSmall)
                 .foregroundStyle(BNBUTheme.primary)
                 .frame(maxWidth: .infinity)
                 .buttonStyle(.plain)
@@ -1131,12 +1132,12 @@ private struct CheckInSubmissionProgressPanel: View {
                 Image(systemName: phaseSymbolName)
                     .foregroundStyle(BNBUTheme.primary)
                 Text(LocalizedStringKey(phaseTitle))
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .foregroundStyle(BNBUTheme.onSurface)
                 Spacer()
                 if let progress = phase.overallProgress {
                     Text("\(Int(progress * 100))%")
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.primary)
                 }
             }
@@ -1148,7 +1149,7 @@ private struct CheckInSubmissionProgressPanel: View {
             }
 
             phaseDetailText
-                .font(.caption.weight(.regular))
+                .font(BNBUFont.bodySmall)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .lineSpacing(2)
         }
@@ -1211,14 +1212,14 @@ private struct DraftBanner: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     Label("有未提交草稿", systemImage: "doc.badge.clock")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                         .foregroundStyle(BNBUTheme.ink)
                     Spacer()
                     StatusBadge(text: draft.updatedAt)
                 }
 
                 Text(verbatim: summaryText)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.muted)
 
                 HStack(spacing: 10) {
@@ -1251,16 +1252,16 @@ private struct LocalRecoveryBanner: View {
         SwissPanel {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.blue)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("已恢复本地状态")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                         .foregroundStyle(BNBUTheme.ink)
                     Text(message)
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.muted)
                         .lineSpacing(2)
                 }

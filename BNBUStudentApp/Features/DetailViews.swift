@@ -23,7 +23,7 @@ struct CourseDetailView: View {
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("我的课程相关进度")
-                                .font(.headline.weight(.medium))
+                                .font(BNBUFont.titleMedium)
                             HourProgressBar(value: appState.workspace.progress.course, total: appState.hourRule.courseRequired)
                             DetailFactRow(label: "已完成", value: appState.workspace.progress.course.hourText)
                             DetailFactRow(label: "仍缺口", value: appState.courseRemaining.hourText)
@@ -72,7 +72,7 @@ struct RecordDetailView: View {
                                 StatusBadge(text: record.validity.rawValue, filled: record.validity == .valid)
                                 Spacer()
                                 Text(record.hours.hourText)
-                                    .font(.title2.weight(.medium))
+                                    .font(BNBUFont.headlineSmall)
                             }
                             DetailFactRow(label: "提交时间", value: record.submittedAt)
                             if let sportType = record.sportType, !sportType.isEmpty {
@@ -88,9 +88,9 @@ struct RecordDetailView: View {
                         SwissPanel {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("记录已被判定无效")
-                                    .font(.headline.weight(.medium))
+                                    .font(BNBUFont.titleMedium)
                                 Text(record.invalidReason ?? "老师已将该记录标记为无效，本次学时不计入。")
-                                    .font(.subheadline.weight(.regular))
+                                    .font(BNBUFont.bodyMedium)
                                     .foregroundStyle(BNBUTheme.muted)
                                     .lineSpacing(3)
                             }
@@ -100,27 +100,27 @@ struct RecordDetailView: View {
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("凭证文件")
-                                .font(.headline.weight(.medium))
+                                .font(BNBUFont.titleMedium)
 
                             if record.proofFiles.isEmpty {
                                 Text("该记录暂无可预览凭证文件。")
-                                    .font(.subheadline.weight(.regular))
+                                    .font(BNBUFont.bodyMedium)
                                     .foregroundStyle(BNBUTheme.muted)
                             } else {
                                 ForEach(record.proofFiles) { proof in
                                     HStack(spacing: 10) {
                                         Image(systemName: proof.type == .video ? "video.fill" : "photo.fill")
-                                            .font(.headline.weight(.medium))
+                                            .font(BNBUFont.titleMedium)
                                             .foregroundStyle(BNBUTheme.blue)
                                             .frame(width: 26, height: 26)
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(proof.fileName)
-                                                .font(.subheadline.weight(.medium))
+                                                .font(BNBUFont.titleSmall)
                                                 .foregroundStyle(BNBUTheme.ink)
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
                                             Text("\(proof.type.rawValue) · \(proof.displaySize) · \(proof.source)")
-                                                .font(.caption.weight(.regular))
+                                                .font(BNBUFont.bodySmall)
                                                 .foregroundStyle(BNBUTheme.muted)
                                         }
                                         Spacer()
@@ -134,9 +134,9 @@ struct RecordDetailView: View {
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("学生说明")
-                                .font(.headline.weight(.medium))
+                                .font(BNBUFont.titleMedium)
                             Text(record.note)
-                                .font(.subheadline.weight(.regular))
+                                .font(BNBUFont.bodyMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                                 .lineSpacing(3)
                         }
@@ -174,14 +174,14 @@ struct NoticeDetailView: View {
                                 } icon: {
                                     Image(systemName: currentNotice.category.symbolName)
                                 }
-                                    .font(.headline.weight(.medium))
+                                    .font(BNBUFont.titleMedium)
                                     .foregroundStyle(BNBUTheme.blue)
                                 Spacer()
                                 StatusBadge(text: currentNotice.isUnread ? "未读" : "已读", filled: currentNotice.isUnread)
                             }
 
                             Text(currentNotice.message)
-                                .font(.body.weight(.regular))
+                                .font(BNBUFont.bodyLarge)
                                 .foregroundStyle(BNBUTheme.ink)
                                 .lineSpacing(5)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -213,9 +213,9 @@ struct RecordCard: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(record.taskTitle)
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         Text(record.submittedAt)
-                            .font(.caption.weight(.medium))
+                            .font(BNBUFont.labelMedium)
                             .foregroundStyle(BNBUTheme.muted)
                     }
                     Spacer()
@@ -228,24 +228,24 @@ struct RecordCard: View {
                 HStack {
                     StatusBadge(text: record.creditType.rawValue)
                     Text(record.hours.hourText)
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                     Spacer()
                 }
 
                 if let sportType = record.sportType, !sportType.isEmpty {
                     Text("运动项目：\(sportType.bnbuSportTypeTitle)")
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
 
                 Text("打卡照片 / 视频")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
 
                 RecordMediaGrid(proofs: record.proofFiles)
 
                 if !record.note.isEmpty && record.note != "学生未填写补充说明。" {
                     Text("备注：\(record.note)")
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
 
@@ -283,7 +283,7 @@ private struct RecordMediaGrid: View {
                         if proofs.count > 3 {
                             Color.black.opacity(0.48)
                             Text("+\(proofs.count - 3)")
-                                .font(.title3.weight(.bold))
+                                .font(BNBUFont.titleLarge)
                                 .foregroundStyle(.white)
                         }
                     }
@@ -296,9 +296,9 @@ private struct RecordMediaGrid: View {
     private var mediaPlaceholder: some View {
         VStack(spacing: 6) {
             Image(systemName: "photo")
-                .font(.title2.weight(.regular))
+                .font(BNBUFont.headlineSmall)
             Text("暂无打卡照片或视频")
-                .font(.caption.weight(.medium))
+                .font(BNBUFont.labelMedium)
         }
         .foregroundStyle(BNBUTheme.onSurfaceVariant)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -347,9 +347,9 @@ private struct RecordProofThumbnail: View {
     private var placeholder: some View {
         VStack(spacing: 6) {
             Image(systemName: proof.type == .video ? "video" : "photo")
-                .font(.title2.weight(.regular))
+                .font(BNBUFont.headlineSmall)
             Text(proof.fileName.isEmpty ? "媒体文件" : proof.fileName)
-                .font(.caption2.weight(.medium))
+                .font(BNBUFont.labelSmall)
                 .lineLimit(2)
         }
         .foregroundStyle(BNBUTheme.onSurfaceVariant)

@@ -61,9 +61,9 @@ struct CourseJoinSheet: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 14) {
                 Text("扫描课程二维码")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 Text("扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。")
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
                 PrimaryActionButton(
@@ -81,7 +81,7 @@ struct CourseJoinSheet: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 14) {
                 Text("输入邀请码")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 TextField("例如：BNBU2026", text: $code)
                     .bnbuInputText()
                     .accessibilityLabel("课程邀请码")
@@ -98,7 +98,7 @@ struct CourseJoinSheet: View {
 
                 if let message = appState.errorMessage {
                     Text(verbatim: message)
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.muted)
                         .accessibilityIdentifier("course.join.error")
                 }
@@ -119,10 +119,10 @@ struct CourseJoinSheet: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Label("加入申请已提交", systemImage: "checkmark.seal")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.primary)
                 Text(verbatim: BNBUL10n.formatted("邀请码 %@ 的加入申请已提交，老师审核通过后即可开始打卡。", code))
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
                 PrimaryActionButton(

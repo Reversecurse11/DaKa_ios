@@ -122,15 +122,15 @@ struct ProfileView: View {
             BrandMark(compact: true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(student.name)
-                    .font(.title2.weight(.medium))
+                    .font(BNBUFont.headlineSmall)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(student.displayStudentNumber) · \(student.college)")
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                 if !tags.isEmpty {
                     Text(verbatim: tags)
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -168,7 +168,7 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(eyebrow: "RECOVERY", title: "本地恢复操作")
                 Text("未确认的提交可沿用原请求安全重试；服务器已确认成功的条目只会清理本地标记，绝不会再次提交。")
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 if let errorMessage = appState.errorMessage {
                     BNBUErrorPanel(message: errorMessage)
@@ -182,14 +182,14 @@ struct ProfileView: View {
                                     .foregroundStyle(BNBUTheme.primary)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(verbatim: BNBUL10n.dynamicText(summary.title))
-                                        .font(.headline.weight(.medium))
+                                        .font(BNBUFont.titleMedium)
                                     if let target = summary.target, !target.isEmpty {
                                         Text("对象：\(target)")
-                                            .font(.caption.weight(.regular))
+                                            .font(BNBUFont.bodySmall)
                                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     }
                                     Text(verbatim: pendingMutationDetail(summary))
-                                        .font(.caption.weight(.regular))
+                                        .font(BNBUFont.bodySmall)
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                 }
                                 Spacer()
@@ -215,7 +215,7 @@ struct ProfileView: View {
                                 .accessibilityIdentifier("profile.pending.retry.\(summary.scope)")
                             } else {
                                 Text("当前不能自动重试：可能仍缺原始文件，或服务器中的目标状态已经变化。请核对后选择放弃并重新提交。")
-                                    .font(.caption.weight(.regular))
+                                    .font(BNBUFont.bodySmall)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                             }
 
@@ -254,13 +254,13 @@ struct ProfileView: View {
                     SwissPanel {
                         HStack(spacing: 12) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.title3.weight(.medium))
+                                .font(BNBUFont.titleLarge)
                                 .foregroundStyle(BNBUTheme.primary)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(teacher)
-                                    .font(.headline.weight(.medium))
+                                    .font(BNBUFont.titleMedium)
                                 Text("任课教师")
-                                    .font(.caption.weight(.medium))
+                                    .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                             }
                             Spacer()
@@ -285,19 +285,19 @@ struct ProfileView: View {
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("\(membership.typeTitle) · \(membership.organization)")
-                                .font(.headline.weight(.medium))
+                                .font(BNBUFont.titleMedium)
                             Text("有效至 \(membership.validUntil)")
-                                .font(.caption.weight(.medium))
+                                .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                             HStack(spacing: 8) {
                                 StatusBadge(text: membership.status, filled: membership.status == "认证有效")
                                 Text("抵扣: \(membership.offset)")
-                                    .font(.caption.weight(.medium))
+                                    .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.primary)
                             }
                             if !membership.comment.isEmpty && membership.comment != "offset" {
                                 Label(membership.comment, systemImage: "bell")
-                                    .font(.subheadline.weight(.regular))
+                                    .font(BNBUFont.bodyMedium)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     .padding(10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -365,7 +365,7 @@ struct ProfileView: View {
             SwissPanel {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("外观模式")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                     BNBUSegmentedControl(
                         values: BNBUAppearanceMode.allCases.map(\.rawValue),
                         selection: $appearanceModeRaw,
@@ -375,7 +375,7 @@ struct ProfileView: View {
                         identifier: { "profile.appearance.\($0)" }
                     )
                     Text("默认使用浅色模式；选择跟随系统后会随设备设置切换。")
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
             }
@@ -383,7 +383,7 @@ struct ProfileView: View {
             SwissPanel {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("语言")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                     BNBUSegmentedControl(
                         values: BNBULanguage.allCases.map(\.rawValue),
                         selection: languageSelection,
@@ -394,7 +394,7 @@ struct ProfileView: View {
                     )
                     .accessibilityIdentifier("profile.language.picker")
                     Text("切换后立即生效；选择跟随系统后会随设备语言更新。课程名称等由教师或管理员录入的数据内容保持原文。")
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
             }
@@ -454,16 +454,16 @@ private struct ProfileNavigationCard: View {
     private var navigationIdentity: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: systemImage)
-                .font(.title3.weight(.medium))
+                .font(BNBUFont.titleLarge)
                 .foregroundStyle(BNBUTheme.primary)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 4) {
                 Text(LocalizedStringKey(title))
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.onSurface)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(LocalizedStringKey(detail))
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -479,18 +479,18 @@ struct SettingLine: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 12) {
                 Text(LocalizedStringKey(label))
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                 Spacer(minLength: 12)
                 Text(verbatim: value)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .multilineTextAlignment(.trailing)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(LocalizedStringKey(label))
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                 Text(verbatim: value)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
             }
         }
@@ -568,13 +568,13 @@ private struct EnduranceScoringSheet: View {
                         SwissPanel {
                             HStack(spacing: 10) {
                                 Image(systemName: "figure.run")
-                                    .font(.title3.weight(.medium))
+                                    .font(BNBUFont.titleLarge)
                                     .foregroundStyle(BNBUTheme.primary)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("测试项目: \(runType)")
-                                        .font(.headline.weight(.medium))
+                                        .font(BNBUFont.titleMedium)
                                     Text("\(appState.workspace.student.gender.title) · \(appState.academicProjection.grade)")
-                                        .font(.subheadline.weight(.regular))
+                                        .font(BNBUFont.bodyMedium)
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                 }
                             }
@@ -612,7 +612,7 @@ private struct EnduranceScoringSheet: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text("单项得分")
-                                                .font(.caption.weight(.medium))
+                                                .font(BNBUFont.labelMedium)
                                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                             Text("\(result.score)")
                                                 .font(.system(size: 48, weight: .medium))
@@ -621,7 +621,7 @@ private struct EnduranceScoringSheet: View {
                                         Spacer()
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text("等级")
-                                                .font(.caption.weight(.medium))
+                                                .font(BNBUFont.labelMedium)
                                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                             StatusBadge(text: result.tierTitle, filled: true)
                                         }
@@ -631,10 +631,10 @@ private struct EnduranceScoringSheet: View {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundStyle(BNBUTheme.primary)
                                         Text("输入时间: \(result.timeSeconds / 60)′\(result.timeSeconds % 60)″")
-                                            .font(.subheadline.weight(.medium))
+                                            .font(BNBUFont.titleSmall)
                                         Spacer()
                                         Text("\(appState.workspace.student.gender.title) · \(appState.academicProjection.grade)")
-                                            .font(.caption.weight(.regular))
+                                            .font(BNBUFont.bodySmall)
                                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     }
                                     .padding(12)
@@ -673,7 +673,7 @@ private struct EnduranceScoringSheet: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.medium))
+                .font(BNBUFont.labelMedium)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
             TextField(placeholder, text: text)
                 .keyboardType(.numberPad)

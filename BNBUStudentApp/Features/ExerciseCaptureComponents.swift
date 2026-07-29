@@ -25,7 +25,7 @@ struct ExerciseCameraCaptureButton: View {
             } icon: {
                 Image(systemName: systemImage)
             }
-                .font(.subheadline.weight(.medium))
+                .font(BNBUFont.titleSmall)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .foregroundStyle(isDisabled ? BNBUTheme.muted : BNBUTheme.ink)
@@ -125,7 +125,7 @@ struct ExerciseProofSelectionPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             if drafts.isEmpty {
                 Text("尚无拍摄草稿。请使用上方按钮通过相机拍摄照片或录制视频。")
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 6)
@@ -150,7 +150,7 @@ struct ExerciseProofSelectionPanel: View {
 
             if let notice {
                 Text(notice)
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
@@ -209,7 +209,7 @@ struct ExerciseMediaDraftCard: View {
 
                     if draft.type == .video {
                         Image(systemName: "play.fill")
-                            .font(.caption.weight(.medium))
+                            .font(BNBUFont.labelMedium)
                             .foregroundStyle(BNBUTheme.surface)
                             .frame(width: 28, height: 28)
                             .background(BNBUTheme.ink)
@@ -217,7 +217,7 @@ struct ExerciseMediaDraftCard: View {
                     }
 
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3.weight(.medium))
+                        .font(BNBUFont.titleLarge)
                         .foregroundStyle(isSelected ? BNBUTheme.primary : BNBUTheme.surface)
                         .background(
                             Circle().fill(isSelected ? BNBUTheme.surface : BNBUTheme.ink.opacity(0.35))
@@ -232,18 +232,18 @@ struct ExerciseMediaDraftCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(draft.fileName)
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(metadataText)
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.muted)
                 }
                 Spacer()
                 Button(action: deleteAction) {
                     Image(systemName: "trash")
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.muted)
                         .frame(width: 26, height: 26)
                 }
@@ -290,7 +290,7 @@ struct ExerciseMediaDraftCard: View {
                 .fill(BNBUTheme.pale)
                 .overlay {
                     Image(systemName: draft.type == .video ? "video.fill" : "photo.fill")
-                        .font(.title3.weight(.medium))
+                        .font(BNBUFont.titleLarge)
                         .foregroundStyle(BNBUTheme.blue)
                 }
         }

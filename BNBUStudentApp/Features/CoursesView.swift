@@ -14,7 +14,7 @@ struct CoursesView: View {
                     SectionTitle(eyebrow: "My Courses", title: "我的课程")
 
                     Text("教学班以课程代码 + Section 区分；同一课程代码的不同 Section 会作为不同教学班展示。")
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.muted)
                         .lineSpacing(3)
 
@@ -53,7 +53,7 @@ struct CoursesView: View {
                                     Image(systemName: "clock.arrow.circlepath")
                                         .foregroundStyle(BNBUTheme.primary)
                                     Text("历史课程（\(historyCourses.count)）")
-                                        .font(.headline.weight(.medium))
+                                        .font(BNBUFont.titleMedium)
                                         .foregroundStyle(BNBUTheme.onSurface)
                                     Spacer()
                                     Image(systemName: "chevron.down")
@@ -92,9 +92,9 @@ struct CoursesView: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 12) {
                 Text("加入新课程")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 Text("扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。")
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
                 PrimaryActionButton(
@@ -152,10 +152,10 @@ private struct PendingEnrollmentCard: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(verbatim: course.code)
-                            .font(.title3.weight(.medium))
+                            .font(BNBUFont.titleLarge)
                             .foregroundStyle(BNBUTheme.ink)
                         Text("等待任课老师审核")
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .foregroundStyle(BNBUTheme.muted)
                     }
                     Spacer(minLength: 8)
@@ -163,7 +163,7 @@ private struct PendingEnrollmentCard: View {
                 }
 
                 Text("审核通过前不能开始运动打卡，本课程也不会产生有效学时。")
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
             }
@@ -209,11 +209,11 @@ private struct CourseCard: View {
 
                 HStack {
                     Text(LocalizedStringKey(isCurrent ? "当前教学班" : "历史学期"))
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     Spacer()
                     Label("查看课程详情", systemImage: "chevron.right")
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.primary)
                 }
             }
@@ -223,11 +223,11 @@ private struct CourseCard: View {
     private var courseIdentity: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(course.displayTitle)
-                .font(.title3.weight(.medium))
+                .font(BNBUFont.titleLarge)
                 .foregroundStyle(BNBUTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Text(course.name)
-                .font(.subheadline.weight(.medium))
+                .font(BNBUFont.titleSmall)
                 .foregroundStyle(BNBUTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -256,10 +256,10 @@ private struct CourseFact: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(LocalizedStringKey(label))
-                .font(.caption2.weight(.medium))
+                .font(BNBUFont.labelSmall)
                 .foregroundStyle(BNBUTheme.muted)
             Text(verbatim: value)
-                .font(.headline.weight(.medium))
+                .font(BNBUFont.titleMedium)
                 .foregroundStyle(BNBUTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }

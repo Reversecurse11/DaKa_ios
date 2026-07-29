@@ -64,11 +64,11 @@ struct DashboardView: View {
             BrandMark(compact: true)
             VStack(alignment: .leading, spacing: 5) {
                 Text("你好，\(appState.workspace.student.name)")
-                    .font(.title.weight(.medium))
+                    .font(BNBUFont.headlineLarge)
                     .foregroundStyle(BNBUTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(appState.workspace.student.college) · \(appState.workspace.student.displayStudentNumber)")
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .foregroundStyle(BNBUTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -81,7 +81,7 @@ struct DashboardView: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: appState.unreadNoticeCount > 0 ? "bell.badge.fill" : "bell")
-                    .font(.title3.weight(.medium))
+                    .font(BNBUFont.titleLarge)
                     .foregroundStyle(BNBUTheme.onSurface)
                     .frame(width: 44, height: 44)
                     .background(BNBUTheme.surfaceVariant)
@@ -115,11 +115,11 @@ struct DashboardView: View {
                             Text(verbatim: appState.totalCompleted.localizedHourText)
                                 .font(.system(size: 42, weight: .regular))
                             Text(verbatim: "/ \(appState.hourRule.total.localizedHourText)")
-                                .font(.title3.weight(.medium))
+                                .font(BNBUFont.titleLarge)
                                 .foregroundStyle(BNBUTheme.muted)
                         }
                         Text("\(Int(appState.completionRatio * 100))%")
-                            .font(.title2.weight(.medium))
+                            .font(BNBUFont.headlineSmall)
                             .foregroundStyle(BNBUTheme.blue)
                     }
                 }
@@ -159,11 +159,11 @@ struct DashboardView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(verbatim: "/ \(appState.hourRule.total.localizedHourText)")
-                .font(.title3.weight(.medium))
+                .font(BNBUFont.titleLarge)
                 .foregroundStyle(BNBUTheme.muted)
             Spacer(minLength: 8)
             Text("\(Int(appState.completionRatio * 100))%")
-                .font(.title2.weight(.medium))
+                .font(BNBUFont.headlineSmall)
                 .foregroundStyle(BNBUTheme.blue)
         }
     }
@@ -172,9 +172,9 @@ struct DashboardView: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 8) {
                 Text(LocalizedStringKey(hasHourRisk ? "当前风险提示" : "当前状态稳定"))
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 Text(verbatim: riskText)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .lineSpacing(3)
             }
@@ -300,7 +300,7 @@ private struct FocusPlanRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: item.systemImage)
-                .font(.headline.weight(.medium))
+                .font(BNBUFont.titleMedium)
                 .foregroundStyle(BNBUTheme.blue)
                 .frame(width: 28, height: 28)
 
@@ -308,20 +308,20 @@ private struct FocusPlanRow: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(verbatim: item.title)
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .foregroundStyle(BNBUTheme.ink)
                         Spacer()
                         StatusBadge(text: item.status)
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text(verbatim: item.title)
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .foregroundStyle(BNBUTheme.ink)
                         StatusBadge(text: item.status)
                     }
                 }
                 Text(verbatim: item.detail)
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
                     .lineSpacing(2)
             }
@@ -337,10 +337,10 @@ private struct ActionMiniMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(LocalizedStringKey(label))
-                .font(.caption2.weight(.medium))
+                .font(BNBUFont.labelSmall)
                 .foregroundStyle(BNBUTheme.muted)
             Text(value)
-                .font(.title3.weight(.medium))
+                .font(BNBUFont.titleLarge)
                 .foregroundStyle(BNBUTheme.ink)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -362,7 +362,7 @@ private struct DashboardShortcutButton: View {
             } icon: {
                 Image(systemName: systemImage)
             }
-                .font(.caption.weight(.medium))
+                .font(BNBUFont.labelMedium)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity)
@@ -385,18 +385,18 @@ private struct ProgressLine: View {
             ViewThatFits(in: .horizontal) {
                 HStack {
                     Text(LocalizedStringKey(title))
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     Spacer()
                     Text(verbatim: "\(value.localizedHourText) / \(total.localizedHourText)")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     StatusBadge(text: detail)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(LocalizedStringKey(title))
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     HStack {
                         Text(verbatim: "\(value.localizedHourText) / \(total.localizedHourText)")
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                         Spacer()
                         StatusBadge(text: detail)
                     }
@@ -419,7 +419,7 @@ struct NoticeRow: View {
                     } icon: {
                         Image(systemName: notice.category.symbolName)
                     }
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.blue)
                     Spacer()
                     if notice.isUnread {
@@ -431,13 +431,13 @@ struct NoticeRow: View {
 
                 HStack(alignment: .firstTextBaseline) {
                     Text(notice.title)
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                         .foregroundStyle(BNBUTheme.ink)
                     Spacer()
                     StatusBadge(text: notice.time)
                 }
                 Text(notice.message)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.muted)
             }
         }
@@ -463,7 +463,7 @@ private struct NotificationCenterSheet: View {
             VStack(spacing: 12) {
                 HStack {
                     Label("通知", systemImage: appState.unreadNoticeCount > 0 ? "bell.badge.fill" : "bell")
-                        .font(.title3.weight(.semibold))
+                        .font(BNBUFont.titleLarge)
                     Spacer()
                     StatusBadge(text: unreadBadgeText)
                 }
@@ -473,7 +473,7 @@ private struct NotificationCenterSheet: View {
                     Button("全部标为已读") {
                         appState.markAllNoticesRead()
                     }
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .disabled(appState.unreadNoticeCount == 0)
                 }
 

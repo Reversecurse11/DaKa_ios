@@ -62,14 +62,14 @@ struct BNBUErrorPanel: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(BNBUTheme.error)
             Text(message)
-                .font(.subheadline.weight(.regular))
+                .font(BNBUFont.bodyMedium)
                 .foregroundStyle(BNBUTheme.onSurface)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let retryAction {
                 Button(action: retryAction) {
                     Text(LocalizedStringKey(retryTitle))
                 }
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .foregroundStyle(BNBUTheme.primary)
                     .buttonStyle(.plain)
             }
@@ -175,7 +175,7 @@ struct MetricCell: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 10) {
                 Text(LocalizedStringKey(label.uppercased()))
-                    .font(.caption2.weight(.medium))
+                    .font(BNBUFont.labelSmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 Text(value)
                     .font(.system(size: 34, weight: .regular, design: .default))
@@ -183,7 +183,7 @@ struct MetricCell: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
                 Text(LocalizedStringKey(footnote))
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -435,7 +435,7 @@ struct StatusMessagePanel: View {
 private struct BNBUInputTextModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .font(.body.weight(.regular))
+            .font(BNBUFont.bodyLarge)
             .foregroundStyle(BNBUTheme.onSurface)
             .tint(BNBUTheme.primary)
     }
@@ -454,7 +454,7 @@ private struct BNBUKeyboardToolbarModifier: ViewModifier {
                     Button("完成") {
                         dismissBNBUKeyboard()
                     }
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .foregroundStyle(BNBUTheme.blue)
                 }
             }
@@ -500,17 +500,17 @@ struct ProofAttachmentPanel: View {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("图片 / 视频凭证")
-                        .font(.headline.weight(.medium))
+                        .font(BNBUFont.titleMedium)
                     Text("相册使用系统选择器，仅共享您选中的项目；拍摄时才会请求摄像头权限。")
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.muted)
                     Text(summaryText)
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.muted)
                 }
                 Spacer()
                 Image(systemName: "photo.badge.plus")
-                    .font(.title2.weight(.medium))
+                    .font(BNBUFont.headlineSmall)
                     .foregroundStyle(BNBUTheme.blue)
             }
 
@@ -519,7 +519,7 @@ struct ProofAttachmentPanel: View {
                     handlePhotoLibraryAction()
                 } label: {
                     Label("从相册选择", systemImage: "photo.on.rectangle")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .foregroundStyle(isAtLimit ? BNBUTheme.muted : BNBUTheme.surface)
@@ -533,7 +533,7 @@ struct ProofAttachmentPanel: View {
                     handleCameraAction()
                 } label: {
                     Label("拍摄", systemImage: "camera.fill")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .foregroundStyle(isAtLimit ? BNBUTheme.muted : BNBUTheme.ink)
@@ -568,7 +568,7 @@ struct ProofAttachmentPanel: View {
 
             if let attachmentNotice {
                 Text(attachmentNotice)
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
@@ -579,7 +579,7 @@ struct ProofAttachmentPanel: View {
 
             if attachments.isEmpty {
                 Text("尚未添加凭证")
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 6)
@@ -1050,11 +1050,11 @@ private struct PermissionStatusLine: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.caption.weight(.medium))
+                .font(BNBUFont.labelMedium)
                 .foregroundStyle(BNBUTheme.blue)
                 .frame(width: 20)
             Text(LocalizedStringKey(title))
-                .font(.caption.weight(.medium))
+                .font(BNBUFont.labelMedium)
                 .foregroundStyle(BNBUTheme.ink)
             Spacer()
             StatusBadge(text: value, filled: filled)
@@ -1178,7 +1178,7 @@ private struct ProofAttachmentPreviewCard: View {
 
                 if attachment.type == .video {
                     Image(systemName: "play.fill")
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.surface)
                         .frame(width: 28, height: 28)
                         .background(BNBUTheme.ink)
@@ -1187,7 +1187,7 @@ private struct ProofAttachmentPreviewCard: View {
 
                 Button(action: removeAction) {
                     Image(systemName: "xmark")
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.surface)
                         .frame(width: 26, height: 26)
                         .background(BNBUTheme.ink)
@@ -1200,12 +1200,12 @@ private struct ProofAttachmentPreviewCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(attachment.fileName)
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(metadataText)
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
 
                 StatusBadge(
@@ -1236,7 +1236,7 @@ private struct ProofAttachmentPreviewCard: View {
                 .fill(BNBUTheme.pale)
                 .overlay {
                     Image(systemName: attachment.type == .video ? "video.fill" : "photo.fill")
-                        .font(.title3.weight(.medium))
+                        .font(BNBUFont.titleLarge)
                         .foregroundStyle(BNBUTheme.blue)
                 }
         }
@@ -1262,20 +1262,20 @@ struct DetailFactRow: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline) {
                 Text(LocalizedStringKey(label))
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .foregroundStyle(BNBUTheme.ink)
                 Spacer(minLength: 12)
                 Text(verbatim: value)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .multilineTextAlignment(.trailing)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(LocalizedStringKey(label))
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                     .foregroundStyle(BNBUTheme.ink)
                 Text(verbatim: value)
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.muted)
             }
         }

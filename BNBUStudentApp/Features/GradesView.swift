@@ -42,18 +42,18 @@ struct GradesView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack {
                         Text("成绩状态")
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         Spacer()
                         StatusBadge(text: gradeState.title, filled: true)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("成绩状态")
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         StatusBadge(text: gradeState.title, filled: true)
                     }
                 }
                 Text(verbatim: BNBUL10n.dynamicText(gradeState.studentNotice))
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -82,12 +82,12 @@ struct GradesView: View {
     private var totalDescription: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("总分预估")
-                .font(.headline.weight(.medium))
+                .font(BNBUFont.titleMedium)
             Text(verbatim: BNBUL10n.formatted(
                 "基于当前已录入的 %lld 项成绩与权重规则展示，最终结果以教务汇总为准。",
                 gradeComponents.count
             ))
-                .font(.subheadline.weight(.regular))
+                .font(BNBUFont.bodyMedium)
                 .foregroundStyle(BNBUTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -120,13 +120,13 @@ struct GradesView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack {
                         Text("总分计算")
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         Spacer()
                         StatusBadge(text: "透明预估")
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("总分计算")
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         StatusBadge(text: "透明预估")
                     }
                 }
@@ -147,7 +147,7 @@ struct GradesView: View {
                         "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。",
                         unrecordedComponents.count
                     ))
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("grades.items.unrecorded")
@@ -158,7 +158,7 @@ struct GradesView: View {
                         "当前成绩构成的权重合计为 %@，尚未覆盖满分，预估分仅供参考。",
                         GradeWeightFormatter.percentText(weightSum)
                     ))
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("grades.weights.incomplete")
@@ -173,25 +173,25 @@ struct GradesView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack {
                         Text("缺失项 / 风险")
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         Spacer()
                         StatusBadge(text: missingCountText)
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("缺失项 / 风险")
-                            .font(.headline.weight(.medium))
+                            .font(BNBUFont.titleMedium)
                         StatusBadge(text: missingCountText)
                     }
                 }
 
                 if appState.workspace.grades.missingItems.isEmpty {
                     Text("当前没有阻塞项。")
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.muted)
                 } else {
                     ForEach(appState.workspace.grades.missingItems, id: \.self) { item in
                         Label(localizedMissingItem(item), systemImage: "exclamationmark.circle")
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .foregroundStyle(BNBUTheme.ink)
                     }
                 }
@@ -203,10 +203,10 @@ struct GradesView: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 10) {
                 Label("来源追溯", systemImage: "scope")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.primary)
                 Text(verbatim: localizedSourceTrace(appState.workspace.grades.sourceTrace))
-                    .font(.subheadline.weight(.regular))
+                    .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.muted)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -335,14 +335,14 @@ private struct GradeComponentCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Image(systemName: component.symbolName)
-                        .font(.title3.weight(.medium))
+                        .font(BNBUFont.titleLarge)
                         .foregroundStyle(BNBUTheme.blue)
                     Spacer()
                     StatusBadge(text: GradeWeightFormatter.percentText(component.weight))
                 }
 
                 Text(verbatim: BNBUL10n.dynamicText(component.title))
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(
                         minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 68,
@@ -355,7 +355,7 @@ private struct GradeComponentCard: View {
                         .foregroundStyle(BNBUTheme.ink)
                 } else {
                     Text(verbatim: BNBUL10n.dynamicText(component.entryState.title))
-                        .font(.title3.weight(.medium))
+                        .font(BNBUFont.titleLarge)
                         .foregroundStyle(BNBUTheme.muted)
                         .frame(height: 50, alignment: .bottomLeading)
                 }
@@ -366,7 +366,7 @@ private struct GradeComponentCard: View {
                 )
 
                 Text(verbatim: BNBUL10n.dynamicText(component.note))
-                    .font(.caption.weight(.regular))
+                    .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(
@@ -388,13 +388,13 @@ private struct GradeContributionRow: View {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(verbatim: BNBUL10n.dynamicText(component.title))
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     Spacer(minLength: 8)
                     contributionFormula
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: BNBUL10n.dynamicText(component.title))
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     contributionFormula
                 }
             }
@@ -412,7 +412,7 @@ private struct GradeContributionRow: View {
 
     private var contributionFormula: some View {
         Text(verbatim: contributionText)
-            .font(.subheadline.weight(.regular))
+            .font(BNBUFont.bodyMedium)
             .foregroundStyle(BNBUTheme.muted)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
@@ -427,25 +427,25 @@ struct ExemptionApplicationRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: application.item.symbolName)
-                    .font(.title3.weight(.medium))
+                    .font(BNBUFont.titleLarge)
                     .foregroundStyle(BNBUTheme.blue)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(LocalizedStringKey(application.item.rawValue))
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .foregroundStyle(BNBUTheme.ink)
                         Spacer()
                         StatusBadge(text: application.status.rawValue, filled: application.status == .approved)
                     }
 
                     Text(application.reason)
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.ink)
 
                     Text(application.teacherFeedback)
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -461,7 +461,7 @@ struct ExemptionApplicationRow: View {
                 if let onSupplement {
                     Button(action: onSupplement) {
                         Label("补充材料", systemImage: "arrow.up.doc")
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
@@ -514,7 +514,7 @@ struct ExemptionApplicationSheet: View {
 
                         if let validationHint {
                             Text(validationHint)
-                                .font(.caption.weight(.medium))
+                                .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.ink)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(12)
@@ -553,7 +553,7 @@ struct ExemptionApplicationSheet: View {
                         focusedField = nil
                         dismissBNBUKeyboard()
                     }
-                    .font(.subheadline.weight(.medium))
+                    .font(BNBUFont.titleSmall)
                 }
             }
             .confirmationDialog(
@@ -589,7 +589,7 @@ struct ExemptionApplicationSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("申请项目")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     Picker("申请项目", selection: $selectedItem) {
                         ForEach(ExemptionItem.allCases) { item in
                             Label {
@@ -607,7 +607,7 @@ struct ExemptionApplicationSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("申请原因")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     TextField("例如：膝关节运动损伤", text: $reason)
                         .bnbuInputText()
                         .accessibilityLabel("申请原因")
@@ -626,7 +626,7 @@ struct ExemptionApplicationSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("情况说明")
-                        .font(.subheadline.weight(.medium))
+                        .font(BNBUFont.titleSmall)
                     TextEditor(text: $detail)
                         .bnbuInputText()
                         .accessibilityLabel("情况说明")
@@ -639,7 +639,7 @@ struct ExemptionApplicationSheet: View {
                         .focused($focusedField, equals: .detail)
                         .accessibilityIdentifier("exemption.detail.editor")
                     Text(LocalizedStringKey(selectedItem.proofHint))
-                        .font(.caption.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.muted)
                 }
             }

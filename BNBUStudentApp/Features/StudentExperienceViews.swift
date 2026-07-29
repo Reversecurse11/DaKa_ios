@@ -56,7 +56,7 @@ struct OnboardingView: View {
                     Spacer()
                     if page < pages.count - 1 {
                         Button("跳过") { onComplete() }
-                            .font(.subheadline.weight(.medium))
+                            .font(BNBUFont.titleSmall)
                             .accessibilityIdentifier("onboarding.skip")
                     }
                 }
@@ -75,10 +75,10 @@ struct OnboardingView: View {
                                 .padding(.horizontal, 24)
                             VStack(spacing: 12) {
                                 Text(LocalizedStringKey(item.title))
-                                    .font(.title.weight(.semibold))
+                                    .font(BNBUFont.headlineLarge)
                                     .multilineTextAlignment(.center)
                                 Text(LocalizedStringKey(item.detail))
-                                    .font(.body)
+                                    .font(BNBUFont.bodyLarge)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     .multilineTextAlignment(.center)
                                     .lineSpacing(4)
@@ -229,7 +229,7 @@ struct HelpCenterView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         SectionTitle(eyebrow: "OFFLINE HELP", title: "帮助中心")
                         Text("以下内容保存在 App 内，无网络时也可以查看。")
-                            .font(.subheadline)
+                            .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
                         if filteredEntries.isEmpty {
@@ -246,13 +246,13 @@ struct HelpCenterView: View {
                                 SwissPanel {
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(LocalizedStringKey(entry.category))
-                                            .font(.caption.weight(.semibold))
+                                            .font(BNBUFont.labelMedium)
                                             .foregroundStyle(BNBUTheme.primary)
                                             .textCase(.uppercase)
                                         Text(LocalizedStringKey(entry.question))
-                                            .font(.headline.weight(.medium))
+                                            .font(BNBUFont.titleMedium)
                                         Text(LocalizedStringKey(entry.answer))
-                                            .font(.subheadline)
+                                            .font(BNBUFont.bodyMedium)
                                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                             .lineSpacing(3)
                                     }
@@ -373,7 +373,7 @@ private struct OnboardingScreenshotPreview: View {
                 Image(systemName: "wifi")
                 Image(systemName: "battery.100")
             }
-            .font(.caption2)
+            .font(BNBUFont.labelSmall)
             .foregroundStyle(BNBUTheme.onSurfaceVariant)
             .padding(.horizontal, 14)
             .frame(height: 28)
@@ -430,7 +430,7 @@ private struct OnboardingScreenshotPreview: View {
                 )
                 Spacer()
                 Text("剩余 12h")
-                    .font(.caption.weight(.medium))
+                    .font(BNBUFont.labelMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
             }
             HStack(spacing: 8) {
@@ -453,10 +453,10 @@ private struct OnboardingScreenshotPreview: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(verbatim: checkInElapsedTime)
-                        .font(.title3.monospacedDigit().weight(.semibold))
+                        .font(BNBUFont.titleLarge.monospacedDigit())
                         .contentTransition(.numericText())
                     Text(LocalizedStringKey(checkInDetail))
-                        .font(.caption2)
+                        .font(BNBUFont.labelSmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
             }
@@ -471,9 +471,9 @@ private struct OnboardingScreenshotPreview: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("2025–2026 第二学期")
-                        .font(.caption.weight(.medium))
+                        .font(BNBUFont.labelMedium)
                     Text("体育 II")
-                        .font(.headline)
+                        .font(BNBUFont.titleMedium)
                 }
                 Spacer()
                 PreviewStatusPill(
@@ -506,7 +506,7 @@ private struct OnboardingScreenshotPreview: View {
                 Spacer()
                 Image(systemName: "chevron.right")
             }
-            .font(.caption.weight(.medium))
+            .font(BNBUFont.labelMedium)
             .foregroundStyle(BNBUTheme.primary)
         }
     }
@@ -515,7 +515,7 @@ private struct OnboardingScreenshotPreview: View {
         VStack(alignment: .leading, spacing: 10) {
             PreviewHeader(title: "申请中心", symbol: "doc.badge.plus")
             Text("选择要提交的申请")
-                .font(.caption)
+                .font(BNBUFont.bodySmall)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
             PreviewApplicationCard(
@@ -598,7 +598,7 @@ private struct PreviewHeader: View {
             Image(systemName: symbol)
                 .foregroundStyle(BNBUTheme.primary)
             Text(LocalizedStringKey(title))
-                .font(.headline.weight(.semibold))
+                .font(BNBUFont.titleMedium)
             Spacer()
             Image(systemName: "ellipsis")
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -612,7 +612,7 @@ private struct PreviewChoice: View {
 
     var body: some View {
         Text(LocalizedStringKey(title))
-            .font(.caption.weight(.medium))
+            .font(BNBUFont.labelMedium)
             .foregroundStyle(selected ? BNBUTheme.onPrimary : BNBUTheme.onSurfaceVariant)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -627,7 +627,7 @@ private struct PreviewStatusPill: View {
 
     var body: some View {
         Text(LocalizedStringKey(title))
-            .font(.caption2.weight(.semibold))
+            .font(BNBUFont.labelSmall)
             .foregroundStyle(color)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -646,7 +646,7 @@ private struct PreviewPrimaryButton: View {
         } icon: {
             Image(systemName: symbol)
         }
-        .font(.caption.weight(.semibold))
+        .font(BNBUFont.labelMedium)
         .foregroundStyle(BNBUTheme.onPrimary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
@@ -663,10 +663,10 @@ private struct PreviewGradeRow: View {
     var body: some View {
         HStack {
             Text(LocalizedStringKey(title))
-                .font(.caption)
+                .font(BNBUFont.bodySmall)
             Spacer()
             Text(LocalizedStringKey(value))
-                .font(.caption.weight(.semibold))
+                .font(BNBUFont.labelMedium)
                 .foregroundStyle(value == "未录入" ? BNBUTheme.onSurfaceVariant : BNBUTheme.onSurface)
         }
         .padding(.horizontal, 10)
@@ -686,22 +686,22 @@ private struct PreviewApplicationCard: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.subheadline)
+                .font(BNBUFont.bodyMedium)
                 .foregroundStyle(BNBUTheme.primary)
                 .frame(width: 34, height: 34)
                 .background(BNBUTheme.primaryContainer)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
                 Text(LocalizedStringKey(title))
-                    .font(.caption.weight(.semibold))
+                    .font(BNBUFont.labelMedium)
                 Text(LocalizedStringKey(detail))
-                    .font(.caption2)
+                    .font(BNBUFont.labelSmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineLimit(1)
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.caption)
+                .font(BNBUFont.bodySmall)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
         }
         .padding(10)

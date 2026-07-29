@@ -64,7 +64,7 @@ struct LoginView: View {
                     loginPanel
 
                     Text("第一阶段仅包含学生端体育打卡与成绩透明化；老师端和管理端由 Web 承担。")
-                        .font(.footnote.weight(.regular))
+                        .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
                 .padding(24)
@@ -96,7 +96,7 @@ struct LoginView: View {
                     focusedField = nil
                     dismissBNBUKeyboard()
                 }
-                .font(.subheadline.weight(.medium))
+                .font(BNBUFont.titleSmall)
             }
         }
     }
@@ -106,10 +106,10 @@ struct LoginView: View {
             BrandMark(compact: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("北师香港浸会大学")
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.onSurface)
                 Text("BNBU · STUDENT SPORTS")
-                    .font(.caption2.weight(.medium))
+                    .font(BNBUFont.labelSmall)
                     .tracking(0.6)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
             }
@@ -125,7 +125,7 @@ struct LoginView: View {
                 .font(.system(size: 34, weight: .medium))
                 .foregroundStyle(BNBUTheme.onSurface)
             Text("课程相关 10 小时 + 其他运动 10 小时，进度、缺口与打卡记录一次看清。")
-                .font(.body.weight(.regular))
+                .font(BNBUFont.bodyLarge)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .lineSpacing(4)
         }
@@ -193,7 +193,7 @@ struct LoginView: View {
                 Button("登录前请阅读《隐私政策》") {
                     showPrivacyPolicy = true
                 }
-                .font(.subheadline.weight(.medium))
+                .font(BNBUFont.titleSmall)
                 .foregroundStyle(BNBUTheme.primary)
                 .frame(maxWidth: .infinity)
                 .buttonStyle(.plain)
@@ -205,7 +205,7 @@ struct LoginView: View {
                         Image(systemName: agreedToPrivacy ? "checkmark.square.fill" : "square")
                             .foregroundStyle(agreedToPrivacy ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
                         Text("我已阅读并同意当前版本《隐私政策》")
-                            .font(.subheadline.weight(.regular))
+                            .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.onSurface)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
@@ -225,7 +225,7 @@ struct LoginView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
-                .font(.caption2.weight(.medium))
+                .font(BNBUFont.labelSmall)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
             content()
                 .bnbuInputText()
@@ -293,10 +293,10 @@ struct PrivacyPolicyView: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 10) {
                 Text(LocalizedStringKey(title))
-                    .font(.headline.weight(.medium))
+                    .font(BNBUFont.titleMedium)
                 ForEach(paragraphs, id: \.self) { paragraph in
                     Text(LocalizedStringKey(paragraph))
-                        .font(.subheadline.weight(.regular))
+                        .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .lineSpacing(3)
                 }
