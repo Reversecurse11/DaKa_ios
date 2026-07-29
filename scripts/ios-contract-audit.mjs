@@ -28,6 +28,18 @@ function requireAnyText(source, candidates, label) {
   console.log(`PASS ${label}`);
 }
 
+function requireOrder(source, sequence, label) {
+  let cursor = 0;
+  for (const expected of sequence) {
+    const found = source.indexOf(expected, cursor);
+    if (found < 0) {
+      throw new Error(`${label}: ${JSON.stringify(expected)} missing or out of order`);
+    }
+    cursor = found + expected.length;
+  }
+  console.log(`PASS ${label}`);
+}
+
 function requireCount(source, expected, minimum, label) {
   const count = source.split(expected).length - 1;
   if (count < minimum) {
@@ -147,6 +159,7 @@ const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
 const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
 const checkinView = read("BNBUStudentApp/Features/CheckInView.swift");
 const gradesView = read("BNBUStudentApp/Features/GradesView.swift");
+const dashboardView = read("BNBUStudentApp/Features/DashboardView.swift");
 const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
 const debugInfoPlist = read("BNBUStudentApp/Resources/Info-Debug.plist");
 const privacyManifest = read("BNBUStudentApp/Resources/PrivacyInfo.xcprivacy");
@@ -296,6 +309,24 @@ requireText(gradesView, "grades.state.panel", "The grades page discloses the cur
 requireText(gradesView, "grades.items.unrecorded", "Unrecorded items are disclosed alongside the estimate");
 requireText(modelTests, "testCourseGradeStateControlsWhatTheStudentSees", "Grade-state visibility is covered by XCTest");
 requireText(modelTests, "testUnrecordedGradeItemsNeverReadAsZero", "Unrecorded items are proven not to read as zeros");
+
+// Dashboard block order follows the Android baseline DashboardScreen.kt, which
+// keeps today's decision above longer-term progress.
+requireOrder(
+  dashboardView,
+  [
+    "header",
+    "todayCheckInPanel",
+    "JoinRequestEntryPanel(course:",
+    "courseJoinEntryPanel",
+    "ExerciseResumePanel(session:",
+    "progressOverview",
+    "progressBreakdown"
+  ],
+  "Dashboard blocks keep the baseline order"
+);
+requireText(dashboardView, "if hasActiveEnrollment {", "Today's check-in panel needs an approved enrolment");
+requireText(dashboardView, "CheckInTimeWindowRule.canStartExercise(at: date)", "The dashboard reuses the check-in window rule rather than its own copy");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
 requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");

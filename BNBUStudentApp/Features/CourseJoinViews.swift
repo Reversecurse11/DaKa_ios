@@ -10,6 +10,10 @@ struct CourseJoinSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
+    /// Set by the dashboard scan entry so tapping it goes straight to the
+    /// camera instead of asking the student to pick an entry point twice.
+    var autoPresentsScanner = false
+
     @State private var code = ""
     @State private var isScannerPresented = false
     @State private var activeAlert: CourseJoinScannerAlert?
@@ -43,6 +47,11 @@ struct CourseJoinSheet: View {
             }
         }
         .accessibilityIdentifier("screen.courseJoin")
+        .onAppear {
+            if autoPresentsScanner, submittedCode == nil {
+                isScannerPresented = true
+            }
+        }
         .fullScreenCover(isPresented: $isScannerPresented) {
             CourseQRScannerView { payload in
                 isScannerPresented = false

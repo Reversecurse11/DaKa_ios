@@ -602,6 +602,17 @@
         }
       }
     },
+    "不可开始": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable"
+          }
+        }
+      }
+    },
     "不足 1 小时不计入 · 满 1 小时计 1 小时": {
       "localizations": {
         "en": {
@@ -786,6 +797,39 @@
         }
       }
     },
+    "今天的运动记录已保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today’s exercise record has been saved."
+          }
+        }
+      }
+    },
+    "今天还未打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not checked in today"
+          }
+        }
+      }
+    },
+    "今日已成功打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked in today"
+          }
+        }
+      }
+    },
     "今日已打卡，不能再次开始运动。": {
       "localizations": {
         "en": {
@@ -814,6 +858,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "今日已打卡，每天只能提交一次。"
+          }
+        }
+      }
+    },
+    "今日打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today’s check-in"
           }
         }
       }
@@ -1057,7 +1112,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "PE Hour Progress"
+            "value": "Sports credit progress"
           }
         },
         "zh-Hans": {
@@ -1351,7 +1406,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applications & Credits"
+            "value": "Exemptions"
           }
         },
         "zh-Hans": {
@@ -2112,6 +2167,17 @@
         }
       }
     },
+    "加入体育课程": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join a sports course"
+          }
+        }
+      }
+    },
     "加入新课程": {
       "localizations": {
         "en": {
@@ -2124,6 +2190,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "加入新课程"
+          }
+        }
+      }
+    },
+    "加入申请": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join request"
           }
         }
       }
@@ -2182,7 +2259,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Beijing Normal-Hong Kong Baptist University"
+            "value": "Beijing Normal University–Hong Kong Baptist University"
           }
         },
         "zh-Hans": {
@@ -2254,6 +2331,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "原始文件已不在内存中，请删除后重新选择"
+          }
+        }
+      }
+    },
+    "去打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check in"
           }
         }
       }
@@ -2338,6 +2426,17 @@
         }
       }
     },
+    "可开始": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available"
+          }
+        }
+      }
+    },
     "可计学时": {
       "extractionState": "stale",
       "localizations": {
@@ -2368,6 +2467,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "可选，最多 %lld 个字符"
+          }
+        }
+      }
+    },
+    "合计": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total"
           }
         }
       }
@@ -2839,6 +2949,17 @@
         }
       }
     },
+    "学时构成": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Credit breakdown"
+          }
+        }
+      }
+    },
     "学期": {
       "extractionState": "stale",
       "localizations": {
@@ -2967,6 +3088,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "完成一次运动后即可提交打卡。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete an exercise session to submit a check-in."
           }
         }
       }
@@ -3329,6 +3461,28 @@
         }
       }
     },
+    "已打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked in"
+          }
+        }
+      }
+    },
+    "已抵扣 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ applied"
+          }
+        }
+      }
+    },
     "已提交": {
       "extractionState": "stale",
       "localizations": {
@@ -3428,6 +3582,17 @@
         }
       }
     },
+    "已达到本学期目标": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This semester’s goal is complete"
+          }
+        }
+      }
+    },
     "已过期": {
       "extractionState": "stale",
       "localizations": {
@@ -3457,6 +3622,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "已运动 %@"
+          }
+        }
+      }
+    },
+    "已运动时长": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active exercise time"
           }
         }
       }
@@ -3726,6 +3902,17 @@
         }
       }
     },
+    "当前不可开始运动": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You cannot start exercising now"
+          }
+        }
+      }
+    },
     "当前不在任务允许的打卡时间内，请刷新任务并确认开始和截止时间。": {
       "localizations": {
         "en": {
@@ -3787,6 +3974,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前个人页只能查看已有校队或社团认证。新申请、证明上传和教师审核入口仍需服务端接口接入后开放。"
+          }
+        }
+      }
+    },
+    "当前可开始运动": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can start exercising now"
           }
         }
       }
@@ -4711,7 +4909,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deadline"
+            "value": "Deadline reminders"
           }
         },
         "zh-Hans": {
@@ -5079,6 +5277,28 @@
         }
       }
     },
+    "扫码加入课程": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan QR to Join Course"
+          }
+        }
+      }
+    },
+    "扫码或输入邀请码加入本学期体育课": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan a QR code or enter an invitation code for this semester’s sports course."
+          }
+        }
+      }
+    },
     "抵扣: %@": {
       "localizations": {
         "en": {
@@ -5091,6 +5311,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "抵扣: %@"
+          }
+        }
+      }
+    },
+    "抵扣后实际打卡还需 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ remaining to check in after offset"
           }
         }
       }
@@ -6548,6 +6779,17 @@
         }
       }
     },
+    "本学期总完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed this semester"
+          }
+        }
+      }
+    },
     "本应用仅收集校园体育服务所需的账户、课程、学时、成绩和申请信息。": {
       "extractionState": "stale",
       "localizations": {
@@ -6991,6 +7233,17 @@
         }
       }
     },
+    "每日打卡时间 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily check-in hours %@"
+          }
+        }
+      }
+    },
     "没有网络时哪些内容可以使用？": {
       "extractionState": "stale",
       "localizations": {
@@ -7265,7 +7518,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applications"
+            "value": "Applications & materials"
           }
         },
         "zh-Hans": {
@@ -7865,6 +8118,17 @@
         }
       }
     },
+    "组织抵扣": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organization offset"
+          }
+        }
+      }
+    },
     "组织认证": {
       "extractionState": "stale",
       "localizations": {
@@ -7994,6 +8258,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "继续运动"
+          }
+        }
+      }
+    },
+    "继续进入": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue exercise"
           }
         }
       }
@@ -8135,7 +8410,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Other Independent Exercise"
+            "value": "Other exercise"
           }
         },
         "zh-Hans": {
@@ -9197,7 +9472,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Course-related Exercise"
+            "value": "Course-related exercise"
           }
         },
         "zh-Hans": {
@@ -9339,6 +9614,17 @@
         }
       }
     },
+    "距离本学期目标还差 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ remaining toward this semester’s goal"
+          }
+        }
+      }
+    },
     "跟随系统": {
       "extractionState": "stale",
       "localizations": {
@@ -9393,7 +9679,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter invite code"
+            "value": "Enter invitation code"
           }
         },
         "zh-Hans": {
@@ -9686,7 +9972,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exercise"
+            "value": "Exercise type"
           }
         },
         "zh-Hans": {

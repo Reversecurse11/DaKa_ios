@@ -21,10 +21,34 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app = nil
     }
 
+    /// Temporary: captures every conditional dashboard block for the
+    /// before/after comparison against the Android baseline.
+    func testTempShotsDashboardBaseline() throws {
+        let configurations: [(name: String, arguments: [String])] = [
+            ("01-dashboard-pending", ["-ui-testing-reset", "-ui-testing-authenticated"]),
+            ("02-dashboard-checked-in", ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-completed-exercise"]),
+            ("03-dashboard-exercise-active", ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise"]),
+            ("04-dashboard-no-course", ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-empty-state"]),
+            ("05-dashboard-en", ["-ui-testing-reset", "-ui-testing-authenticated", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        ]
+
+        for configuration in configurations {
+            app.terminate()
+            app = XCUIApplication()
+            app.launchArguments = configuration.arguments
+            app.launch()
+
+            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8), configuration.name)
+            attachScreenshot(named: "\(configuration.name)-top")
+            app.swipeUp()
+            attachScreenshot(named: "\(configuration.name)-lower")
+        }
+    }
+
     func testStudentShellSmokeFlow() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["体育学时进度"].exists)
-        XCTAssertTrue(app.staticTexts["最近打卡"].exists)
+        XCTAssertTrue(app.staticTexts["学时构成"].exists)
 
         openTab(label: "课程", screenIdentifier: "screen.courses")
         XCTAssertTrue(app.staticTexts["我的课程"].waitForExistence(timeout: 3))
@@ -69,13 +93,14 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(tabButton("tab.grades").label, "Grades")
         XCTAssertEqual(tabButton("tab.profile").label, "Profile")
 
-        XCTAssertTrue(app.staticTexts["Current Risk Notice"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Sports credit progress"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Credit breakdown"].exists)
         XCTAssertTrue(
             app.staticTexts.containing(
-                NSPredicate(format: "label CONTAINS %@", "4 hr more course-related exercise")
+                NSPredicate(format: "label CONTAINS %@", "4 hr")
             ).firstMatch.exists
         )
-        XCTAssertFalse(app.staticTexts["当前风险提示"].exists)
+        XCTAssertFalse(app.staticTexts["体育学时进度"].exists)
 
         tabButton("tab.grades").tap()
         XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))

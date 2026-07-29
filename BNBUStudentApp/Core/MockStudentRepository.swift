@@ -8,6 +8,7 @@ struct MockStudentRepository: StudentRepository {
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(
             id: "demo-student-001",
+            studentNumber: "2400123456",
             name: "演示学生",
             email: "demo.student@example.invalid",
             college: "工商管理学院",
@@ -250,6 +251,7 @@ struct EmptyStudentRepository: StudentRepository {
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(
             id: "demo-student-001",
+            studentNumber: "2400123456",
             name: "演示学生",
             email: "demo.student@example.invalid",
             college: "工商管理学院",

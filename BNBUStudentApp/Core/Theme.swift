@@ -190,6 +190,7 @@ enum BNBUSpacing {
     static let space16: CGFloat = 16
     static let space20: CGFloat = 20
     static let space24: CGFloat = 24
+    static let space28: CGFloat = 28
     static let space32: CGFloat = 32
 
     /// Left/right margin of every root tab and auth page.

@@ -76,8 +76,7 @@ struct AppRootView: View {
         case .dashboard:
             DashboardView(
                 openCheckIn: { selectedTab = .checkin },
-                openGrades: { selectedTab = .grades },
-                openProfile: { selectedTab = .profile }
+                openCourses: { selectedTab = .courses }
             )
         case .courses:
             CoursesView()
