@@ -96,6 +96,93 @@ struct BrandMark: View {
     }
 }
 
+/// Android's sub-page back affordance: a full-width tappable row with a
+/// leading chevron and the word "返回", used by every overlay page instead of a
+/// navigation bar button.
+struct BNBUBackRow: View {
+    var title = "返回"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: BNBUSpacing.space8) {
+                Image(systemName: "chevron.left")
+                    .font(BNBUFont.bodyLarge)
+                Text(LocalizedStringKey(title))
+                    .font(BNBUFont.bodyLarge)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(BNBUTheme.onSurface)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(BNBUPressStyle())
+        .accessibilityIdentifier("nav.back")
+    }
+}
+
+/// Android's `GroupLabel`: an uppercase-weight caption that opens a settings
+/// group inside a panel.
+struct BNBUGroupLabel: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(LocalizedStringKey(title))
+            .font(BNBUFont.labelMedium)
+            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Android's `NavigationSettingRow`: icon, title, trailing chevron. A disabled
+/// row keeps its place in the list and explains why it cannot be opened.
+struct BNBUNavigationSettingRow: View {
+    let title: String
+    let systemImage: String
+    var detail: String?
+    var enabled = true
+    var accessibilityIdentifier: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: BNBUSpacing.space12) {
+                Image(systemName: systemImage)
+                    .font(BNBUFont.bodyLarge)
+                    .foregroundStyle(enabled ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(LocalizedStringKey(title))
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(enabled ? BNBUTheme.onSurface : BNBUTheme.onSurfaceVariant)
+                    if let detail {
+                        Text(LocalizedStringKey(detail))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if enabled {
+                    Image(systemName: "chevron.right")
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .frame(width: 20)
+                }
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(BNBUPressStyle(enabled: enabled))
+        .disabled(!enabled)
+        .accessibilityIdentifier(accessibilityIdentifier ?? "")
+    }
+}
+
 struct SwissPanel<Content: View>: View {
     let content: Content
 

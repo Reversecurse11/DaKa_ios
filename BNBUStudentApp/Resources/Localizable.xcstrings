@@ -553,6 +553,17 @@
         }
       }
     },
+    "BNBU 体育": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "BNBU Sports"
+          }
+        }
+      }
+    },
     "BNBU 校徽": {
       "localizations": {
         "en": {
@@ -652,6 +663,17 @@
         }
       }
     },
+    "上一步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous step"
+          }
+        }
+      }
+    },
     "下一步": {
       "localizations": {
         "en": {
@@ -675,6 +697,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unavailable"
+          }
+        }
+      }
+    },
+    "不同意并退出": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disagree and exit"
           }
         }
       }
@@ -776,6 +809,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "为什么获取不到定位？"
+          }
+        }
+      }
+    },
+    "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频，并在前台单次获取位置。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To provide sports education services, we process your student ID, name, courses, grades, and activity check-in records. The camera, selected photos or videos, and one-time foreground location are used only when you choose the related feature. Recording an on-site video also uses the microphone to capture sound. Notifications are generated on this device for now, and no push identifier is uploaded. This information is not used for advertising or personalised recommendations."
           }
         }
       }
@@ -1394,6 +1438,17 @@
         }
       }
     },
+    "偏好设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preferences"
+          }
+        }
+      }
+    },
     "健康提醒": {
       "localizations": {
         "en": {
@@ -1440,6 +1495,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "允许通知后，可在前台收到提醒，并从通知直接进入课程、打卡或成绩页面。"
+          }
+        }
+      }
+    },
+    "先加入课程": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join your course first"
           }
         }
       }
@@ -1831,6 +1897,17 @@
         }
       }
     },
+    "关于": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
     "关闭": {
       "localizations": {
         "en": {
@@ -1975,6 +2052,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "准备提交"
+          }
+        }
+      }
+    },
+    "准备课程二维码或邀请码": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Have a course QR code or invitation code ready"
           }
         }
       }
@@ -2482,6 +2570,17 @@
         }
       }
     },
+    "反馈工单接口发布后开放": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available once the feedback ticket endpoints ship"
+          }
+        }
+      }
+    },
     "取消": {
       "localizations": {
         "en": {
@@ -2566,6 +2665,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Total"
+          }
+        }
+      }
+    },
+    "同意后，你仍可在“我的 — 设置 — 隐私政策”中随时查看最新版本。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After agreeing, you can review the latest version anytime in Profile — Settings — Privacy Policy."
+          }
+        }
+      }
+    },
+    "同意并继续": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agree and continue"
           }
         }
       }
@@ -3275,6 +3396,17 @@
         }
       }
     },
+    "审核通过后即可开始打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can check in once it is approved"
+          }
+        }
+      }
+    },
     "密码": {
       "localizations": {
         "en": {
@@ -3599,6 +3731,17 @@
         }
       }
     },
+    "已提交，等待老师审核": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitted, waiting for your teacher"
+          }
+        }
+      }
+    },
     "已有进行中或待提交的运动，请先完成当前记录。": {
       "localizations": {
         "en": {
@@ -3834,6 +3977,17 @@
         }
       }
     },
+    "帮助与支持": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Help and support"
+          }
+        }
+      }
+    },
     "帮助中心": {
       "localizations": {
         "en": {
@@ -3863,6 +4017,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "平时表现 / 签到"
+          }
+        }
+      }
+    },
+    "年级": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grade"
           }
         }
       }
@@ -3934,6 +4099,28 @@
         }
       }
     },
+    "开始使用前，请确认": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Before you begin"
+          }
+        }
+      }
+    },
+    "开始加入课程": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start joining a course"
+          }
+        }
+      }
+    },
     "开始时间": {
       "extractionState": "stale",
       "localizations": {
@@ -3981,6 +4168,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "开始运动后计时，允许时获取一次定位；结束后只能选择运动过程中拍摄的凭证。"
+          }
+        }
+      }
+    },
+    "引导插图": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guide illustration"
           }
         }
       }
@@ -4495,6 +4693,17 @@
         }
       }
     },
+    "待计算": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending calculation"
+          }
+        }
+      }
+    },
     "必填": {
       "localizations": {
         "en": {
@@ -4921,6 +5130,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Score: not assigned"
+          }
+        }
+      }
+    },
+    "我们如何处理你的信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How we use your information"
           }
         }
       }
@@ -5420,6 +5640,17 @@
         }
       }
     },
+    "扫码或手动输入": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan or enter it manually"
+          }
+        }
+      }
+    },
     "扫码或输入邀请码加入本学期体育课": {
       "extractionState": "manual",
       "localizations": {
@@ -5724,6 +5955,17 @@
         }
       }
     },
+    "提供帮助中心、隐私政策和问题反馈入口。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added Help Centre, Privacy Policy, and problem-report entry points."
+          }
+        }
+      }
+    },
     "搜索帮助内容": {
       "localizations": {
         "en": {
@@ -5784,6 +6026,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "操作过于频繁，请稍后再试。"
+          }
+        }
+      }
+    },
+    "支持离线缓存和系统通知，便于及时查看业务状态。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline caching and system notifications help you stay up to date."
+          }
+        }
+      }
+    },
+    "支持课程、打卡、成绩和服务申请等核心功能。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Core course, check-in, grade, and service-application features are available."
           }
         }
       }
@@ -6368,6 +6632,28 @@
         }
       }
     },
+    "更改后将立即更新界面语言。课程名称等由教师或管理员录入的数据内容保持原文。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The interface updates immediately after a change. Data entered by teachers or administrators, such as course names, stays in its original language."
+          }
+        }
+      }
+    },
+    "更新日志": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What’s new"
+          }
+        }
+      }
+    },
     "最多 32 个字符": {
       "localizations": {
         "en": {
@@ -6705,6 +6991,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "未同意"
+          }
+        }
+      }
+    },
+    "未同意隐私政策时无法进入应用。你可以直接关闭 App，或在同意后继续使用。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You cannot enter the app without accepting the Privacy Policy. Close the app, or agree to continue."
           }
         }
       }
@@ -7101,6 +7398,17 @@
         }
       }
     },
+    "查看完整隐私政策": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the full Privacy Policy"
+          }
+        }
+      }
+    },
     "查看更多运动项目": {
       "localizations": {
         "en": {
@@ -7194,6 +7502,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "校园体育服务暂时异常，请稍后重试。"
+          }
+        }
+      }
+    },
+    "核对信息后再加入": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review before you join"
+          }
+        }
+      }
+    },
+    "核对课程与个人资料": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review the course and your details"
+          }
+        }
+      }
+    },
+    "核对课程和个人资料后提交加入申请；如需补正或等待审核，按页面提示处理。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review the course and your details, then submit the join request. Follow the on-screen guidance if information is needed or the request is under review."
           }
         }
       }
@@ -7293,6 +7634,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在定位"
+          }
+        }
+      }
+    },
+    "正在恢复登录状态…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restoring your sign-in…"
           }
         }
       }
@@ -7660,6 +8012,17 @@
         }
       }
     },
+    "由老师提供": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provided by your teacher"
+          }
+        }
+      }
+    },
     "申请与审核": {
       "extractionState": "stale",
       "localizations": {
@@ -7756,6 +8119,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "男生"
+          }
+        }
+      }
+    },
+    "界面语言 / Language": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interface language / Language"
           }
         }
       }
@@ -7873,6 +8247,17 @@
         }
       }
     },
+    "直接登录": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to sign in"
+          }
+        }
+      }
+    },
     "相关信息仅用于体育学时计算、成绩展示、打卡记录、免测申请和校园通知，不用于商业广告。": {
       "extractionState": "stale",
       "localizations": {
@@ -7968,6 +8353,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "确认删除这个凭证？"
+          }
+        }
+      }
+    },
+    "确认后提交加入申请": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submit the join request after confirming"
+          }
+        }
+      }
+    },
+    "确认并提交申请": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm and submit"
           }
         }
       }
@@ -8328,6 +8735,17 @@
         }
       }
     },
+    "绑定或更换邮箱、手机号": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link or change email and phone"
+          }
+        }
+      }
+    },
     "结束时间": {
       "extractionState": "stale",
       "localizations": {
@@ -8560,6 +8978,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "羽毛球"
+          }
+        }
+      }
+    },
+    "老师会提供课程二维码或邀请码。扫码或手动输入后，即可找到对应课程。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your teacher provides a course QR code or invitation code. Scan it or enter it manually to find the right course."
           }
         }
       }
@@ -9152,6 +9581,17 @@
         }
       }
     },
+    "请先登录后再提交课程加入申请。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in before submitting a course join request."
+          }
+        }
+      }
+    },
     "请先确认学号和密码无误。当前 App 尚未接入忘记密码接口；需要重置时，请联系课程教师或系统管理员。": {
       "extractionState": "stale",
       "localizations": {
@@ -9461,6 +9901,17 @@
         }
       }
     },
+    "请阅读并同意隐私政策。我们会以清晰、必要的方式处理信息，为你提供体育教学服务。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please read and accept the Privacy Policy. We use information only as needed to provide your sports education service."
+          }
+        }
+      }
+    },
     "课堂签到与平时表现": {
       "extractionState": "stale",
       "localizations": {
@@ -9525,6 +9976,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "课程与成绩"
+          }
+        }
+      }
+    },
+    "课程二维码或邀请码": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Course QR code or invitation code"
           }
         }
       }
@@ -9789,6 +10251,28 @@
         }
       }
     },
+    "账户与安全": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account and security"
+          }
+        }
+      }
+    },
+    "账户资料": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account details"
+          }
+        }
+      }
+    },
     "足球": {
       "extractionState": "stale",
       "localizations": {
@@ -9863,6 +10347,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳过"
+          }
+        }
+      }
+    },
+    "跳过加入课程指引并进入登录页": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip the course guide and go to sign in"
           }
         }
       }
@@ -10204,6 +10699,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "运动项目：%@"
+          }
+        }
+      }
+    },
+    "返回": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
           }
         }
       }
@@ -10563,6 +11069,17 @@
         }
       }
     },
+    "问题反馈": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report a problem"
+          }
+        }
+      }
+    },
     "随设备外观自动切换": {
       "extractionState": "stale",
       "localizations": {
@@ -10645,6 +11162,17 @@
         }
       }
     },
+    "需要同意后才能使用": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consent is required to continue"
+          }
+        }
+      }
+    },
     "需要确认后才会删除": {
       "localizations": {
         "en": {
@@ -10657,6 +11185,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要确认后才会删除"
+          }
+        }
+      }
+    },
+    "首个可用版本": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Initial release"
           }
         }
       }
@@ -10674,6 +11213,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "首页"
+          }
+        }
+      }
+    },
+    "验证码登录接口发布后开放": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available once the verification-code sign-in endpoints ship"
           }
         }
       }

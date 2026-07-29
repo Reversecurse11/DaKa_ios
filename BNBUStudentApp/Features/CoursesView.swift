@@ -3,7 +3,7 @@ import SwiftUI
 struct CoursesView: View {
     @EnvironmentObject private var appState: AppState
     @State private var historyExpanded = false
-    @State private var isJoinSheetPresented = false
+    @State private var activeSheet: CoursesSheet?
 
     var body: some View {
         ZStack {
@@ -19,6 +19,16 @@ struct CoursesView: View {
                         .lineSpacing(3)
 
                     joinEntry
+
+                    if let joinRequest = appState.workspace.courseJoinRequest,
+                       joinRequest.status != .active {
+                        JoinRequestEntryPanel(
+                            request: joinRequest,
+                            identifier: "courses.joinRequest.entry"
+                        ) {
+                            activeSheet = .joinRequestStatus
+                        }
+                    }
 
                     if !pendingCourses.isEmpty {
                         SectionTitle(eyebrow: "PENDING", title: "待审核课程")
@@ -82,10 +92,39 @@ struct CoursesView: View {
             }
         }
         .accessibilityIdentifier("screen.courses")
-        .sheet(isPresented: $isJoinSheetPresented) {
-            CourseJoinSheet()
-                .environmentObject(appState)
+        // One presentation binding: two `.sheet` modifiers on the same view let
+        // the later one win, which silently swallowed the join sheet.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .join:
+                CourseJoinSheet()
+                    .environmentObject(appState)
+            case .joinRequestStatus:
+                JoinRequestStatusView(
+                    request: appState.workspace.courseJoinRequest,
+                    onBack: { activeSheet = nil },
+                    // Teacher contact details live on the profile tab, which is
+                    // where Android sends this action too.
+                    onContactTeacher: {
+                        activeSheet = nil
+                        NotificationCenter.default.post(
+                            name: .bnbuOpenDestination,
+                            object: AppTab.profile
+                        )
+                    },
+                    onEditAndResubmit: { _ in activeSheet = .join },
+                    onUseNewInvite: { activeSheet = .join },
+                    onApproved: { activeSheet = nil }
+                )
+            }
         }
+    }
+
+    private enum CoursesSheet: String, Identifiable {
+        case join
+        case joinRequestStatus
+
+        var id: String { rawValue }
     }
 
     private var joinEntry: some View {
@@ -103,7 +142,7 @@ struct CoursesView: View {
                     accessibilityIdentifier: "courses.join.entry"
                 ) {
                     appState.errorMessage = nil
-                    isJoinSheetPresented = true
+                    activeSheet = .join
                 }
             }
         }

@@ -5,29 +5,39 @@ struct ProfileView: View {
     @EnvironmentObject private var languageSettings: BNBULanguageSettings
     @AppStorage(BNBUAppearanceMode.defaultsKey) private var appearanceModeRaw = BNBUAppearanceMode.light.rawValue
     @State private var showExemptionCenter = false
-    @State private var showPrivacyPolicy = false
     @State private var showEnduranceScoring = false
-    @State private var showHelpCenter = false
-    @State private var showOnboarding = false
-    @State private var showLogoutConfirmation = false
     @State private var showPendingDiscardConfirmation = false
     @State private var pendingScopeToDiscard: String?
+    @State private var showAccountDetails = false
+    @State private var showSettings = false
 
     var body: some View {
         ZStack {
             BNBUPageBackground()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 24) {
                     profileHeader
                     applicationPanel
                     pendingMutationPanel
                     teacherPanel
                     identityPanel
-                    settingsPanel
-                    Spacer(minLength: 24)
+                    Spacer(minLength: 40)
                 }
                 .padding(BNBUSpacing.screen)
+            }
+        }
+        .sheet(isPresented: $showAccountDetails) {
+            NavigationStack {
+                AccountDetailsView { showAccountDetails = false }
+                    .environmentObject(appState)
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                ProfileSettingsView { showSettings = false }
+                    .environmentObject(appState)
+                    .environmentObject(languageSettings)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -38,41 +48,9 @@ struct ProfileView: View {
             ExemptionCenterSheet()
                 .environmentObject(appState)
         }
-        .sheet(isPresented: $showPrivacyPolicy) {
-            NavigationStack {
-                PrivacyPolicyView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("完成") { showPrivacyPolicy = false }
-                                .accessibilityIdentifier("privacy.done")
-                        }
-                    }
-            }
-        }
         .sheet(isPresented: $showEnduranceScoring) {
             EnduranceScoringSheet()
                 .environmentObject(appState)
-        }
-        .sheet(isPresented: $showHelpCenter) {
-            HelpCenterView()
-        }
-        .fullScreenCover(isPresented: $showOnboarding) {
-            OnboardingView {
-                showOnboarding = false
-            }
-        }
-        .confirmationDialog(
-            "退出登录？",
-            isPresented: $showLogoutConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("退出登录", role: .destructive) {
-                Task { await appState.logout() }
-            }
-            .accessibilityIdentifier("profile.logout.confirm")
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("将清理本机登录凭据、当前账号缓存、未提交草稿和全部待重试操作。")
         }
         .confirmationDialog(
             "放弃这次待重试操作？",
@@ -93,49 +71,90 @@ struct ProfileView: View {
         }
     }
 
+    /// Android's `ProfileHeader`: a page title with a gear button, then a
+    /// tappable account card that opens the full account page. The three facts
+    /// (student ID / class / grade) sit in a tinted strip inside the card.
     private var profileHeader: some View {
         let student = appState.workspace.student
-        let tags = [
-            student.className,
-            BNBUL10n.dynamicText(student.gender.title),
-            BNBUL10n.dynamicText(appState.academicProjection.grade)
-        ].filter { !$0.isEmpty }.joined(separator: " · ")
 
-        return SwissPanel {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 14) {
-                    profileIdentity(student: student, tags: tags)
-                    Spacer(minLength: 8)
-                    StatusBadge(text: student.status, filled: true)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 0) {
+                Text("我的")
+                    .font(BNBUFont.headlineLarge)
+                    .tracking(BNBUFont.Tracking.headlineLarge)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(BNBUFont.titleLarge)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                        .frame(width: BNBUSpacing.touchTarget, height: BNBUSpacing.touchTarget)
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    profileIdentity(student: student, tags: tags)
-                    StatusBadge(text: student.status, filled: true)
+                .buttonStyle(BNBUPressStyle())
+                .accessibilityLabel("设置")
+                .accessibilityIdentifier("profile.settings.button")
+            }
+
+            Button {
+                showAccountDetails = true
+            } label: {
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(spacing: 14) {
+                            BrandMark(compact: true)
+                            Text(student.name)
+                                .font(BNBUFont.headlineSmall)
+                                .foregroundStyle(BNBUTheme.onSurface)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            StatusBadge(text: student.status, filled: true)
+                            Image(systemName: "chevron.right")
+                                .font(BNBUFont.bodyMedium)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
+                        profileFacts(student: student)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(BNBUPressStyle())
+            .accessibilityLabel("账户资料")
+            .accessibilityIdentifier("profile.accountDetails.button")
         }
     }
 
-    private func profileIdentity(student: StudentProfile, tags: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            BrandMark(compact: true)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(student.name)
-                    .font(BNBUFont.headlineSmall)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(student.displayStudentNumber) · \(student.college)")
-                    .font(BNBUFont.bodyMedium)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !tags.isEmpty {
-                    Text(verbatim: tags)
-                        .font(BNBUFont.labelMedium)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+    private func profileFacts(student: StudentProfile) -> some View {
+        HStack(alignment: .top, spacing: BNBUSpacing.space8) {
+            profileFact(label: "学号", value: student.displayStudentNumber)
+            profileFact(label: "班级", value: student.className.isEmpty ? "—" : student.className)
+            profileFact(
+                label: "年级",
+                value: {
+                    let grade = BNBUL10n.dynamicText(appState.academicProjection.grade)
+                    return grade.isEmpty ? BNBUL10n.text("待计算") : grade
+                }()
+            )
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(BNBUTheme.surfaceVariant)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+    }
+
+    private func profileFact(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(LocalizedStringKey(label))
+                .font(BNBUFont.labelSmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            Text(verbatim: value)
+                .font(BNBUFont.titleSmall)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var applicationPanel: some View {
@@ -311,118 +330,6 @@ struct ProfileView: View {
         }
     }
 
-    private var settingsPanel: some View {
-        let student = appState.workspace.student
-        return VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(eyebrow: "SETTINGS", title: "设置")
-
-            SwissPanel {
-                VStack(alignment: .leading, spacing: 10) {
-                    SettingLine(label: "学生姓名", value: student.name)
-                    SettingLine(label: "学号", value: student.displayStudentNumber)
-                    SettingLine(label: "学院", value: student.college)
-                    SettingLine(
-                        label: "班级",
-                        value: student.className.isEmpty ? BNBUL10n.text("待完善") : student.className
-                    )
-                    SettingLine(
-                        label: "入学年份",
-                        value: student.enrollmentYear.map(String.init) ?? BNBUL10n.text("待完善")
-                    )
-                    SettingLine(
-                        label: "当前年级",
-                        value: BNBUL10n.dynamicText(appState.academicProjection.grade)
-                    )
-                    SettingLine(
-                        label: "计算年份",
-                        value: localizedAcademicYear(appState.academicProjection.academicYear)
-                    )
-                    SettingLine(label: "App 版本", value: "BNBU Student MVP 1.0")
-                }
-            }
-
-            SwissPanel {
-                VStack(spacing: 10) {
-                    SecondaryActionButton(title: "帮助中心", systemImage: "questionmark.circle") {
-                        showHelpCenter = true
-                    }
-                    SecondaryActionButton(title: "重新查看新手引导", systemImage: "sparkles.rectangle.stack") {
-                        showOnboarding = true
-                    }
-                    SecondaryActionButton(title: "隐私政策", systemImage: "hand.raised") {
-                        showPrivacyPolicy = true
-                    }
-                    PrimaryActionButton(
-                        title: "退出登录",
-                        systemImage: "rectangle.portrait.and.arrow.right",
-                        accessibilityIdentifier: "profile.logout.button"
-                    ) {
-                        showLogoutConfirmation = true
-                    }
-                }
-            }
-
-            SwissPanel {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("外观模式")
-                        .font(BNBUFont.titleMedium)
-                    BNBUSegmentedControl(
-                        values: BNBUAppearanceMode.allCases.map(\.rawValue),
-                        selection: $appearanceModeRaw,
-                        title: { raw in
-                            BNBUAppearanceMode(rawValue: raw).map(shortAppearanceTitle) ?? raw
-                        },
-                        identifier: { "profile.appearance.\($0)" }
-                    )
-                    Text("默认使用浅色模式；选择跟随系统后会随设备设置切换。")
-                        .font(BNBUFont.bodySmall)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                }
-            }
-
-            SwissPanel {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("语言")
-                        .font(BNBUFont.titleMedium)
-                    BNBUSegmentedControl(
-                        values: BNBULanguage.allCases.map(\.rawValue),
-                        selection: languageSelection,
-                        title: { raw in
-                            BNBULanguage(rawValue: raw)?.title ?? raw
-                        },
-                        identifier: { "profile.language.\($0)" }
-                    )
-                    .accessibilityIdentifier("profile.language.picker")
-                    Text("切换后立即生效；选择跟随系统后会随设备语言更新。课程名称等由教师或管理员录入的数据内容保持原文。")
-                        .font(BNBUFont.bodySmall)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                }
-            }
-
-        }
-    }
-
-    private func shortAppearanceTitle(_ mode: BNBUAppearanceMode) -> String {
-        switch mode {
-        case .light: return "浅色"
-        case .dark: return "深色"
-        case .system: return "跟随系统"
-        }
-    }
-
-    private func localizedAcademicYear(_ value: String) -> String {
-        guard !BNBUL10n.locale.identifier.hasPrefix("zh") else { return value }
-        return value.replacingOccurrences(of: " 学年", with: "")
-    }
-
-    private var languageSelection: Binding<String> {
-        Binding(
-            get: { languageSettings.mode.rawValue },
-            set: { newValue in
-                languageSettings.select(rawValue: newValue)
-            }
-        )
-    }
 }
 
 private struct ProfileNavigationCard: View {

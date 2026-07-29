@@ -476,6 +476,9 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         appState.enforcesCheckInTimeWindow = false
+        // A join request belongs to an account, so this covers the signed-in
+        // student; the pre-login guard has its own test.
+        appState.demoLogin()
 
         let approvedCourse = try XCTUnwrap(appState.currentExerciseCourse)
         XCTAssertTrue(appState.pendingEnrollmentCourses.isEmpty)
@@ -612,6 +615,124 @@ final class BNBUStudentModelTests: XCTestCase {
         """.utf8))
         XCTAssertTrue(withBreakdown.usesPublishedComponents)
         XCTAssertEqual(withBreakdown.state, .recording)
+    }
+
+    func testJoinRequestStatusKeepsCorrectionApartFromRejection() throws {
+        XCTAssertEqual(JoinRequestStatus(serverValue: "PENDING"), .pending)
+        XCTAssertEqual(JoinRequestStatus(serverValue: "待审核"), .pending)
+        XCTAssertEqual(JoinRequestStatus(serverValue: "active"), .active)
+        XCTAssertEqual(JoinRequestStatus(serverValue: "已通过"), .active)
+        XCTAssertEqual(JoinRequestStatus(serverValue: "rejected"), .rejected)
+        // "Information needed" is actionable by the student; "rejected" is not,
+        // so the two must never collapse into one state.
+        XCTAssertEqual(JoinRequestStatus(serverValue: "needs_correction"), .needsCorrection)
+        XCTAssertEqual(JoinRequestStatus(serverValue: "需补正"), .needsCorrection)
+        XCTAssertNil(JoinRequestStatus(serverValue: "something-new"))
+        XCTAssertNil(JoinRequestStatus(serverValue: nil))
+    }
+
+    func testWorkspaceCacheKeepsJoinRequestAndToleratesOlderCaches() throws {
+        let request = CourseJoinRequest(
+            id: "r1",
+            inviteCode: "PE1024",
+            courseName: "体育与健康 2026A",
+            courseCode: "PE1024",
+            section: "S02",
+            teacherName: "陈老师",
+            semester: "2026-2027 学年第一学期",
+            studentName: "演示学生",
+            studentNumber: "2400123456",
+            email: "demo.student@example.invalid",
+            status: .needsCorrection,
+            reviewComment: "请补充班级信息后重新提交。",
+            submittedAt: "2026-07-28 15:20",
+            reviewedAt: "2026-07-29 09:10"
+        )
+        var workspace = MockStudentRepository().loadWorkspace()
+        workspace.courseJoinRequest = request
+
+        let encoded = try JSONEncoder().encode(workspace)
+        let decoded = try JSONDecoder().decode(StudentWorkspace.self, from: encoded)
+        XCTAssertEqual(decoded.courseJoinRequest, request)
+
+        // Caches written before the join-request page carry no such key.
+        var legacy = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        legacy.removeValue(forKey: "courseJoinRequest")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+        XCTAssertNil(
+            try JSONDecoder().decode(StudentWorkspace.self, from: legacyData).courseJoinRequest
+        )
+    }
+
+    func testDevicePrivacyConsentIsVersionedAndSatisfiesTheLoginForm() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "bnbu.tests.consent"))
+        defaults.removePersistentDomain(forName: "bnbu.tests.consent")
+
+        XCTAssertFalse(BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults))
+        BNBUDevicePrivacyConsent.recordAcceptance(defaults: defaults)
+        XCTAssertTrue(BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults))
+
+        // The gate runs before sign-in, so an account with no record of its own
+        // must still count as having agreed.
+        XCTAssertTrue(BNBUPrivacyConsent.hasAccepted(account: "s1@example.invalid", defaults: defaults))
+
+        // A newer policy version invalidates the stored acceptance.
+        defaults.set(
+            ["version": "1999-01-01", "acceptedAt": "1999-01-01T00:00:00Z"],
+            forKey: BNBUDevicePrivacyConsent.defaultsKey
+        )
+        XCTAssertFalse(BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults))
+
+        defaults.removePersistentDomain(forName: "bnbu.tests.consent")
+    }
+
+    /// The startup destination is decided before the first frame, so the gate
+    /// order is unit-testable without driving the UI.
+    func testShellStageResolvesConsentThenGuideThenLogin() throws {
+        let suite = "bnbu.tests.shell-stage"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+
+        func stage(isAuthenticated: Bool = false, showsStartupGates: Bool = true) -> AppShellStage {
+            AppShellStage.resolved(
+                isAuthenticated: isAuthenticated,
+                isUITesting: true,
+                showsStartupGates: showsStartupGates,
+                defaults: defaults
+            )
+        }
+
+        XCTAssertEqual(stage(), .privacyConsent)
+
+        BNBUDevicePrivacyConsent.recordAcceptance(defaults: defaults)
+        XCTAssertEqual(stage(), .preLoginGuide)
+
+        BNBUPreLoginGuide.markSeen(defaults: defaults)
+        XCTAssertEqual(stage(), .login)
+
+        // A restored session skips every pre-login gate.
+        defaults.removePersistentDomain(forName: suite)
+        XCTAssertEqual(stage(isAuthenticated: true), .authenticated)
+
+        // Flow tests opt out of the gates and land on the sign-in page.
+        XCTAssertEqual(stage(showsStartupGates: false), .login)
+
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testCourseJoinRequestNeedsAnAccountBeforeSubmission() {
+        let state = AppState(repository: MockStudentRepository())
+        XCTAssertFalse(state.isAuthenticated)
+
+        XCTAssertFalse(state.submitCourseJoinRequest(rawCode: "PE9999"))
+        XCTAssertEqual(state.errorMessage, "请先登录后再提交课程加入申请。")
+
+        state.demoLogin()
+        state.errorMessage = nil
+        XCTAssertTrue(state.submitCourseJoinRequest(rawCode: "PE9999"))
+        XCTAssertNil(state.errorMessage)
     }
 
     func testEnduranceRunStatusSeparatesExemptionAbsenceAndNoEntry() throws {

@@ -19,6 +19,9 @@
 		AA0000000000000000000010 /* CoursesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* CoursesView.swift */; };
 		AA0000000000000000000011 /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* CheckInView.swift */; };
 		AA0000000000000000000012 /* GradesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* GradesView.swift */; };
+		AA0000000000000000000031 /* JoinRequestStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000031 /* JoinRequestStatusView.swift */; };
+		AA0000000000000000000030 /* ProfileDetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000030 /* ProfileDetailViews.swift */; };
+		AA0000000000000000000029 /* AppShellViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000029 /* AppShellViews.swift */; };
 		AA0000000000000000000013 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* ProfileView.swift */; };
 		AA0000000000000000000014 /* StudentAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000014 /* StudentAPIClient.swift */; };
 		AA0000000000000000000015 /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000015 /* DetailViews.swift */; };
@@ -68,6 +71,9 @@
 		BB0000000000000000000010 /* CoursesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoursesView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* CheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000012 /* GradesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradesView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000031 /* JoinRequestStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRequestStatusView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000030 /* ProfileDetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailViews.swift; sourceTree = "<group>"; };
+		BB0000000000000000000029 /* AppShellViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000013 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000014 /* StudentAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentAPIClient.swift; sourceTree = "<group>"; };
 		BB0000000000000000000015 /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
@@ -164,6 +170,9 @@
 				BB0000000000000000000023 /* ExerciseCaptureComponents.swift */,
 				BB0000000000000000000028 /* CourseJoinViews.swift */,
 				BB0000000000000000000012 /* GradesView.swift */,
+				BB0000000000000000000031 /* JoinRequestStatusView.swift */,
+				BB0000000000000000000030 /* ProfileDetailViews.swift */,
+				BB0000000000000000000029 /* AppShellViews.swift */,
 				BB0000000000000000000013 /* ProfileView.swift */,
 				BB0000000000000000000015 /* DetailViews.swift */,
 				BB0000000000000000000025 /* StudentExperienceViews.swift */,
@@ -381,6 +390,9 @@
 				AA0000000000000000000023 /* ExerciseCaptureComponents.swift in Sources */,
 				AA0000000000000000000028 /* CourseJoinViews.swift in Sources */,
 				AA0000000000000000000012 /* GradesView.swift in Sources */,
+				AA0000000000000000000031 /* JoinRequestStatusView.swift in Sources */,
+				AA0000000000000000000030 /* ProfileDetailViews.swift in Sources */,
+				AA0000000000000000000029 /* AppShellViews.swift in Sources */,
 				AA0000000000000000000013 /* ProfileView.swift in Sources */,
 				AA0000000000000000000014 /* StudentAPIClient.swift in Sources */,
 				AA0000000000000000000017 /* RemoteStudentRepository.swift in Sources */,

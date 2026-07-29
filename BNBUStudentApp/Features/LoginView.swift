@@ -15,6 +15,9 @@ enum BNBUPrivacyConsent {
     }
 
     static func hasAccepted(account: String, defaults: UserDefaults = .standard) -> Bool {
+        // The device-level gate runs before sign-in, so a student who already
+        // agreed there must not be asked a second time on the login form.
+        if BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults) { return true }
         let normalized = normalizedAccount(account)
         guard !normalized.isEmpty,
               let record = defaults.dictionary(forKey: defaultsKeyPrefix + normalized) else {

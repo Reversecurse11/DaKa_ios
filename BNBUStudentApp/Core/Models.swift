@@ -600,6 +600,8 @@ struct StudentWorkspace: Codable {
     var syncOperations: [SyncOperation]
     /// Teacher-customizable hour targets (rule 4.4).
     var hourRule: SportHourRule
+    /// Nil when the student has no invitation-based course join request.
+    var courseJoinRequest: CourseJoinRequest?
 
     init(
         student: StudentProfile,
@@ -611,7 +613,8 @@ struct StudentWorkspace: Codable {
         notices: [StudentNotice],
         exemptions: [ExemptionApplication] = [],
         syncOperations: [SyncOperation] = [],
-        hourRule: SportHourRule = .standard
+        hourRule: SportHourRule = .standard,
+        courseJoinRequest: CourseJoinRequest? = nil
     ) {
         self.student = student
         self.courses = courses
@@ -623,6 +626,7 @@ struct StudentWorkspace: Codable {
         self.exemptions = exemptions
         self.syncOperations = syncOperations
         self.hourRule = hourRule
+        self.courseJoinRequest = courseJoinRequest
     }
 
     enum CodingKeys: String, CodingKey {
@@ -636,6 +640,7 @@ struct StudentWorkspace: Codable {
         case exemptions
         case syncOperations
         case hourRule
+        case courseJoinRequest
     }
 
     init(from decoder: Decoder) throws {
@@ -651,6 +656,7 @@ struct StudentWorkspace: Codable {
         syncOperations = try container.decodeIfPresent([SyncOperation].self, forKey: .syncOperations) ?? []
         // Caches written before rule 4.4 carry no targets.
         hourRule = try container.decodeIfPresent(SportHourRule.self, forKey: .hourRule) ?? .standard
+        courseJoinRequest = try container.decodeIfPresent(CourseJoinRequest.self, forKey: .courseJoinRequest)
     }
 }
 
@@ -694,6 +700,57 @@ struct SyncOperation: Identifiable, Hashable, Codable {
     let detail: String
     let createdAt: String
     var status: SyncOperationStatus
+}
+
+/// One invitation-based course join application. The status page needs the
+/// teacher's note and the submission time, which the course relationship itself
+/// does not carry.
+struct CourseJoinRequest: Identifiable, Hashable, Codable {
+    let id: String
+    let inviteCode: String
+    let courseName: String
+    let courseCode: String
+    let section: String
+    let teacherName: String
+    let semester: String
+    let studentName: String
+    let studentNumber: String
+    let email: String
+    var status: JoinRequestStatus
+    var reviewComment: String
+    let submittedAt: String
+    var reviewedAt: String?
+}
+
+enum JoinRequestStatus: String, Codable, Hashable, CaseIterable {
+    case pending
+    case active
+    case rejected
+    case needsCorrection
+
+    init?(serverValue: String?) {
+        switch (serverValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "pending", "pending_review", "pendingreview", "reviewing", "submitted", "待审核", "审核中":
+            self = .pending
+        case "active", "approved", "enrolled", "joined", "confirmed", "已通过", "正式":
+            self = .active
+        case "rejected", "declined", "denied", "已拒绝", "已驳回", "未通过":
+            self = .rejected
+        case "needs_correction", "needscorrection", "correction", "需补正", "待补正":
+            self = .needsCorrection
+        default:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .pending: return "待审核"
+        case .active: return "已通过"
+        case .rejected: return "已拒绝"
+        case .needsCorrection: return "需补正"
+        }
+    }
 }
 
 /// Business rule 4.2: a student joins a course by QR code or invite code and

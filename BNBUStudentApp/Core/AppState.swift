@@ -177,6 +177,12 @@ final class AppState: ObservableObject {
     /// server side is unavailable instead of faking an approval-pending course.
     @discardableResult
     func submitCourseJoinRequest(rawCode: String) -> Bool {
+        // The pre-login guide can open the scan entry before sign-in (Android
+        // does the same), but a join request has to belong to an account.
+        guard isAuthenticated else {
+            errorMessage = BNBUL10n.text("请先登录后再提交课程加入申请。")
+            return false
+        }
         if let validationMessage = CourseJoinCodeRule.validationMessage(for: rawCode) {
             errorMessage = validationMessage
             return false

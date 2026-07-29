@@ -45,6 +45,73 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
     }
 
+    /// Temporary: captures the eight pages added on 29 July for the page-by-page
+    /// comparison against the Android baseline.
+    func testTempShotsNewPagesBaseline() throws {
+        func relaunch(_ arguments: [String]) {
+            app.terminate()
+            app = XCUIApplication()
+            app.launchArguments = arguments + ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+            app.launch()
+        }
+
+        // Startup gates.
+        relaunch(["-ui-testing-reset", "-ui-testing-startup-gates"])
+        XCTAssertTrue(screen("screen.privacy.consent").waitForExistence(timeout: 8))
+        attachScreenshot(named: "01-privacy-consent")
+        app.buttons["privacy.consent.agree"].tap()
+        XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
+        attachScreenshot(named: "02-guide-step1")
+        app.buttons["guide.next"].tap()
+        XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
+        attachScreenshot(named: "03-guide-step2")
+
+        // Join request states.
+        for (name, argument) in [
+            ("04-join-request-pending", ""),
+            ("05-join-request-correction", "-ui-testing-join-request-correction"),
+            ("06-join-request-rejected", "-ui-testing-join-request-rejected")
+        ] {
+            var arguments = ["-ui-testing-reset", "-ui-testing-authenticated"]
+            if !argument.isEmpty { arguments.append(argument) }
+            relaunch(arguments)
+            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8), name)
+            tabButton("tab.courses").tap()
+            XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 5), name)
+            let entry = app.buttons["courses.joinRequest.entry"]
+            XCTAssertTrue(entry.waitForExistence(timeout: 3), name)
+            entry.tap()
+            XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 5), name)
+            attachScreenshot(named: name)
+        }
+
+        func openProfile() {
+            relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
+            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
+            tabButton("tab.profile").tap()
+            XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
+        }
+
+        openProfile()
+        app.buttons["profile.accountDetails.button"].tap()
+        XCTAssertTrue(screen("screen.accountDetails").waitForExistence(timeout: 5))
+        attachScreenshot(named: "07-account-details")
+
+        openProfile()
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        attachScreenshot(named: "08-settings-top")
+        app.swipeUp()
+        attachScreenshot(named: "09-settings-lower")
+
+        app.buttons["settings.about"].tap()
+        XCTAssertTrue(screen("screen.about").waitForExistence(timeout: 5))
+        attachScreenshot(named: "10-about")
+        app.buttons["about.changelog"].tap()
+        XCTAssertTrue(screen("screen.changelog").waitForExistence(timeout: 5))
+        attachScreenshot(named: "11-changelog")
+    }
+
     /// Temporary: captures the four endurance-run states plus the English
     /// locale for the before/after comparison against the Android baseline.
     func testTempShotsGradesBaseline() throws {
@@ -64,10 +131,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
             app.launch()
 
             XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8), configuration.name)
-            // Positional lookup keeps this independent of the interface language.
-            let gradesTab = app.tabBars.buttons.element(boundBy: 3)
-            XCTAssertTrue(gradesTab.waitForExistence(timeout: 5), configuration.name)
-            gradesTab.tap()
+            tabButton("tab.grades").tap()
             XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 5), configuration.name)
             attachScreenshot(named: configuration.name)
         }
@@ -75,6 +139,12 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     func testStudentShellSmokeFlow() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        for identifier in Self.tabIdentifiers {
+            XCTAssertTrue(
+                app.buttons[identifier].waitForExistence(timeout: 5),
+                "Tab bar lost its accessibility identifier: \(identifier)"
+            )
+        }
         XCTAssertTrue(app.staticTexts["体育学时进度"].exists)
         XCTAssertTrue(app.staticTexts["学时构成"].exists)
 
@@ -95,6 +165,78 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["申请与审核"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["组织认证与抵扣记录"].exists)
         assertProfileNavigationCardsAligned()
+    }
+
+    /// The startup gates run in Android's order: privacy consent, then the
+    /// first-launch course guide, then the sign-in page.
+    func testStartupGatesRunConsentThenCourseGuideBeforeLogin() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-startup-gates",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.privacy.consent").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["开始使用前，请确认"].exists)
+        XCTAssertTrue(app.staticTexts["我们如何处理你的信息"].exists)
+
+        app.buttons["privacy.consent.full-policy"].tap()
+        XCTAssertTrue(app.buttons["privacy.consent.policy.back"].waitForExistence(timeout: 3))
+        app.buttons["privacy.consent.policy.back"].tap()
+
+        app.buttons["privacy.consent.agree"].tap()
+
+        XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["先加入课程"].exists)
+        app.buttons["guide.next"].tap()
+        XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
+        app.buttons["guide.skip"].tap()
+
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
+
+        // Consent and the guide are recorded per device, so a relaunch goes
+        // straight to sign-in.
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing-startup-gates", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
+        XCTAssertFalse(screen("screen.privacy.consent").exists)
+    }
+
+    /// Settings, account details, about, and the changelog are separate pages
+    /// reached from the profile header, matching Android's navigation.
+    func testProfileHeaderOpensAccountDetailsAndSettingsPages() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        openTab(label: "我的", screenIdentifier: "screen.profile")
+
+        // The profile tab itself no longer carries the settings block.
+        XCTAssertFalse(app.staticTexts["外观模式"].exists)
+
+        app.buttons["profile.accountDetails.button"].tap()
+        XCTAssertTrue(screen("screen.accountDetails").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["账户资料"].exists)
+        XCTAssertTrue(app.staticTexts["入学年份"].exists)
+        app.buttons["nav.back"].firstMatch.tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
+
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["账户与安全"].exists)
+        XCTAssertTrue(app.staticTexts["偏好设置"].exists)
+        XCTAssertTrue(app.staticTexts["帮助与支持"].exists)
+
+        scrollToAndTap(app.buttons["settings.about"])
+        XCTAssertTrue(screen("screen.about").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["BNBU 体育"].exists)
+
+        app.buttons["about.changelog"].tap()
+        XCTAssertTrue(screen("screen.changelog").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["首个可用版本"].exists)
     }
 
     func testSystemLanguageChineseUpdatesCoreNavigation() throws {
@@ -210,6 +352,8 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     func testManualLanguageSwitchUpdatesNavigationWithoutRelaunch() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         openTab(label: "我的", screenIdentifier: "screen.profile")
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 3))
 
         let englishSegment = app.buttons["English"]
         for _ in 0..<6 where !englishSegment.waitForExistence(timeout: 0.5) {
@@ -217,6 +361,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
         XCTAssertTrue(englishSegment.waitForExistence(timeout: 2))
         englishSegment.tap()
+
+        // The tab bar sits behind the settings sheet, so it has to be dismissed
+        // before the navigation labels can be read.
+        app.buttons["nav.back"].firstMatch.tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
 
         let homeLabelUpdated = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "Home"),
@@ -372,6 +521,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["关闭"].tap()
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
+        // Signing out now lives on the separate settings page reached from the
+        // gear button, matching Android's `ProfileSettingsScreen`.
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 3))
         scrollToAndTap(app.buttons["profile.logout.button"], maxSwipes: 10)
         XCTAssertTrue(app.staticTexts["退出登录？"].waitForExistence(timeout: 3))
         app.buttons["profile.logout.confirm"].firstMatch.tap()
@@ -672,6 +825,15 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         add(attachment)
     }
 
+    /// Tab bar order, used for the positional fallback below.
+    private static let tabIdentifiers = [
+        "tab.dashboard",
+        "tab.courses",
+        "tab.checkin",
+        "tab.grades",
+        "tab.profile"
+    ]
+
     private func openTab(label: String, screenIdentifier: String) {
         let identifier: String
         switch label {
@@ -686,12 +848,19 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     }
 
     /// The native tab bar publishes its accessibility identifiers slightly after
-    /// the first tab's content appears, so waiting here keeps a relaunch
-    /// followed by an immediate tab switch from racing the tab bar.
+    /// the first tab's content appears, and after an in-process relaunch it
+    /// sometimes republishes the items without them at all. Wait for the
+    /// identifier, then fall back to the tab's fixed position, which stays
+    /// correct in every interface language.
     private func tabButton(_ identifier: String, timeout: TimeInterval = 5) -> XCUIElement {
         let button = app.buttons[identifier]
-        _ = button.waitForExistence(timeout: timeout)
-        return button
+        if button.waitForExistence(timeout: timeout) {
+            return button
+        }
+        let index = Self.tabIdentifiers.firstIndex(of: identifier) ?? 0
+        let positional = app.tabBars.buttons.element(boundBy: index)
+        XCTAssertTrue(positional.waitForExistence(timeout: timeout), identifier)
+        return positional
     }
 
     private func login() {

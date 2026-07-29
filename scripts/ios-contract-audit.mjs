@@ -322,7 +322,7 @@ requireOrder(
   [
     "header",
     "todayCheckInPanel",
-    "JoinRequestEntryPanel(course:",
+    "JoinRequestEntryPanel(",
     "courseJoinEntryPanel",
     "ExerciseResumePanel(session:",
     "progressOverview",
@@ -553,7 +553,11 @@ requireText(components, 'accessibilityLabel("删除凭证 \\(attachment.fileName
 requireText(components, ".accessibilityElement(children: .combine)", "Status rows expose combined VoiceOver context");
 requireText(loginView, '.accessibilityLabel("学号或邮箱")', "Login account field has an explicit accessibility label");
 requireText(gradesView, '.accessibilityLabel("情况说明")', "Exemption detail editor has an explicit accessibility label");
-requireText(profileView, '"退出登录？"', "Logout requires user confirmation");
+requireText(
+  read("BNBUStudentApp/Features/ProfileDetailViews.swift"),
+  '"退出登录？"',
+  "Logout requires user confirmation"
+);
 
 for (const sourceName of [
   "RemoteStudentRepository.swift",
@@ -562,10 +566,78 @@ for (const sourceName of [
   "Models.swift",
   "AppState.swift",
   "CoursesView.swift",
-  "GradesView.swift"
+  "GradesView.swift",
+  "AppShellViews.swift",
+  "ProfileDetailViews.swift",
+  "JoinRequestStatusView.swift"
 ]) {
   requireText(project, sourceName, `Xcode project contains ${sourceName}`);
 }
+
+// Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch
+// course guide, then sign-in.
+const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");
+const profileDetailViews = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
+const joinRequestStatusView = read("BNBUStudentApp/Features/JoinRequestStatusView.swift");
+
+requireOrder(
+  appShellViews,
+  ["case restoring", "case privacyConsent", "case preLoginGuide", "case login", "case authenticated"],
+  "The app shell keeps Android's startup gate order"
+);
+requireText(
+  appShellViews,
+  "guard BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults) else {",
+  "Privacy consent is a gate ahead of sign-in, not a login-form checkbox"
+);
+// Resolving the stage one frame late swapped the root view under the tab bar,
+// which dropped the accessibility identifiers on its items.
+requireText(
+  read("BNBUStudentApp/BNBUStudentApp.swift"),
+  "initialValue: AppShellStage.resolved(",
+  "The startup destination is resolved before the first frame"
+);
+requireText(
+  appShellViews,
+  'record["version"] as? String == currentVersion',
+  "Consent records the policy version so a new policy re-asks"
+);
+// The disclosure must describe what this app actually does; Android's copy
+// names Firebase and promises no microphone, neither of which is true here.
+rejectText(appShellViews, "Firebase", "The iOS consent summary does not claim Firebase messaging");
+requireText(appShellViews, "麦克风记录声音", "The iOS consent summary discloses microphone use during video capture");
+requireText(
+  appState,
+  "guard isAuthenticated else",
+  "A course join request cannot be submitted before sign-in"
+);
+
+// Settings, account details, about, and the changelog are separate pages.
+requireText(profileView, '.accessibilityIdentifier("profile.settings.button")', "The profile header exposes the settings gear");
+requireText(profileView, '.accessibilityIdentifier("profile.accountDetails.button")', "The profile header card opens account details");
+rejectText(profileView, "private var settingsPanel", "The profile tab no longer inlines the settings block");
+requireOrder(
+  profileDetailViews,
+  ["accountSecurityPanel", "preferencesPanel", "helpAndSupportPanel", "logoutCard"],
+  "The settings page keeps Android's group order"
+);
+requireText(profileDetailViews, 'Bundle.main.infoDictionary', "The about page reads the real bundle version");
+rejectText(profileDetailViews, "BNBU Student MVP 1.0", "No hard-coded version string reaches the about page");
+
+// Join-request status: four server states, with correction kept apart from
+// rejection because only one of them is actionable by the student.
+requireText(joinRequestStatusView, "case .needsCorrection:", "The join-request page handles the correction state");
+requireText(joinRequestStatusView, "case .active:", "An approved request leaves the status page");
+requireText(joinRequestStatusView, "onApproved()", "An approved request reports back instead of rendering a fifth state");
+requireText(modelTests, "testJoinRequestStatusKeepsCorrectionApartFromRejection", "XCTest covers join-request status decoding");
+requireText(modelTests, "testDevicePrivacyConsentIsVersionedAndSatisfiesTheLoginForm", "XCTest covers device-level consent versioning");
+requireText(modelTests, "testCourseJoinRequestNeedsAnAccountBeforeSubmission", "XCTest covers the pre-login join-request guard");
+requireText(modelTests, "testWorkspaceCacheKeepsJoinRequestAndToleratesOlderCaches", "XCTest covers join-request cache compatibility");
+
+// Opening a notice marks it read, which removes it from the unread filter; the
+// pushed detail must not depend on that row.
+rejectText(dashboardView, "simultaneousGesture(TapGesture()", "Notice rows do not race navigation against mark-as-read");
+requireText(dashboardView, "navigationDestination(item: $openedNotice)", "The notice detail is pushed from a captured copy");
 requireText(project, "PrivacyInfo.xcprivacy in Resources", "Xcode copies the privacy manifest into the app");
 
 requireText(modelTests, "testCurrentBackendStudentWorkspacePayloadsDecode", "XCTest covers current workspace payload shapes");

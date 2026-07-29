@@ -29,8 +29,13 @@ struct DashboardView: View {
                         todayCheckInPanel
                     }
 
-                    if let pending = appState.pendingEnrollmentCourses.first {
-                        JoinRequestEntryPanel(course: pending, onOpen: openCourses)
+                    if let joinRequest = appState.workspace.courseJoinRequest,
+                       joinRequest.status != .active {
+                        JoinRequestEntryPanel(
+                            request: joinRequest,
+                            identifier: "dashboard.joinRequest.entry",
+                            onOpen: openCourses
+                        )
                     } else if !hasActiveEnrollment {
                         courseJoinEntryPanel
                     }
@@ -442,36 +447,6 @@ private struct CheckInWindowStatusRow: View {
     }
 }
 
-private struct JoinRequestEntryPanel: View {
-    let course: Course
-    let onOpen: () -> Void
-
-    var body: some View {
-        Button(action: onOpen) {
-            HomeCard {
-                HStack(spacing: BNBUSpacing.space12) {
-                    VStack(alignment: .leading, spacing: BNBUSpacing.space4) {
-                        Text("加入申请")
-                            .font(BNBUFont.titleMedium)
-                            .foregroundStyle(BNBUTheme.onSurface)
-                        Text(verbatim: "\(course.displayTitle) · \(BNBUL10n.dynamicText(course.enrollmentStatus.title))")
-                            .font(BNBUFont.bodyMedium)
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    StatusBadge(
-                        text: course.enrollmentStatus.title,
-                        filled: course.isAwaitingEnrollmentReview
-                    )
-                }
-            }
-        }
-        .buttonStyle(BNBUPressStyle())
-        .accessibilityIdentifier("dashboard.joinRequest.entry")
-    }
-}
-
 private struct ExerciseResumePanel: View {
     let session: ExerciseSession
     let onResume: () -> Void
@@ -648,6 +623,7 @@ private struct NotificationCenterSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var selectedFilter: DashboardNotificationFilter = .all
+    @State private var openedNotice: StudentNotice?
 
     var body: some View {
         NavigationStack {
@@ -690,17 +666,20 @@ private struct NotificationCenterSheet: View {
                     ScrollView {
                         LazyVStack(spacing: 10) {
                             ForEach(filteredNotices) { notice in
-                                NavigationLink {
-                                    NoticeDetailView(notice: notice)
+                                Button {
+                                    // Opening a notice marks it read, which drops
+                                    // it out of the "unread" filter. The detail is
+                                    // therefore pushed from a captured copy so the
+                                    // destination never depends on a row that is
+                                    // about to disappear.
+                                    openedNotice = notice
+                                    if notice.isUnread {
+                                        appState.markNoticeRead(id: notice.id)
+                                    }
                                 } label: {
                                     NoticeRow(notice: notice)
                                 }
                                 .buttonStyle(.plain)
-                                .simultaneousGesture(TapGesture().onEnded {
-                                    if notice.isUnread {
-                                        appState.markNoticeRead(id: notice.id)
-                                    }
-                                })
                             }
                         }
                     }
@@ -709,6 +688,9 @@ private struct NotificationCenterSheet: View {
             .padding(.horizontal, BNBUSpacing.screen)
             .padding(.top, 8)
             .background(BNBUTheme.background)
+            .navigationDestination(item: $openedNotice) { notice in
+                NoticeDetailView(notice: notice)
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("关闭") { dismiss() }

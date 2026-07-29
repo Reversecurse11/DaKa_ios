@@ -10,13 +10,15 @@ struct BNBUStudentApp: App {
     @StateObject private var languageSettings: BNBULanguageSettings
     @AppStorage(BNBUAppearanceMode.defaultsKey) private var appearanceModeRaw = BNBUAppearanceMode.light.rawValue
     @State private var systemLocaleIdentifier: String
-    @State private var showOnboarding = false
+    @State private var shellStage: AppShellStage = .restoring
 
     init() {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-ui-testing-reset") {
             AppLocalStore().clearAll()
             BNBUPrivacyConsent.clearAll()
+            BNBUDevicePrivacyConsent.clearAll()
+            BNBUPreLoginGuide.clearAll()
             UserDefaults.standard.set(
                 BNBULanguage.defaultMode.rawValue,
                 forKey: BNBULanguage.defaultsKey
@@ -59,36 +61,18 @@ struct BNBUStudentApp: App {
         }
 #endif
         _appState = StateObject(wrappedValue: state)
+        _shellStage = State(
+            initialValue: AppShellStage.resolved(
+                isAuthenticated: state.isAuthenticated,
+                isUITesting: arguments.contains("-ui-testing-reset"),
+                showsStartupGates: arguments.contains("-ui-testing-startup-gates")
+            )
+        )
     }
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if appState.isAuthenticated {
-                    AppRootView()
-                        .onAppear {
-                            guard !isUITesting else { return }
-                            if BNBUOnboarding.completedVersion(
-                                studentID: appState.workspace.student.id
-                            ) < BNBUOnboarding.currentVersion {
-                                showOnboarding = true
-                            } else {
-                                BNBUNotificationManager.requestAuthorization()
-                            }
-                        }
-                        .fullScreenCover(isPresented: $showOnboarding) {
-                            OnboardingView {
-                                BNBUOnboarding.markCompleted(
-                                    studentID: appState.workspace.student.id
-                                )
-                                showOnboarding = false
-                                BNBUNotificationManager.requestAuthorization()
-                            }
-                        }
-                } else {
-                    LoginView()
-                }
-            }
+            AppShellView(isUITesting: isUITesting, stage: $shellStage)
             .environmentObject(appState)
             .environmentObject(languageSettings)
             .environment(\.locale, resolvedLocale)
