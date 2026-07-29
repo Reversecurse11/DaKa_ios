@@ -5,31 +5,12 @@ import UniformTypeIdentifiers
 import AVFoundation
 import UIKit
 
+/// Android's `GridBackground` is a plain background surface; the drawn grid
+/// was dropped from the baseline, so this stays a flat colour.
 struct GridBackground: View {
     var body: some View {
-        Canvas { context, size in
-            let spacing: CGFloat = 42
-            let color = BNBUTheme.outline.opacity(0.06)
-            var path = Path()
-
-            var x: CGFloat = 0
-            while x <= size.width {
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                x += spacing
-            }
-
-            var y: CGFloat = 0
-            while y <= size.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                y += spacing
-            }
-
-            context.stroke(path, with: .color(color), lineWidth: 1)
-        }
-        .background(BNBUTheme.background)
-        .ignoresSafeArea()
+        BNBUTheme.background
+            .ignoresSafeArea()
     }
 }
 
@@ -37,6 +18,24 @@ struct BNBUPageBackground: View {
     var body: some View {
         BNBUTheme.background
             .ignoresSafeArea()
+    }
+}
+
+/// Android communicates presses with scale and opacity instead of a ripple
+/// (`Motion.kt` / `pressScale`): 0.97 scale, 92% opacity, settling in ~180ms
+/// with no overshoot.
+struct BNBUPressStyle: ButtonStyle {
+    var enabled = true
+
+    func makeBody(configuration: Configuration) -> some View {
+        let isPressed = configuration.isPressed && enabled
+        return configuration.label
+            .scaleEffect(isPressed ? BNBUMotion.pressedScale : 1)
+            .opacity(isPressed ? BNBUMotion.pressedOpacity : 1)
+            .animation(
+                .interpolatingSpring(stiffness: 520, damping: 34),
+                value: isPressed
+            )
     }
 }
 
@@ -90,12 +89,8 @@ struct BrandMark: View {
             .resizable()
             .scaledToFit()
             .padding(compact ? 5 : 7)
-            .background(BNBUTheme.surface)
+            .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous)
-                    .stroke(BNBUTheme.outline.opacity(0.55), lineWidth: 1)
-            }
         .frame(width: compact ? 44 : 64, height: compact ? 44 : 64)
         .accessibilityLabel("BNBU 校徽")
     }
@@ -112,8 +107,7 @@ struct SwissPanel<Content: View>: View {
         content
             .padding(BNBUSpacing.panel)
             .background(BNBUTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .shadow(color: BNBUTheme.onSurface.opacity(0.06), radius: 2, y: 1)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.large, style: .continuous))
     }
 }
 
@@ -123,7 +117,8 @@ struct SectionTitle: View {
 
     var body: some View {
         Text(LocalizedStringKey(title))
-            .font(.title2.weight(.regular))
+            .font(BNBUFont.headlineSmall)
+            .tracking(BNBUFont.Tracking.headlineSmall)
             .foregroundStyle(BNBUTheme.onSurface)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -135,14 +130,15 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(verbatim: BNBUL10n.dynamicText(text))
-            .font(.caption.weight(.medium))
+            .font(BNBUFont.labelMedium)
             .foregroundStyle(filled ? BNBUTheme.onPrimaryContainer : BNBUTheme.onSurfaceVariant)
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            .truncationMode(.tail)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(filled ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.extraSmall, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.pill, style: .continuous))
+            .animation(.easeInOut(duration: BNBUMotion.standard), value: filled)
     }
 }
 
@@ -163,9 +159,10 @@ struct HourProgressBar: View {
                 RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
                     .fill(BNBUTheme.primary)
                     .frame(width: proxy.size.width * ratio)
+                    .animation(.easeInOut(duration: BNBUMotion.progress), value: ratio)
             }
         }
-        .frame(height: 12)
+        .frame(height: 8)
     }
 }
 
@@ -195,31 +192,44 @@ struct MetricCell: View {
     }
 }
 
+/// Mirrors Android `PrimaryActionButton`: filled primary, 52pt minimum
+/// height, medium radius, 20pt leading icon and an 18pt spinner while loading.
 struct PrimaryActionButton: View {
     let title: String
     let systemImage: String
     var accessibilityIdentifier: String?
+    var isLoading = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Label {
+            HStack(spacing: BNBUSpacing.space8) {
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(BNBUTheme.onPrimary)
+                        .frame(width: 18, height: 18)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 20, weight: .medium))
+                }
                 Text(LocalizedStringKey(title))
-            } icon: {
-                Image(systemName: systemImage)
+                    .font(BNBUFont.labelLarge)
             }
-                .font(.headline.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(BNBUTheme.onPrimary)
-                .background(BNBUTheme.primary)
-                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.extraLarge, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: BNBUSpacing.primaryControlHeight)
+            .foregroundStyle(BNBUTheme.onPrimary)
+            .background(isLoading ? BNBUTheme.primary.opacity(0.58) : BNBUTheme.primary)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BNBUPressStyle(enabled: !isLoading))
+        .disabled(isLoading)
         .accessibilityIdentifier(accessibilityIdentifier ?? title)
     }
 }
 
+/// Mirrors Android `ActionButton(filled = false)`: a quiet
+/// `surfaceContainerHighest` fill with primary-coloured content, never an
+/// outline. The two button levels must not swap hierarchy across platforms.
 struct SecondaryActionButton: View {
     let title: String
     let systemImage: String
@@ -227,22 +237,24 @@ struct SecondaryActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label {
-                Text(LocalizedStringKey(title))
-            } icon: {
+            HStack(spacing: BNBUSpacing.space8) {
                 Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .medium))
+                Text(LocalizedStringKey(title))
+                    .font(BNBUFont.labelLarge)
+                    .lineLimit(1)
             }
-                .font(.subheadline.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .foregroundStyle(BNBUTheme.onSurface)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(radius: BNBURadius.extraLarge, lineWidth: 1.5)
+            .frame(maxWidth: .infinity, minHeight: BNBUSpacing.primaryControlHeight)
+            .foregroundStyle(BNBUTheme.primary)
+            .background(BNBUTheme.surfaceContainerHighest)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BNBUPressStyle())
     }
 }
 
+/// A primary action that can be blocked. Android expresses the disabled state
+/// with a `surfaceVariant` fill and `onSurfaceVariant` content.
 struct DisabledAwareButton: View {
     let title: String
     let systemImage: String
@@ -252,39 +264,171 @@ struct DisabledAwareButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label {
-                Text(LocalizedStringKey(title))
-            } icon: {
+            HStack(spacing: BNBUSpacing.space8) {
                 Image(systemName: systemImage)
+                    .font(.system(size: 20, weight: .medium))
+                Text(LocalizedStringKey(title))
+                    .font(BNBUFont.labelLarge)
             }
-                .font(.headline.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(isDisabled ? BNBUTheme.onSurfaceVariant : BNBUTheme.onPrimaryContainer)
-                .background(isDisabled ? BNBUTheme.surfaceVariant : BNBUTheme.primaryContainer)
-                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.large, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: BNBUSpacing.primaryControlHeight)
+            .foregroundStyle(isDisabled ? BNBUTheme.onSurfaceVariant : BNBUTheme.onPrimary)
+            .background(isDisabled ? BNBUTheme.surfaceVariant : BNBUTheme.primary)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BNBUPressStyle(enabled: !isDisabled))
         .disabled(isDisabled)
         .accessibilityIdentifier(accessibilityIdentifier ?? title)
     }
 }
 
+/// Android renders the empty state on a `shapes.medium` card rather than the
+/// larger `SwissPanel` radius.
 struct EmptyPlaceholder: View {
     let title: String
     let message: String
 
     var body: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(LocalizedStringKey(title))
-                    .font(.headline.weight(.medium))
-                Text(LocalizedStringKey(message))
-                    .font(.subheadline.weight(.regular))
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            Text(LocalizedStringKey(title))
+                .font(BNBUFont.titleMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+            Text(LocalizedStringKey(message))
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BNBUSpacing.panel)
+        .background(BNBUTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+    }
+}
+
+/// Mirrors Android `SegmentedControl`: a `surfaceContainerHighest` track with
+/// 4pt inset and gap, 44pt tall segments and a plain `surface` fill on the
+/// selected one. The native iOS control is roughly 12pt shorter and cannot
+/// carry the baseline geometry, so this is rebuilt rather than adapted.
+struct BNBUSegmentedControl<Value: Hashable>: View {
+    let values: [Value]
+    @Binding var selection: Value
+    let title: (Value) -> String
+    var identifier: (Value) -> String
+
+    var body: some View {
+        HStack(spacing: BNBUSpacing.space4) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                segment(for: value)
+            }
+        }
+        .padding(BNBUSpacing.space4)
+        .background(BNBUTheme.surfaceContainerHighest)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+    }
+
+    private func segment(for value: Value) -> some View {
+        let isSelected = value == selection
+        return Button {
+            selection = value
+        } label: {
+            Text(LocalizedStringKey(title(value)))
+                .font(BNBUFont.labelLarge)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .foregroundStyle(isSelected ? BNBUTheme.onSurface : BNBUTheme.onSurfaceVariant)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.horizontal, BNBUSpacing.space8)
+                .background(isSelected ? BNBUTheme.surface : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+        }
+        .buttonStyle(BNBUPressStyle())
+        // Traits must be added before the identifier; a trailing
+        // `accessibilityAddTraits` discards an identifier set above it.
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier(identifier(value))
+    }
+}
+
+/// Mirrors the Material3 `FilterChip` row Android uses for the notification
+/// filters: 32pt tall, `small` radius, an outline when unselected and a
+/// `secondaryContainer` fill when selected.
+struct BNBUFilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(LocalizedStringKey(title))
+                .font(BNBUFont.labelMedium)
+                .lineLimit(1)
+                .foregroundStyle(
+                    isSelected ? BNBUTheme.onSecondaryContainer : BNBUTheme.onSurfaceVariant
+                )
+                .padding(.horizontal, BNBUSpacing.space16)
+                .frame(minHeight: 32)
+                .background(isSelected ? BNBUTheme.secondaryContainer : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                .overlay {
+                    if !isSelected {
+                        RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
+                            .stroke(BNBUTheme.outlineVariant, lineWidth: 1)
+                    }
+                }
+        }
+        .buttonStyle(BNBUPressStyle())
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+    }
+}
+
+/// Mirrors Android `ValidationPanel`: an `errorContainer` row shown next to the
+/// field or submit action it blocks, with text rather than colour alone.
+struct ValidationPanel: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: BNBUSpacing.space8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(BNBUTheme.error)
+            Text(verbatim: BNBUL10n.dynamicText(message))
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onErrorContainer)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(BNBUSpacing.space12)
+        .background(BNBUTheme.errorContainer)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+        .accessibilityIdentifier("panel.validation")
+    }
+}
+
+/// Mirrors Android `StatusMessagePanel`: a dismissable success surface, never a
+/// toast that disappears on its own.
+struct StatusMessagePanel: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(BNBUTheme.primary)
+                Text(verbatim: BNBUL10n.dynamicText(message))
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                StatusBadge(text: "完成", filled: true)
+            }
+            SecondaryActionButton(title: "知道了", systemImage: "xmark") {
+                onDismiss()
+            }
+        }
+        .padding(BNBUSpacing.panel)
+        .background(BNBUTheme.tertiaryContainer)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+        .accessibilityIdentifier("panel.statusMessage")
     }
 }
 

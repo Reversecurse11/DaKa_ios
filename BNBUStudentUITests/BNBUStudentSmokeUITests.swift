@@ -161,12 +161,12 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         openTab(label: "我的", screenIdentifier: "screen.profile")
 
-        let languagePicker = app.segmentedControls["profile.language.picker"]
-        for _ in 0..<6 where !languagePicker.waitForExistence(timeout: 0.5) {
+        let englishSegment = app.buttons["English"]
+        for _ in 0..<6 where !englishSegment.waitForExistence(timeout: 0.5) {
             app.swipeUp()
         }
-        XCTAssertTrue(languagePicker.waitForExistence(timeout: 2))
-        languagePicker.buttons["English"].tap()
+        XCTAssertTrue(englishSegment.waitForExistence(timeout: 2))
+        englishSegment.tap()
 
         let homeLabelUpdated = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "Home"),
@@ -187,7 +187,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
 
-        app.segmentedControls.buttons["提交"].tap()
+        app.buttons["提交"].firstMatch.tap()
 
         // Q&A 7/23 (Q5): the sport note is required before submitting.
         let noteEditor = app.textViews["运动说明"]
@@ -225,7 +225,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.segmentedControls.buttons["提交"].tap()
+        app.buttons["提交"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 5))
 
         // The launch fixture seeds one hidden draft without exposing a debug
@@ -284,7 +284,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.launch()
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.segmentedControls.buttons["提交"].tap()
+        app.buttons["提交"].firstMatch.tap()
 
         scrollToAndTap(app.buttons["跑步"])
         scrollToAndTap(app.buttons["checkin.exercise.start"])
@@ -305,7 +305,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
 
-        app.segmentedControls.buttons["记录"].tap()
+        app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 3))
         // The mock workspace ships one teacher-invalidated record (r4);
@@ -446,7 +446,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
         XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["记录"].tap()
+        app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["待审核"].exists)
@@ -491,7 +491,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         dismissSavePasswordPromptIfNeeded()
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.segmentedControls.buttons["提交"].tap()
+        app.buttons["提交"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["运动已结束"].waitForExistence(timeout: 5))
 
@@ -555,7 +555,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         dismissSavePasswordPromptIfNeeded()
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.segmentedControls.buttons["记录"].tap()
+        app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 10))
 
         let noteMatch = app.staticTexts.containing(

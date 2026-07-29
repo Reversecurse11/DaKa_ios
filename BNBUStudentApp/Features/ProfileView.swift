@@ -366,12 +366,14 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("外观模式")
                         .font(.headline.weight(.medium))
-                    Picker("外观模式", selection: $appearanceModeRaw) {
-                        ForEach(BNBUAppearanceMode.allCases) { mode in
-                            Text(LocalizedStringKey(shortAppearanceTitle(mode))).tag(mode.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    BNBUSegmentedControl(
+                        values: BNBUAppearanceMode.allCases.map(\.rawValue),
+                        selection: $appearanceModeRaw,
+                        title: { raw in
+                            BNBUAppearanceMode(rawValue: raw).map(shortAppearanceTitle) ?? raw
+                        },
+                        identifier: { "profile.appearance.\($0)" }
+                    )
                     Text("默认使用浅色模式；选择跟随系统后会随设备设置切换。")
                         .font(.caption.weight(.regular))
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -382,12 +384,14 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("语言")
                         .font(.headline.weight(.medium))
-                    Picker("语言", selection: languageSelection) {
-                        ForEach(BNBULanguage.allCases) { language in
-                            Text(LocalizedStringKey(language.title)).tag(language.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    BNBUSegmentedControl(
+                        values: BNBULanguage.allCases.map(\.rawValue),
+                        selection: languageSelection,
+                        title: { raw in
+                            BNBULanguage(rawValue: raw)?.title ?? raw
+                        },
+                        identifier: { "profile.language.\($0)" }
+                    )
                     .accessibilityIdentifier("profile.language.picker")
                     Text("切换后立即生效；选择跟随系统后会随设备语言更新。课程名称等由教师或管理员录入的数据内容保持原文。")
                         .font(.caption.weight(.regular))

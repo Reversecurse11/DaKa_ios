@@ -477,12 +477,20 @@ private struct NotificationCenterSheet: View {
                     .disabled(appState.unreadNoticeCount == 0)
                 }
 
-                Picker("通知筛选", selection: $selectedFilter) {
-                    ForEach(DashboardNotificationFilter.allCases) { filter in
-                        Text(LocalizedStringKey(filter.rawValue)).tag(filter)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: BNBUSpacing.space8) {
+                        ForEach(DashboardNotificationFilter.allCases) { filter in
+                            BNBUFilterChip(
+                                title: filter.rawValue,
+                                isSelected: filter == selectedFilter
+                            ) {
+                                selectedFilter = filter
+                            }
+                            .accessibilityIdentifier("notifications.filter.\(filter.rawValue)")
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
+                .padding(.vertical, 10)
 
                 if filteredNotices.isEmpty {
                     EmptyPlaceholder(title: "暂无通知", message: "当前筛选条件下没有通知。")

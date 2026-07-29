@@ -76,12 +76,12 @@ struct CheckInView: View {
             BNBUPageBackground()
 
             VStack(spacing: 0) {
-                Picker("打卡", selection: $selectedSegment) {
-                    ForEach(CheckInSegment.allCases) { segment in
-                        Text(LocalizedStringKey(segment.rawValue)).tag(segment)
-                    }
-                }
-                .pickerStyle(.segmented)
+                BNBUSegmentedControl(
+                    values: CheckInSegment.allCases,
+                    selection: $selectedSegment,
+                    title: \.rawValue,
+                    identifier: { "checkin.segment.\($0.rawValue)" }
+                )
                 .padding([.horizontal, .top], 18)
                 .padding(.bottom, 10)
 
@@ -240,12 +240,12 @@ struct CheckInView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("运动类型")
                         .font(.headline.weight(.medium))
-                    Picker("运动类型", selection: $selectedCategory) {
-                        ForEach(ExerciseCategory.allCases) { category in
-                            Text(LocalizedStringKey(category.title)).tag(category)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    BNBUSegmentedControl(
+                        values: ExerciseCategory.allCases,
+                        selection: $selectedCategory,
+                        title: \.title,
+                        identifier: { "checkin.category.\($0.rawValue)" }
+                    )
                 }
 
                 if let course = appState.currentExerciseCourse {
