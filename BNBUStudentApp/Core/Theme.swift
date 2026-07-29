@@ -41,6 +41,29 @@ enum BNBUAppearanceMode: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
+
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: return .unspecified
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+
+    /// `preferredColorScheme` only re-resolves the views it encloses. Sheets and
+    /// alerts are hosted by their own presentation controllers, so switching the
+    /// mode from the settings sheet left that sheet on the previous palette
+    /// until it was dismissed. Overriding the style on the window covers every
+    /// presentation, including the one the switch lives in.
+    @MainActor
+    func applyToWindows() {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                window.overrideUserInterfaceStyle = interfaceStyle
+            }
+        }
+    }
 }
 
 enum BNBULanguage: String, CaseIterable, Identifiable {

@@ -100,7 +100,7 @@ struct MockStudentRepository: StudentRepository {
             exam: 86,
             attendance: 90,
             physical: 78,
-            status: "差课程 4h",
+            status: "差课程 4 小时",
             source: "seed",
             organizationCredit: teamCredit
         )

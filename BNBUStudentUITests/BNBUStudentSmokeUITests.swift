@@ -1,4 +1,5 @@
 import CoreLocation
+import UIKit
 import XCTest
 
 final class BNBUStudentSmokeUITests: XCTestCase {
@@ -42,6 +43,83 @@ final class BNBUStudentSmokeUITests: XCTestCase {
             attachScreenshot(named: "\(configuration.name)-top")
             app.swipeUp()
             attachScreenshot(named: "\(configuration.name)-lower")
+        }
+    }
+
+    /// Switching the appearance from the settings sheet has to repaint the sheet
+    /// itself, not just the pages behind it.
+    func testAppearanceSwitchRepaintsThePresentedSettingsSheet() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        tabButton("tab.profile").tap()
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+
+        let sheet = screen("screen.profileSettings")
+        let lightBackground = try XCTUnwrap(sheet.screenshot().image.averageBrightness)
+
+        app.buttons["profile.appearance.dark"].tap()
+        // The sheet keeps its identity, so poll its own pixels rather than
+        // waiting for an element to appear.
+        var darkBackground = lightBackground
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            darkBackground = try XCTUnwrap(sheet.screenshot().image.averageBrightness)
+            if darkBackground < lightBackground - 0.3 { break }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        attachScreenshot(named: "appearance-switched-to-dark")
+        XCTAssertLessThan(
+            darkBackground,
+            lightBackground - 0.3,
+            "The settings sheet stayed on the light palette after switching to dark"
+        )
+
+        app.buttons["profile.appearance.light"].tap()
+        var restored = darkBackground
+        let restoreDeadline = Date().addingTimeInterval(5)
+        while Date() < restoreDeadline {
+            restored = try XCTUnwrap(sheet.screenshot().image.averageBrightness)
+            if restored > darkBackground + 0.3 { break }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        attachScreenshot(named: "appearance-switched-back-to-light")
+        XCTAssertGreaterThan(
+            restored,
+            darkBackground + 0.3,
+            "The settings sheet stayed on the dark palette after switching back to light"
+        )
+    }
+
+    /// Temporary: sweeps every tab plus the settings sheet in dark mode and in
+    /// English, to chase down the appearance and mixed-language defects seen in
+    /// the demo.
+    func testTempShotsAppearanceAndLanguageAudit() throws {
+        let passes: [(name: String, arguments: [String])] = [
+            ("dark-zh", ["-bnbu.appearance.mode.v3", "dark", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]),
+            ("dark-en", ["-bnbu.appearance.mode.v3", "dark", "-ui-testing-language-en", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]),
+            ("light-en", ["-ui-testing-language-en", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        ]
+        let tabs = ["tab.dashboard", "tab.courses", "tab.checkin", "tab.grades", "tab.profile"]
+
+        for pass in passes {
+            app.terminate()
+            app = XCUIApplication()
+            app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-completed-exercise"] + pass.arguments
+            app.launch()
+            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8), pass.name)
+
+            for (index, tab) in tabs.enumerated() {
+                tabButton(tab).tap()
+                attachScreenshot(named: "\(pass.name)-\(index + 1)-\(tab)")
+                app.swipeUp()
+                attachScreenshot(named: "\(pass.name)-\(index + 1)-\(tab)-lower")
+            }
+
+            // The settings sheet is where the appearance switch lives.
+            tabButton("tab.profile").tap()
+            app.buttons["profile.settings.button"].tap()
+            XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5), pass.name)
+            attachScreenshot(named: "\(pass.name)-6-settings")
         }
     }
 
@@ -914,5 +992,28 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
             .tap()
+    }
+}
+
+private extension UIImage {
+    /// Mean luminance, so a palette check does not depend on exact colours.
+    var averageBrightness: CGFloat? {
+        guard let cgImage else { return nil }
+        var pixel: [UInt8] = [0, 0, 0, 0]
+        guard let context = CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return 0.299 * CGFloat(pixel[0]) / 255
+            + 0.587 * CGFloat(pixel[1]) / 255
+            + 0.114 * CGFloat(pixel[2]) / 255
     }
 }

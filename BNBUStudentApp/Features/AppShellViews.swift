@@ -226,7 +226,7 @@ struct PrivacyConsentView: View {
             BNBUPageBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("BNBU SPORTS")
+                    Text(verbatim: "BNBU SPORTS")
                         .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.primary)
                         .padding(.bottom, 20)
@@ -556,7 +556,7 @@ struct BNBUGuideArtwork: View {
                         Text("扫码或手动输入")
                             .font(BNBUFont.titleSmall)
                             .foregroundStyle(BNBUTheme.onSurface)
-                        Text("PE1024")
+                        Text(verbatim: "PE1024")
                             .font(BNBUFont.bodySmall.monospaced())
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }

@@ -25,8 +25,8 @@ struct CourseDetailView: View {
                             Text("我的课程相关进度")
                                 .font(BNBUFont.titleMedium)
                             HourProgressBar(value: appState.workspace.progress.course, total: appState.hourRule.courseRequired)
-                            DetailFactRow(label: "已完成", value: appState.workspace.progress.course.hourText)
-                            DetailFactRow(label: "仍缺口", value: appState.courseRemaining.hourText)
+                            DetailFactRow(label: "已完成", value: appState.workspace.progress.course.localizedHourText)
+                            DetailFactRow(label: "仍缺口", value: appState.courseRemaining.localizedHourText)
                         }
                     }
 
@@ -71,7 +71,7 @@ struct RecordDetailView: View {
                                 StatusBadge(text: "已提交", filled: true)
                                 StatusBadge(text: record.validity.rawValue, filled: record.validity == .valid)
                                 Spacer()
-                                Text(record.hours.hourText)
+                                Text(record.hours.localizedHourText)
                                     .font(BNBUFont.headlineSmall)
                             }
                             DetailFactRow(label: "提交时间", value: record.submittedAt)
@@ -227,7 +227,7 @@ struct RecordCard: View {
 
                 HStack {
                     StatusBadge(text: record.creditType.rawValue)
-                    Text(record.hours.hourText)
+                    Text(record.hours.localizedHourText)
                         .font(BNBUFont.titleMedium)
                     Spacer()
                 }

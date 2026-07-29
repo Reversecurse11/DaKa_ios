@@ -77,7 +77,15 @@ struct BNBUStudentApp: App {
             .environmentObject(languageSettings)
             .environment(\.locale, resolvedLocale)
             .tint(BNBUTheme.primary)
-            .preferredColorScheme(appearanceMode.colorScheme)
+            // Deliberately not `preferredColorScheme`: SwiftUI resolves that per
+            // presentation host and never pushes a later change into a sheet that
+            // is already on screen, which left the settings sheet — the one the
+            // switch lives in — on the previous palette. Overriding the style on
+            // the window makes UIKit propagate the change to every presentation.
+            .onAppear { appearanceMode.applyToWindows() }
+            .onChange(of: appearanceModeRaw) { _, _ in
+                appearanceMode.applyToWindows()
+            }
             .onChange(of: languageSettings.mode) { _, newMode in
                 if newMode == .system {
                     refreshSystemLocale()
@@ -89,6 +97,8 @@ struct BNBUStudentApp: App {
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     refreshSystemLocale()
+                    // A scene that just connected brings its own window.
+                    appearanceMode.applyToWindows()
                 }
             }
         }

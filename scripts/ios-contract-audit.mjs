@@ -574,6 +574,26 @@ for (const sourceName of [
   requireText(project, sourceName, `Xcode project contains ${sourceName}`);
 }
 
+// Appearance and hour formatting: two defects found in the 29 July demo.
+const appEntryPoint = read("BNBUStudentApp/BNBUStudentApp.swift");
+requireText(
+  appEntryPoint,
+  "appearanceMode.applyToWindows()",
+  "The appearance mode is applied to the window so presented sheets repaint too"
+);
+rejectText(
+  appEntryPoint,
+  "preferredColorScheme(appearanceMode.colorScheme)",
+  "The root does not set preferredColorScheme, which never reaches a presented sheet"
+);
+rejectText(
+  swiftFiles(path.join(iosRoot, "BNBUStudentApp", "Features"))
+    .map((file) => fs.readFileSync(file, "utf8"))
+    .join("\n"),
+  ".hourText",
+  "Views format hours through localizedHourText so a Chinese UI never shows \"4h\""
+);
+
 // Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch
 // course guide, then sign-in.
 const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");

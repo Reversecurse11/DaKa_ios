@@ -213,6 +213,7 @@
       }
     },
     "%lld × %@ = %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -489,6 +490,7 @@
       }
     },
     "99+": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -505,7 +507,6 @@
       }
     },
     "App 版本": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1117,6 +1118,7 @@
       }
     },
     "优先补齐课程相关 %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1228,7 +1230,6 @@
       }
     },
     "体育学时进度": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1391,6 +1392,7 @@
       }
     },
     "保持运动记录连续性，关注下一次课程任务发布。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1407,6 +1409,7 @@
       }
     },
     "修正审批中": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1834,6 +1837,7 @@
       }
     },
     "全部学时已完成": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1866,6 +1870,7 @@
       }
     },
     "公示中": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1882,6 +1887,7 @@
       }
     },
     "公示期已结束，成绩等待归档。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1942,7 +1948,6 @@
       }
     },
     "其他运动": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1959,6 +1964,7 @@
       }
     },
     "其他运动还差 %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1975,6 +1981,7 @@
       }
     },
     "其他运动还差 %@。可通过自主运动打卡或有效组织认证完成。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2232,6 +2239,7 @@
       }
     },
     "切换后立即生效；选择跟随系统后会随设备语言更新。课程名称等由教师或管理员录入的数据内容保持原文。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2826,6 +2834,7 @@
       }
     },
     "基于当前已录入的 %lld 项成绩与权重规则展示，最终结果以教务汇总为准。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3505,6 +3514,7 @@
       }
     },
     "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3645,6 +3655,7 @@
       }
     },
     "已归档": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3661,6 +3672,7 @@
       }
     },
     "已录入": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3912,6 +3924,7 @@
       }
     },
     "已退回": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4184,6 +4197,7 @@
       }
     },
     "归档审核中": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4369,6 +4383,7 @@
       }
     },
     "当前成绩构成的权重合计为 %@，尚未覆盖满分，预估分仅供参考。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4418,6 +4433,7 @@
       }
     },
     "当前没有阻塞事项": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4434,6 +4450,7 @@
       }
     },
     "当前没有阻塞项。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4678,6 +4695,7 @@
       }
     },
     "待提交归档": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4770,6 +4788,7 @@
       }
     },
     "总分计算": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4786,6 +4805,7 @@
       }
     },
     "总分预估": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4901,6 +4921,7 @@
       }
     },
     "成绩修正审批中，批准后会更新。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4950,6 +4971,7 @@
       }
     },
     "成绩已发布，当前处于公示期。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4966,6 +4988,7 @@
       }
     },
     "成绩已归档，为最终结果。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4999,6 +5022,7 @@
       }
     },
     "成绩已退回给教师修正，修正后会重新提交归档。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5015,6 +5039,7 @@
       }
     },
     "成绩归档审核中，当前为只读。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5064,6 +5089,7 @@
       }
     },
     "成绩状态": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5162,7 +5188,6 @@
       }
     },
     "我的": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5262,6 +5287,7 @@
       }
     },
     "打卡": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5278,6 +5304,7 @@
       }
     },
     "打卡与录入中": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5402,6 +5429,7 @@
       }
     },
     "打卡未满：课程相关还差 %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5534,6 +5562,7 @@
       }
     },
     "扫描二维码": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5614,6 +5643,7 @@
       }
     },
     "扫码 / 邀请码加入": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5823,6 +5853,7 @@
       }
     },
     "提交加入申请": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6229,7 +6260,18 @@
         }
       }
     },
+    "教师暂未填写说明，请联系教师确认。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The teacher has not left a note. Please contact your teacher to confirm."
+          }
+        }
+      }
+    },
     "教师正在录入成绩，正式总分发布后可见。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6425,6 +6467,7 @@
       }
     },
     "无缺失": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6931,6 +6974,7 @@
       }
     },
     "服务器：学生成绩接口": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6947,6 +6991,7 @@
       }
     },
     "服务器：成绩尚未返回": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7024,6 +7069,7 @@
       }
     },
     "未录入": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7154,6 +7200,7 @@
       }
     },
     "未通过": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7367,6 +7414,7 @@
       }
     },
     "来源追溯": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8493,6 +8541,7 @@
       }
     },
     "稳定": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8891,6 +8940,7 @@
       }
     },
     "缺失项 / 风险": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8907,6 +8957,7 @@
       }
     },
     "缺考": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9239,6 +9290,7 @@
       }
     },
     "规则未发布": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9437,7 +9489,6 @@
       }
     },
     "设置": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9534,6 +9585,7 @@
       }
     },
     "语言": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9774,6 +9826,7 @@
       }
     },
     "请等待教师发布成绩规则。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9785,6 +9838,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "请等待教师发布成绩规则。"
+          }
+        }
+      }
+    },
+    "请联系教师获取新的二维码或邀请码": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask your teacher for a new QR code or invite code"
           }
         }
       }
@@ -9849,6 +9912,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入课程邀请码。"
+          }
+        }
+      }
+    },
+    "请返回后刷新页面，或联系教师确认申请情况。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go back and refresh, or contact your teacher to check the request."
           }
         }
       }
@@ -10008,6 +10081,7 @@
       }
     },
     "课程加入申请审核中，通过后才能开始运动。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10073,7 +10147,6 @@
       }
     },
     "课程相关": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10106,6 +10179,7 @@
       }
     },
     "课程相关不能被组织抵扣替代，建议在课程相关运动中完成计时打卡。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10122,6 +10196,7 @@
       }
     },
     "课程相关与其他运动均达到本学期要求，请继续关注课程任务和成绩缺失项。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10155,6 +10230,7 @@
       }
     },
     "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10171,6 +10247,7 @@
       }
     },
     "课程相关还差 %@，其他运动还差 %@。请优先关注课程任务和可计入的自主运动。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10203,6 +10280,7 @@
       }
     },
     "课程还差 %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10939,6 +11017,7 @@
       }
     },
     "通知筛选": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11246,6 +11325,7 @@
       }
     },
     "高优先级": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
