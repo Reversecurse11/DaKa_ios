@@ -586,12 +586,21 @@ rejectText(
   "preferredColorScheme(appearanceMode.colorScheme)",
   "The root does not set preferredColorScheme, which never reaches a presented sheet"
 );
+const featureSources = swiftFiles(path.join(iosRoot, "BNBUStudentApp", "Features"))
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .join("\n");
 rejectText(
-  swiftFiles(path.join(iosRoot, "BNBUStudentApp", "Features"))
-    .map((file) => fs.readFileSync(file, "utf8"))
-    .join("\n"),
+  featureSources,
   ".hourText",
   "Views format hours through localizedHourText so a Chinese UI never shows \"4h\""
+);
+// A pinned strip of the page background reads as a black line across whatever
+// scrolls under it, because the dark background token is pure black while the
+// cards are #1C1C1E.
+rejectText(
+  featureSources,
+  "BNBUTheme.background.frame(height:",
+  "No page-background strip is pinned over scrolling content"
 );
 
 // Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch

@@ -46,6 +46,34 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
     }
 
+    /// Temporary: reproduces the demo sequence that left a black hairline at the
+    /// top safe-area edge — switch to dark inside the settings sheet, close it,
+    /// then scroll the page underneath.
+    func testTempShotsDarkSwitchThenScrollProfile() throws {
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        tabButton("tab.profile").tap()
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        app.buttons["profile.appearance.dark"].tap()
+        app.buttons["nav.back"].tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
+        attachScreenshot(named: "dark-switch-01-profile-top")
+
+        // A short drag leaves content behind the status bar, which is where the
+        // hairline showed up.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+            )
+        attachScreenshot(named: "dark-switch-02-profile-scrolled")
+        app.swipeUp()
+        attachScreenshot(named: "dark-switch-03-profile-scrolled-more")
+
+        tabButton("tab.dashboard").tap()
+        attachScreenshot(named: "dark-switch-04-dashboard")
+    }
+
     /// Switching the appearance from the settings sheet has to repaint the sheet
     /// itself, not just the pages behind it.
     func testAppearanceSwitchRepaintsThePresentedSettingsSheet() throws {

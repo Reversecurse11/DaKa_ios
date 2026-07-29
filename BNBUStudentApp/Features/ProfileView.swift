@@ -40,9 +40,6 @@ struct ProfileView: View {
                     .environmentObject(languageSettings)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            BNBUTheme.background.frame(height: 2)
-        }
         .accessibilityIdentifier("screen.profile")
         .sheet(isPresented: $showExemptionCenter) {
             ExemptionCenterSheet()
