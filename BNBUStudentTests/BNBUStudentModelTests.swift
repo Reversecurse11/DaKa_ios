@@ -588,110 +588,91 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(legacy.hourRule, .standard)
     }
 
-    // MARK: - Configurable grade composition (business rule 4.3)
+    // MARK: - Student-visible grade content (业务流程 v6.0 §1.4 / 第五部分)
 
-    func testGradeCompositionFollowsThePublishedConfiguration() throws {
+    /// The student grade view shows only the endurance-run outcome and check-in
+    /// hour completion. Component names, weights, and weighted contributions are
+    /// teacher-side grading rules, so the payload still decodes them but nothing
+    /// in the client fabricates a breakdown when the server omits one.
+    func testGradePayloadKeepsTeacherRulesOutOfTheStudentView() throws {
         let decoder = JSONDecoder()
-
-        // Without a published breakdown the four legacy slices are rendered.
-        let legacy = try decoder.decode(GradeRow.self, from: Data("""
+        let withoutBreakdown = try decoder.decode(GradeRow.self, from: Data("""
         {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
          "attendance":90,"physical":60,"total":75,"sourceTrace":"API: /student/grades",
          "missingItems":[]}
         """.utf8))
-        XCTAssertFalse(legacy.usesPublishedComponents)
-        XCTAssertEqual(legacy.resolvedComponents.map(\.key), ["checkin", "exam", "attendance", "physical"])
-        XCTAssertEqual(legacy.resolvedComponents.map(\.weight), [0.25, 0.30, 0.20, 0.25])
+        XCTAssertFalse(withoutBreakdown.usesPublishedComponents)
+        XCTAssertTrue(withoutBreakdown.components.isEmpty)
 
-        // A published breakdown replaces it entirely, whatever the slice count.
-        let configured = try decoder.decode(GradeRow.self, from: Data("""
-        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
-         "attendance":90,"physical":60,"total":75,"sourceTrace":"API: /student/grades",
-         "missingItems":[],
-         "components":[
-           {"key":"checkin","name":"体育打卡","score":80,"percentage":40,"note":"有效学时"},
-           {"code":"exam","title":"专项考试","value":70,"weight":0.6}
-         ]}
-        """.utf8))
-        XCTAssertTrue(configured.usesPublishedComponents)
-        XCTAssertEqual(configured.resolvedComponents.count, 2)
-        // Percentages and fractions both normalize to a fraction of one.
-        XCTAssertEqual(configured.resolvedComponents[0].weight, 0.4, accuracy: 0.0001)
-        XCTAssertEqual(configured.resolvedComponents[1].weight, 0.6, accuracy: 0.0001)
-        XCTAssertEqual(configured.resolvedComponents[1].title, "专项考试")
-        XCTAssertEqual(configured.resolvedComponents[1].score, 70)
-        // An unknown key still renders with an icon.
-        XCTAssertEqual(configured.resolvedComponents[1].symbolName, "figure.badminton")
-
-        // Unweighted slices cannot silently dilute the estimate.
-        let unweighted = try decoder.decode(GradeRow.self, from: Data("""
+        let withBreakdown = try decoder.decode(GradeRow.self, from: Data("""
         {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
          "attendance":90,"physical":60,"total":75,"sourceTrace":"","missingItems":[],
-         "components":[{"key":"checkin","title":"体育打卡","score":80,"weight":0}]}
-        """.utf8))
-        XCTAssertFalse(unweighted.usesPublishedComponents)
-    }
-
-    func testCourseGradeStateControlsWhatTheStudentSees() throws {
-        // §1.4: the breakdown does not exist before the rule is published, and
-        // the official total is withheld while the teacher is still scoring.
-        XCTAssertFalse(CourseGradeState.ruleUnpublished.showsComponents)
-        XCTAssertFalse(CourseGradeState.ruleUnpublished.showsOfficialTotal)
-        XCTAssertTrue(CourseGradeState.recording.showsComponents)
-        XCTAssertFalse(CourseGradeState.recording.showsOfficialTotal)
-        for state in [CourseGradeState.published, .pendingArchive, .archiveReview, .returned, .archived, .correctionReview] {
-            XCTAssertTrue(state.showsComponents, "\(state) hides the breakdown")
-            XCTAssertTrue(state.showsOfficialTotal, "\(state) hides the total")
-        }
-
-        // Servers that predate the state machine keep showing what they show
-        // today rather than silently hiding published grades.
-        let legacy = try JSONDecoder().decode(GradeRow.self, from: Data("""
-        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":70,
-         "attendance":90,"physical":60,"total":75,"sourceTrace":"","missingItems":[]}
-        """.utf8))
-        XCTAssertEqual(legacy.state, .published)
-
-        let scoring = try JSONDecoder().decode(GradeRow.self, from: Data("""
-        {"studentId":"s1","studentName":"演示学生","checkinScore":80,"exam":0,
-         "attendance":0,"physical":0,"total":0,"sourceTrace":"","missingItems":[],
+         "components":[{"key":"checkin","name":"体育打卡","score":80,"percentage":40}],
          "gradeState":"打卡与录入中"}
         """.utf8))
-        XCTAssertEqual(scoring.state, .recording)
-        XCTAssertFalse(scoring.state.showsOfficialTotal)
+        XCTAssertTrue(withBreakdown.usesPublishedComponents)
+        XCTAssertEqual(withBreakdown.state, .recording)
     }
 
-    func testUnrecordedGradeItemsNeverReadAsZero() throws {
-        let row = try JSONDecoder().decode(GradeRow.self, from: Data("""
-        {"studentId":"s1","studentName":"演示学生","checkinScore":0,"exam":0,
-         "attendance":0,"physical":0,"total":0,"sourceTrace":"","missingItems":[],
-         "components":[
-           {"key":"checkin","title":"体育打卡","score":80,"weight":0.5},
-           {"key":"exam","title":"专项考试","weight":0.3},
-           {"key":"physical","title":"体测","score":0,"weight":0.2,"status":"缺考"}
-         ]}
+    func testEnduranceRunStatusSeparatesExemptionAbsenceAndNoEntry() throws {
+        let decoder = JSONDecoder()
+
+        func row(_ extra: String) throws -> GradeRow {
+            try decoder.decode(GradeRow.self, from: Data("""
+            {"studentId":"s1","studentName":"演示学生","checkinScore":0,"exam":0,
+             "attendance":0,"physical":0,"total":0,"sourceTrace":"","missingItems":[]\(extra)}
+            """.utf8))
+        }
+
+        // A duration alone cannot tell a measured result from an exemption, so
+        // the server value wins whenever it is present.
+        XCTAssertEqual(try row("").enduranceRunStatus, .notRecorded)
+        XCTAssertEqual(try row(",\"enduranceRunTimeSeconds\":245").enduranceRunStatus, .recorded)
+        XCTAssertEqual(try row(",\"enduranceRunStatus\":\"exempt\"").enduranceRunStatus, .exempt)
+        XCTAssertEqual(try row(",\"enduranceRunStatus\":\"缺考\"").enduranceRunStatus, .absent)
+        XCTAssertEqual(try row(",\"enduranceRunStatus\":\"not_recorded\",\"enduranceRunTimeSeconds\":245").enduranceRunStatus, .notRecorded)
+        // An unrecognised status falls back to whatever the duration implies.
+        XCTAssertEqual(try row(",\"enduranceRunStatus\":\"anything-new\",\"enduranceRunTimeSeconds\":245").enduranceRunStatus, .recorded)
+        XCTAssertEqual(try row(",\"enduranceRunStatus\":\"anything-new\"").enduranceRunStatus, .notRecorded)
+
+        let scored = try row(",\"enduranceRunStatus\":\"exempt\",\"enduranceRunScore\":85")
+        XCTAssertEqual(scored.enduranceRunScore, 85)
+        XCTAssertEqual(GradeTimeFormatter.runTime(245), "4′05″")
+    }
+
+    /// Organization credit can offset course hours as well as general hours
+    /// (§2.1), so the raw check-in totals are carried separately for both.
+    func testProgressCarriesRawHoursForBothCategories() throws {
+        let decoder = JSONDecoder()
+        let offset = try decoder.decode(StudentProgress.self, from: Data("""
+        {"id":"s1","name":"演示学生","college":"BNBU","className":"PE-1",
+         "course":10,"general":10,"rawCourse":4,"rawGeneral":0,
+         "exam":0,"attendance":0,"physical":0,"status":"","source":"server"}
         """.utf8))
+        XCTAssertEqual(offset.rawCourse, 4)
+        XCTAssertEqual(offset.rawGeneral, 0)
 
-        let components = row.resolvedComponents
-        // A missing score with no verdict is "not recorded", not a zero.
-        XCTAssertEqual(components[1].entryState, .notRecorded)
-        XCTAssertFalse(components[1].countsTowardEstimate)
-        XCTAssertEqual(components[1].contribution, 0)
-        XCTAssertEqual(row.unrecordedComponents.map(\.key), ["exam"])
-
-        // §1.3: an explicit absence scores zero and does count.
-        XCTAssertEqual(components[2].entryState, .absent)
-        XCTAssertTrue(components[2].countsTowardEstimate)
-
-        XCTAssertEqual(components[0].entryState, .recorded)
-        XCTAssertEqual(components[0].contribution, 40, accuracy: 0.0001)
+        // Servers that predate the field report the offset value as the raw one
+        // rather than reading as zero completed hours.
+        let legacy = try decoder.decode(StudentProgress.self, from: Data("""
+        {"id":"s1","name":"演示学生","college":"BNBU","className":"PE-1",
+         "course":6,"general":3,"exam":0,"attendance":0,"physical":0,
+         "status":"","source":"server"}
+        """.utf8))
+        XCTAssertEqual(legacy.rawCourse, 6)
+        XCTAssertEqual(legacy.rawGeneral, 3)
     }
 
-    func testGradeWeightFormatterRoundsWithoutInventingPrecision() {
-        XCTAssertEqual(GradeWeightFormatter.percentText(0.25), "25%")
-        XCTAssertEqual(GradeWeightFormatter.percentText(0.3), "30%")
-        XCTAssertEqual(GradeWeightFormatter.percentText(0.125), "12.5%")
-        XCTAssertEqual(GradeWeightFormatter.percentText(1), "100%")
+    func testGradeHourFormatterKeepsWholeHoursWhole() {
+        XCTAssertEqual(GradeHourFormatter.number(20), "20")
+        XCTAssertEqual(GradeHourFormatter.number(6.5), "6.5")
+        XCTAssertEqual(GradeHourFormatter.number(0), "0")
+    }
+
+    func testCompactTimestampTrimsWithoutReformatting() {
+        XCTAssertEqual(GradeTimeFormatter.compact("2026-07-29T14:32:07Z"), "2026-07-29 14:32")
+        XCTAssertEqual(GradeTimeFormatter.compact("2026-07-29"), "2026-07-29")
+        XCTAssertEqual(GradeTimeFormatter.compact("  "), "")
     }
 
     // MARK: - Best-effort location (business rules 5.5/10.3)

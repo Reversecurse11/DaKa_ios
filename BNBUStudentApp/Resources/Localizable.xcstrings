@@ -1,6 +1,17 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    " / %@ 小时": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " / %@ hours"
+          }
+        }
+      }
+    },
     "%@ / %@": {
       "extractionState": "stale",
       "localizations": {
@@ -14,6 +25,17 @@
           "stringUnit": {
             "state": "new",
             "value": "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ / %@ 小时": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ / %@ hours"
           }
         }
       }
@@ -126,6 +148,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 的补充材料已进入复审队列。"
+          }
+        }
+      }
+    },
+    "%@ 跑步": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ run"
           }
         }
       }
@@ -372,6 +405,17 @@
         }
       }
     },
+    "1000 米": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1000 m"
+          }
+        }
+      }
+    },
     "1000 米耐力跑免测": {
       "extractionState": "stale",
       "localizations": {
@@ -401,6 +445,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "2025–2026 第二学期"
+          }
+        }
+      }
+    },
+    "800 米": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "800 m"
+          }
+        }
+      }
+    },
+    "800 米 / 1000 米": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "800 m / 1000 m"
           }
         }
       }
@@ -1056,6 +1122,17 @@
         }
       }
     },
+    "体测与打卡": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fitness & check-ins"
+          }
+        }
+      }
+    },
     "体测免测": {
       "extractionState": "stale",
       "localizations": {
@@ -1397,6 +1474,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "先重新进入页面或重新登录。退出登录会清除当前账号的本地缓存、未提交草稿和待重试操作，请谨慎操作。"
+          }
+        }
+      }
+    },
+    "免测": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exempt"
           }
         }
       }
@@ -1782,7 +1870,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Other Exercise"
+            "value": "Other exercise"
           }
         },
         "zh-Hans": {
@@ -3413,6 +3501,17 @@
         }
       }
     },
+    "已完成本学期打卡要求": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Semester check-in requirement complete"
+          }
+        }
+      }
+    },
     "已归档": {
       "localizations": {
         "en": {
@@ -4804,6 +4903,28 @@
         }
       }
     },
+    "成绩：%lld 分": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Score: %lld points"
+          }
+        }
+      }
+    },
+    "成绩：暂未评分": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Score: not assigned"
+          }
+        }
+      }
+    },
     "我已阅读并同意当前版本《隐私政策》": {
       "localizations": {
         "en": {
@@ -5013,6 +5134,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "打卡只接受相机实时拍摄的草稿，最多 6 张照片和 1 个视频。模拟器没有可用摄像头，请使用真机测试拍摄。"
+          }
+        }
+      }
+    },
+    "打卡学时": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check-in hours"
           }
         }
       }
@@ -6225,6 +6357,17 @@
         }
       }
     },
+    "暂未记录": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not recorded"
+          }
+        }
+      }
+    },
     "最多 32 个字符": {
       "localizations": {
         "en": {
@@ -6775,6 +6918,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "本地恢复操作"
+          }
+        }
+      }
+    },
+    "本学期完成情况": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This semester's progress"
+          }
+        }
+      }
+    },
+    "本学期完成情况 · 更新于 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This semester's progress · Updated %@"
           }
         }
       }
@@ -8339,6 +8504,17 @@
         }
       }
     },
+    "缺考（计 0 分）": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Absent (0 points)"
+          }
+        }
+      }
+    },
     "网络连接已中断，请先刷新记录确认提交状态": {
       "localizations": {
         "en": {
@@ -8388,6 +8564,17 @@
         }
       }
     },
+    "耐力跑免测 · 教师评分": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endurance exemption · Teacher-assigned score"
+          }
+        }
+      }
+    },
     "耐力跑成绩换算": {
       "localizations": {
         "en": {
@@ -8400,6 +8587,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "耐力跑成绩换算"
+          }
+        }
+      }
+    },
+    "耐力跑测试用时": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endurance run time"
+          }
+        }
+      }
+    },
+    "耐力跑缺考状态": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endurance run absence"
           }
         }
       }
@@ -9407,7 +9616,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Course-Related"
+            "value": "Course-related"
           }
         },
         "zh-Hans": {
@@ -10011,6 +10220,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "还差 %@"
+          }
+        }
+      }
+    },
+    "还需 %@ 小时": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ hours remaining"
           }
         }
       }

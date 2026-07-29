@@ -1,27 +1,29 @@
 import SwiftUI
 
+/// Replicates the Android baseline `GradesScreen.kt`: a header plus exactly two
+/// cards. 业务流程 v6.0 §1.4 limits the student view to the endurance-run result
+/// and check-in hour completion — component names, weights, and weighted
+/// contributions are teacher-side grading rules and must not be shown here.
 struct GradesView: View {
     @EnvironmentObject private var appState: AppState
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ZStack {
             BNBUPageBackground()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: "Grade Progress", title: "成绩进度")
-
-                    statePanel
-                    if gradeState.showsOfficialTotal {
-                        totalPanel
-                    }
-                    if gradeState.showsComponents {
-                        components
-                        formulaPanel
-                    }
-                    missingPanel
-                    tracePanel
+                VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+                    completionHeader
+                    EnduranceRunCard(
+                        gender: appState.workspace.student.gender,
+                        timeSeconds: grades.enduranceRunTimeSeconds,
+                        status: grades.enduranceRunStatus,
+                        score: grades.enduranceRunScore
+                    )
+                    CheckInHoursCard(
+                        progress: appState.workspace.progress,
+                        rule: appState.workspace.hourRule
+                    )
                 }
                 .padding(BNBUSpacing.screen)
             }
@@ -32,253 +34,240 @@ struct GradesView: View {
         .accessibilityIdentifier("screen.grades")
     }
 
-    private var gradeState: CourseGradeState {
-        appState.workspace.grades.state
+    private var grades: GradeRow {
+        appState.workspace.grades
     }
 
-    private var statePanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        Text("成绩状态")
-                            .font(BNBUFont.titleMedium)
-                        Spacer()
-                        StatusBadge(text: gradeState.title, filled: true)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("成绩状态")
-                            .font(BNBUFont.titleMedium)
-                        StatusBadge(text: gradeState.title, filled: true)
-                    }
-                }
-                Text(verbatim: BNBUL10n.dynamicText(gradeState.studentNotice))
-                    .font(BNBUFont.bodyMedium)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .accessibilityIdentifier("grades.state.panel")
-    }
-
-    private var totalPanel: some View {
-        SwissPanel {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 16) {
-                    totalDescription
-                    Spacer(minLength: 8)
-                    totalScore
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    totalDescription
-                    totalScore
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-            }
-        }
-    }
-
-    private var totalDescription: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("总分预估")
-                .font(BNBUFont.titleMedium)
-            Text(verbatim: BNBUL10n.formatted(
-                "基于当前已录入的 %lld 项成绩与权重规则展示，最终结果以教务汇总为准。",
-                gradeComponents.count
-            ))
+    private var completionHeader: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space4) {
+            SectionTitle(eyebrow: "", title: "体测与打卡")
+            Text(verbatim: semesterProgressText)
                 .font(BNBUFont.bodyMedium)
-                .foregroundStyle(BNBUTheme.muted)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var totalScore: some View {
-        Text("\(appState.workspace.grades.total)")
-            .font(.system(size: 54, weight: .regular))
-            .foregroundStyle(BNBUTheme.ink)
-    }
-
-    private var components: some View {
-        LazyVGrid(columns: componentColumns, spacing: 12) {
-            ForEach(gradeComponents) { component in
-                GradeComponentCard(component: component)
-            }
-        }
-    }
-
-    private var componentColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible())]
-        }
-        return [GridItem(.flexible()), GridItem(.flexible())]
-    }
-
-    private var formulaPanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        Text("总分计算")
-                            .font(BNBUFont.titleMedium)
-                        Spacer()
-                        StatusBadge(text: "透明预估")
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("总分计算")
-                            .font(BNBUFont.titleMedium)
-                        StatusBadge(text: "透明预估")
-                    }
-                }
-
-                ForEach(gradeComponents) { component in
-                    GradeContributionRow(component: component)
-                }
-
-                Divider()
-
-                DetailFactRow(label: "加权合计", value: String(format: "%.1f", weightedTotal))
-                if gradeState.showsOfficialTotal {
-                    DetailFactRow(label: "四舍五入", value: "\(appState.workspace.grades.total)")
-                }
-
-                if !unrecordedComponents.isEmpty {
-                    Text(verbatim: BNBUL10n.formatted(
-                        "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。",
-                        unrecordedComponents.count
-                    ))
-                    .font(BNBUFont.labelMedium)
-                    .foregroundStyle(BNBUTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("grades.items.unrecorded")
-                }
-
-                if !weightsAreComplete {
-                    Text(verbatim: BNBUL10n.formatted(
-                        "当前成绩构成的权重合计为 %@，尚未覆盖满分，预估分仅供参考。",
-                        GradeWeightFormatter.percentText(weightSum)
-                    ))
-                    .font(BNBUFont.labelMedium)
-                    .foregroundStyle(BNBUTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("grades.weights.incomplete")
-                }
-            }
-        }
-    }
-
-    private var missingPanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        Text("缺失项 / 风险")
-                            .font(BNBUFont.titleMedium)
-                        Spacer()
-                        StatusBadge(text: missingCountText)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("缺失项 / 风险")
-                            .font(BNBUFont.titleMedium)
-                        StatusBadge(text: missingCountText)
-                    }
-                }
-
-                if appState.workspace.grades.missingItems.isEmpty {
-                    Text("当前没有阻塞项。")
-                        .font(BNBUFont.bodyMedium)
-                        .foregroundStyle(BNBUTheme.muted)
-                } else {
-                    ForEach(appState.workspace.grades.missingItems, id: \.self) { item in
-                        Label(localizedMissingItem(item), systemImage: "exclamationmark.circle")
-                            .font(BNBUFont.titleSmall)
-                            .foregroundStyle(BNBUTheme.ink)
-                    }
-                }
-            }
-        }
-    }
-
-    private var tracePanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("来源追溯", systemImage: "scope")
-                    .font(BNBUFont.titleMedium)
-                    .foregroundStyle(BNBUTheme.primary)
-                Text(verbatim: localizedSourceTrace(appState.workspace.grades.sourceTrace))
-                    .font(BNBUFont.bodyMedium)
-                    .foregroundStyle(BNBUTheme.muted)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var gradeComponents: [GradeComponent] {
-        appState.workspace.grades.resolvedComponents
-    }
-
-    private var weightedTotal: Double {
-        gradeComponents.reduce(0) { partialResult, component in
-            partialResult + component.contribution
-        }
-    }
-
-    private var weightSum: Double {
-        gradeComponents.reduce(0) { $0 + $1.weight }
-    }
-
-    private var unrecordedComponents: [GradeComponent] {
-        gradeComponents.filter { !$0.countsTowardEstimate }
-    }
-
-    /// A teacher-configured breakdown can be published before every slice is
-    /// weighted, in which case the estimate is not comparable to a full score.
-    private var weightsAreComplete: Bool {
-        abs(weightSum - 1) < 0.005
-    }
-
-    private var missingCountText: String {
-        let count = appState.workspace.grades.missingItems.count
-        if count == 0 {
-            return BNBUL10n.text("无缺失")
-        }
-        if BNBUL10n.locale.identifier.hasPrefix("zh") {
-            return "\(count) 项"
-        }
-        return count == 1 ? "1 item" : "\(count) items"
-    }
-
-    private func localizedMissingItem(_ item: String) -> String {
-        let coursePrefix = "打卡未满：课程相关还差 "
-        if item.hasPrefix(coursePrefix) {
-            let rawHours = String(item.dropFirst(coursePrefix.count))
-            return BNBUL10n.formatted(
-                "打卡未满：课程相关还差 %@",
-                localizedHourValue(rawHours)
-            )
-        }
-        return BNBUL10n.dynamicText(item)
-    }
-
-    private func localizedHourValue(_ value: String) -> String {
-        let normalized = value
-            .replacingOccurrences(of: "小时", with: "")
-            .replacingOccurrences(of: "h", with: "")
+    private var semesterProgressText: String {
+        let calculatedAt = appState.workspace.student.gradeCalculatedAt
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let hours = Double(normalized) else { return value }
-        return hours.localizedHourText
+        guard !calculatedAt.isEmpty else {
+            return BNBUL10n.text("本学期完成情况")
+        }
+        return BNBUL10n.formatted("本学期完成情况 · 更新于 %@", GradeTimeFormatter.compact(calculatedAt))
+    }
+}
+
+/// 800m/1000m outcome. An exemption or an absence carries a teacher-assigned
+/// score, so those two states show the score line; a measured or missing result
+/// does not.
+private struct EnduranceRunCard: View {
+    let gender: StudentGender
+    let timeSeconds: Int?
+    let status: EnduranceRunStatus
+    let score: Int?
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+                GradeCardTitle(
+                    systemImage: "figure.run",
+                    title: BNBUL10n.formatted("%@ 跑步", distanceText),
+                    supportingText: supportingText
+                )
+                Text(verbatim: primaryText)
+                    .font(BNBUFont.headlineMedium.weight(.semibold))
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .fixedSize(horizontal: false, vertical: true)
+                if status == .exempt || status == .absent {
+                    Text(verbatim: scoreText)
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
-    private func localizedSourceTrace(_ trace: String) -> String {
-        switch trace {
-        case "server:grades-missing":
-            return BNBUL10n.text("服务器：成绩尚未返回")
-        case "API: /student/grades":
-            return BNBUL10n.text("服务器：学生成绩接口")
-        default:
-            return BNBUL10n.dynamicText(trace)
+    private var distanceText: String {
+        switch gender {
+        case .male: return BNBUL10n.text("1000 米")
+        case .female: return BNBUL10n.text("800 米")
+        case .unknown: return BNBUL10n.text("800 米 / 1000 米")
         }
+    }
+
+    private var recordedTime: String? {
+        guard let timeSeconds, timeSeconds > 0 else { return nil }
+        return GradeTimeFormatter.runTime(timeSeconds)
+    }
+
+    private var primaryText: String {
+        switch status {
+        case .recorded, .notRecorded:
+            return recordedTime ?? BNBUL10n.text("暂未记录")
+        case .exempt:
+            return BNBUL10n.text("免测")
+        case .absent:
+            return BNBUL10n.text("缺考（计 0 分）")
+        }
+    }
+
+    private var supportingText: String {
+        switch status {
+        case .recorded, .notRecorded:
+            return BNBUL10n.text("耐力跑测试用时")
+        case .exempt:
+            return BNBUL10n.text("耐力跑免测 · 教师评分")
+        case .absent:
+            return BNBUL10n.text("耐力跑缺考状态")
+        }
+    }
+
+    /// An absence always displays as zero regardless of what the server sends.
+    private var scoreText: String {
+        let resolved = status == .absent ? 0 : score
+        guard let resolved else { return BNBUL10n.text("成绩：暂未评分") }
+        return BNBUL10n.formatted("成绩：%lld 分", resolved)
+    }
+}
+
+private struct CheckInHoursCard: View {
+    let progress: StudentProgress
+    let rule: SportHourRule
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+                GradeCardTitle(
+                    systemImage: "checkmark.circle.fill",
+                    title: BNBUL10n.text("打卡学时"),
+                    supportingText: supportingText
+                )
+
+                HStack(alignment: .bottom, spacing: 0) {
+                    Text(verbatim: GradeHourFormatter.number(completed))
+                        .font(BNBUFont.headlineMedium.weight(.semibold))
+                        .foregroundStyle(BNBUTheme.onSurface)
+                    Text(verbatim: BNBUL10n.formatted(" / %@ 小时", GradeHourFormatter.number(required)))
+                        .font(BNBUFont.bodyLarge)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .padding(.leading, BNBUSpacing.space4)
+                        .padding(.bottom, 3)
+                }
+
+                if required > 0 {
+                    HourProgressBar(value: completed, total: required)
+                }
+
+                HStack(alignment: .top, spacing: BNBUSpacing.space16) {
+                    GradeHourBreakdown(
+                        label: BNBUL10n.text("课程相关"),
+                        completed: progress.course,
+                        required: rule.courseRequired
+                    )
+                    GradeHourBreakdown(
+                        label: BNBUL10n.text("其他运动"),
+                        completed: progress.general,
+                        required: rule.generalRequired
+                    )
+                }
+            }
+        }
+    }
+
+    private var completed: Double { max(progress.course + progress.general, 0) }
+    private var required: Double { max(rule.total, 0) }
+    private var remaining: Double { max(required - completed, 0) }
+    private var isComplete: Bool { required > 0 && completed >= required }
+
+    private var supportingText: String {
+        isComplete
+            ? BNBUL10n.text("已完成本学期打卡要求")
+            : BNBUL10n.formatted("还需 %@ 小时", GradeHourFormatter.number(remaining))
+    }
+}
+
+private struct GradeCardTitle: View {
+    let systemImage: String
+    let title: String
+    let supportingText: String
+
+    var body: some View {
+        HStack(spacing: BNBUSpacing.space12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 21))
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 40, height: 40)
+                .background(
+                    BNBUTheme.surfaceVariant,
+                    in: RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: title)
+                    .font(BNBUFont.titleMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Text(verbatim: supportingText)
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct GradeHourBreakdown: View {
+    let label: String
+    let completed: Double
+    let required: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: label)
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            Text(verbatim: BNBUL10n.formatted(
+                "%@ / %@ 小时",
+                GradeHourFormatter.number(completed),
+                GradeHourFormatter.number(required)
+            ))
+                .font(BNBUFont.bodyMedium.weight(.medium))
+                .foregroundStyle(BNBUTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Bare hour numbers; the unit belongs to the surrounding localized string so
+/// that Chinese and English can place it differently.
+enum GradeHourFormatter {
+    static func number(_ value: Double) -> String {
+        if value.rounded(.down) == value {
+            return String(Int(value))
+        }
+        return String(format: "%.1f", locale: BNBUL10n.locale, value)
+    }
+}
+
+enum GradeTimeFormatter {
+    static func runTime(_ totalSeconds: Int) -> String {
+        String(format: "%d′%02d″", totalSeconds / 60, totalSeconds % 60)
+    }
+
+    /// Server timestamps arrive as ISO-8601; the baseline trims them to minute
+    /// precision rather than reformatting into a locale-specific style.
+    static func compact(_ raw: String) -> String {
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "T", with: " ")
+        if normalized.count >= 16 {
+            return String(normalized.prefix(16))
+        }
+        if normalized.count >= 10 {
+            return String(normalized.prefix(10))
+        }
+        return normalized
     }
 }
 
@@ -310,112 +299,6 @@ enum ExemptionSheetMode {
     var application: ExemptionApplication? {
         if case .supplement(let application) = self { return application }
         return nil
-    }
-}
-
-/// Server-configured weights are not necessarily whole percentages, so they
-/// are rounded for display without inventing precision.
-enum GradeWeightFormatter {
-    static func percentText(_ weight: Double) -> String {
-        let percent = weight * 100
-        if abs(percent.rounded() - percent) < 0.05 {
-            return "\(Int(percent.rounded()))%"
-        }
-        return String(format: "%.1f%%", percent)
-    }
-}
-
-private struct GradeComponentCard: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    let component: GradeComponent
-
-    var body: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Image(systemName: component.symbolName)
-                        .font(BNBUFont.titleLarge)
-                        .foregroundStyle(BNBUTheme.blue)
-                    Spacer()
-                    StatusBadge(text: GradeWeightFormatter.percentText(component.weight))
-                }
-
-                Text(verbatim: BNBUL10n.dynamicText(component.title))
-                    .font(BNBUFont.titleMedium)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 68,
-                        alignment: .topLeading
-                    )
-
-                if component.entryState == .recorded {
-                    Text("\(component.score)")
-                        .font(.system(size: 42, weight: .regular))
-                        .foregroundStyle(BNBUTheme.ink)
-                } else {
-                    Text(verbatim: BNBUL10n.dynamicText(component.entryState.title))
-                        .font(BNBUFont.titleLarge)
-                        .foregroundStyle(BNBUTheme.muted)
-                        .frame(height: 50, alignment: .bottomLeading)
-                }
-
-                HourProgressBar(
-                    value: component.entryState == .recorded ? Double(component.score) : 0,
-                    total: 100
-                )
-
-                Text(verbatim: BNBUL10n.dynamicText(component.note))
-                    .font(BNBUFont.bodySmall)
-                    .foregroundStyle(BNBUTheme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 52,
-                        alignment: .topLeading
-                    )
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-}
-
-private struct GradeContributionRow: View {
-    let component: GradeComponent
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(verbatim: BNBUL10n.dynamicText(component.title))
-                        .font(BNBUFont.titleSmall)
-                    Spacer(minLength: 8)
-                    contributionFormula
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: BNBUL10n.dynamicText(component.title))
-                        .font(BNBUFont.titleSmall)
-                    contributionFormula
-                }
-            }
-            HourProgressBar(value: component.contribution, total: 30)
-        }
-    }
-
-    private var contributionText: String {
-        let weight = GradeWeightFormatter.percentText(component.weight)
-        guard component.entryState != .notRecorded else {
-            return "\(BNBUL10n.dynamicText(component.entryState.title)) × \(weight)"
-        }
-        return "\(component.score) × \(weight) = \(String(format: "%.1f", component.contribution))"
-    }
-
-    private var contributionFormula: some View {
-        Text(verbatim: contributionText)
-            .font(BNBUFont.bodyMedium)
-            .foregroundStyle(BNBUTheme.muted)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
     }
 }
 

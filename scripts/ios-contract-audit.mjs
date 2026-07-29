@@ -285,30 +285,35 @@ requireText(models, "guard value.isFinite, value >= 0 else { return nil }", "Unu
 requireText(remote, "hourRule: summary?.hourRule ?? .standard", "Remote workspaces adopt the published hour targets");
 requireText(modelTests, "testWorkspaceCachedBeforeHourTargetsStillDecodes", "Hour-target rollout is proven not to reset local caches");
 
-// Configurable grade composition (business rule 4.3)
-requireText(models, "struct GradeComponent", "Grade slices are a server-driven model (4.3)");
-requireText(models, "return value > 1 ? value / 100 : value", "Percentage and fraction weights both normalize");
-requireText(models, "var resolvedComponents: [GradeComponent]", "The grade breakdown resolves to the published configuration");
-requireText(models, "components = decoded.filter { $0.weight > 0 }", "Unweighted slices cannot dilute the estimate");
-requireText(gradesView, "appState.workspace.grades.resolvedComponents", "The grades page renders whatever the server publishes");
-rejectText(gradesView, "weight: 0.30", "The grades page no longer hardcodes slice weights");
-requireText(gradesView, "grades.weights.incomplete", "Incomplete published weights are disclosed to the student");
-requireText(modelTests, "testGradeCompositionFollowsThePublishedConfiguration", "Configurable grade composition is covered by XCTest");
-
-// Grade state machine (业务流程 §1.3/§1.4)
-requireText(models, "enum CourseGradeState", "The course grading pipeline is modelled client-side");
-requireText(models, "static let backwardCompatibleDefault = CourseGradeState.published", "Servers without a grade state keep showing published grades");
-requireText(models, "var showsComponents: Bool { self != .ruleUnpublished }", "The breakdown stays hidden until the rule is published");
-requireText(models, "case .ruleUnpublished, .recording: return false", "The official total is withheld while the teacher is still scoring");
-requireText(models, "enum GradeComponentEntryState", "Grade items carry their entry verdict (§1.3)");
-requireText(models, "entryState == .notRecorded ? 0 : Double(score) * weight", "An unrecorded item contributes nothing to the estimate");
-requireText(models, "entryState = decodedEntry ?? (hasScore ? .recorded : .notRecorded)", "A missing score is never inferred as a zero");
-requireText(remote, "state: .ruleUnpublished", "An unpublished grading rule is reported as such instead of a zero score");
-requireText(gradesView, "if gradeState.showsOfficialTotal {", "The grades page honours the published-total rule");
-requireText(gradesView, "grades.state.panel", "The grades page discloses the current grade state");
-requireText(gradesView, "grades.items.unrecorded", "Unrecorded items are disclosed alongside the estimate");
-requireText(modelTests, "testCourseGradeStateControlsWhatTheStudentSees", "Grade-state visibility is covered by XCTest");
-requireText(modelTests, "testUnrecordedGradeItemsNeverReadAsZero", "Unrecorded items are proven not to read as zeros");
+// Student-visible grade content (业务流程 v6.0 §1.4 + Android GradesScreen.kt).
+// The student sees the endurance-run outcome and check-in hour completion, and
+// nothing else: component names, weights, weighted contributions and the total
+// are teacher-side grading rules.
+requireOrder(
+  gradesView,
+  ["completionHeader", "EnduranceRunCard(", "CheckInHoursCard("],
+  "The grades page keeps the baseline block order"
+);
+rejectText(gradesView, "resolvedComponents", "The grades page no longer fabricates a breakdown");
+rejectText(gradesView, "GradeWeightFormatter", "The grades page no longer renders weights");
+rejectText(gradesView, "weightedTotal", "The grades page no longer renders a weighted estimate");
+rejectText(gradesView, "grades.total", "The grades page no longer renders an overall total");
+rejectText(gradesView, "showsComponents", "Grade-state visibility no longer gates the student view");
+rejectText(models, "GradeComponent(key: \"checkin\"", "No client-side default breakdown is invented (§1.4)");
+requireText(gradesView, "status == .exempt || status == .absent", "Only an exemption or an absence shows a teacher-assigned score");
+requireText(gradesView, "status == .absent ? 0 : score", "An absence always displays as zero");
+requireText(models, "enum EnduranceRunStatus", "The endurance-run outcome is an explicit four-state model");
+requireText(models, "init(serverValue: String?, timeSeconds: Int?)", "An unknown endurance status degrades to what the duration implies");
+requireText(models, "let enduranceRunScore: Int?", "The teacher-assigned endurance score is carried");
+requireText(models, "var rawCourse: Double", "Course hours carry their pre-offset value (§2.1)");
+requireText(models, "let gradeCalculatedAt: String", "The grade recalculation timestamp is carried");
+requireText(modelTests, "testEnduranceRunStatusSeparatesExemptionAbsenceAndNoEntry", "Endurance-run states are covered by XCTest");
+requireText(modelTests, "testProgressCarriesRawHoursForBothCategories", "Offsettable course hours are covered by XCTest");
+requireText(modelTests, "testGradePayloadKeepsTeacherRulesOutOfTheStudentView", "Teacher grading rules are proven to stay out of the student view");
+// Grade slices and the pipeline state still decode because the server sends
+// them; the Android baseline keeps them in the model and renders neither.
+requireText(models, "struct GradeComponent", "Grade slices remain a server-driven model");
+requireText(models, "enum CourseGradeState", "The course grading pipeline still decodes")
 
 // Dashboard block order follows the Android baseline DashboardScreen.kt, which
 // keeps today's decision above longer-term progress.

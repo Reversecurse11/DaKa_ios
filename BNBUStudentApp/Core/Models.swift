@@ -66,6 +66,8 @@ struct StudentProfile: Identifiable, Hashable, Codable {
     let birthDate: String?
     let gender: StudentGender
     let gradeLevel: String?
+    /// Server timestamp for the last grade recalculation; empty until published.
+    let gradeCalculatedAt: String
 
     var displayStudentNumber: String {
         if let studentNumber, !studentNumber.isEmpty {
@@ -85,7 +87,8 @@ struct StudentProfile: Identifiable, Hashable, Codable {
         enrollmentYear: Int? = nil,
         birthDate: String? = nil,
         gender: StudentGender = .unknown,
-        gradeLevel: String? = nil
+        gradeLevel: String? = nil,
+        gradeCalculatedAt: String = ""
     ) {
         self.id = id
         self.studentNumber = studentNumber
@@ -98,6 +101,7 @@ struct StudentProfile: Identifiable, Hashable, Codable {
         self.birthDate = birthDate
         self.gender = gender
         self.gradeLevel = gradeLevel
+        self.gradeCalculatedAt = gradeCalculatedAt
     }
 
     enum CodingKeys: String, CodingKey {
@@ -123,6 +127,7 @@ struct StudentProfile: Identifiable, Hashable, Codable {
         case gender
         case gradeLevel
         case currentGradeLevel
+        case gradeCalculatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -150,6 +155,7 @@ struct StudentProfile: Identifiable, Hashable, Codable {
         gender = try container.decodeIfPresent(StudentGender.self, forKey: .gender) ?? .unknown
         gradeLevel = try container.decodeIfPresent(String.self, forKey: .gradeLevel)
             ?? container.decodeIfPresent(String.self, forKey: .currentGradeLevel)
+        gradeCalculatedAt = try container.decodeIfPresent(String.self, forKey: .gradeCalculatedAt) ?? ""
     }
 
     func encode(to encoder: Encoder) throws {
@@ -165,6 +171,7 @@ struct StudentProfile: Identifiable, Hashable, Codable {
         try container.encodeIfPresent(birthDate, forKey: .birthDate)
         try container.encode(gender, forKey: .gender)
         try container.encodeIfPresent(gradeLevel, forKey: .gradeLevel)
+        try container.encode(gradeCalculatedAt, forKey: .gradeCalculatedAt)
     }
 
     private static func decodeFlexibleInt(
@@ -924,6 +931,8 @@ struct StudentProgress: Identifiable, Hashable, Codable {
     let className: String
     var course: Double
     var general: Double
+    /// Course-related check-in hours before organization offsets are applied.
+    var rawCourse: Double
     var rawGeneral: Double
     let exam: Int
     let attendance: Int
@@ -939,6 +948,7 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         className: String,
         course: Double,
         general: Double,
+        rawCourse: Double,
         rawGeneral: Double,
         exam: Int,
         attendance: Int,
@@ -953,6 +963,7 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         self.className = className
         self.course = course
         self.general = general
+        self.rawCourse = rawCourse
         self.rawGeneral = rawGeneral
         self.exam = exam
         self.attendance = attendance
@@ -975,6 +986,8 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         case general
         case generalHours
         case otherHours
+        case rawCourse
+        case rawCourseHours
         case rawGeneral
         case rawGeneralHours
         case exam
@@ -1006,6 +1019,9 @@ struct StudentProgress: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent(Double.self, forKey: .generalHours)
             ?? container.decodeIfPresent(Double.self, forKey: .otherHours)
             ?? 0
+        rawCourse = try container.decodeIfPresent(Double.self, forKey: .rawCourse)
+            ?? container.decodeIfPresent(Double.self, forKey: .rawCourseHours)
+            ?? course
         rawGeneral = try container.decodeIfPresent(Double.self, forKey: .rawGeneral)
             ?? container.decodeIfPresent(Double.self, forKey: .rawGeneralHours)
             ?? general
@@ -1031,6 +1047,7 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         try container.encode(className, forKey: .className)
         try container.encode(course, forKey: .course)
         try container.encode(general, forKey: .general)
+        try container.encode(rawCourse, forKey: .rawCourse)
         try container.encode(rawGeneral, forKey: .rawGeneral)
         try container.encode(exam, forKey: .exam)
         try container.encode(attendance, forKey: .attendance)
@@ -2700,6 +2717,33 @@ struct GradeComponent: Identifiable, Hashable, Codable {
     }
 }
 
+/// Server-authoritative outcome for the endurance-run grade item. A duration
+/// alone cannot tell an unrecorded result from an approved exemption or an
+/// absence, so the grade API supplies this value independently.
+enum EnduranceRunStatus: String, Hashable, Codable {
+    case recorded
+    case exempt
+    case absent
+    case notRecorded
+
+    /// Mirrors `EnduranceRunStatus.fromApi` on the Android baseline: falls back
+    /// to a measured result whenever an unknown status arrives with a duration.
+    init(serverValue: String?, timeSeconds: Int?) {
+        let fallback: EnduranceRunStatus = (timeSeconds ?? 0) > 0 ? .recorded : .notRecorded
+        guard let raw = serverValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            self = fallback
+            return
+        }
+        switch raw {
+        case "recorded", "completed", "measured": self = .recorded
+        case "exempt", "exempted", "免测": self = .exempt
+        case "absent", "missing", "缺考": self = .absent
+        case "not_recorded", "notrecorded", "unrecorded", "pending", "": self = .notRecorded
+        default: self = fallback
+        }
+    }
+}
+
 struct GradeRow: Identifiable, Hashable, Codable {
     var id: String { studentId }
     let studentId: String
@@ -2715,6 +2759,12 @@ struct GradeRow: Identifiable, Hashable, Codable {
     let components: [GradeComponent]
     /// Where the course sits in the grading pipeline (业务流程 §1.4).
     let state: CourseGradeState
+    /// Measured 800m/1000m endurance-run duration supplied by the teaching system.
+    let enduranceRunTimeSeconds: Int?
+    /// Distinguishes a measured result from an exemption, absence, or no entry.
+    let enduranceRunStatus: EnduranceRunStatus
+    /// Teacher-assigned score for this item; an absence always displays as zero.
+    let enduranceRunScore: Int?
 
     init(
         studentId: String,
@@ -2727,7 +2777,10 @@ struct GradeRow: Identifiable, Hashable, Codable {
         sourceTrace: String,
         missingItems: [String],
         components: [GradeComponent] = [],
-        state: CourseGradeState = .backwardCompatibleDefault
+        state: CourseGradeState = .backwardCompatibleDefault,
+        enduranceRunTimeSeconds: Int? = nil,
+        enduranceRunStatus: EnduranceRunStatus = .notRecorded,
+        enduranceRunScore: Int? = nil
     ) {
         self.studentId = studentId
         self.studentName = studentName
@@ -2740,6 +2793,9 @@ struct GradeRow: Identifiable, Hashable, Codable {
         self.missingItems = missingItems
         self.components = components
         self.state = state
+        self.enduranceRunTimeSeconds = enduranceRunTimeSeconds
+        self.enduranceRunStatus = enduranceRunStatus
+        self.enduranceRunScore = enduranceRunScore
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2757,6 +2813,9 @@ struct GradeRow: Identifiable, Hashable, Codable {
         case state
         case gradeState
         case courseGradeState
+        case enduranceRunTimeSeconds
+        case enduranceRunStatus
+        case enduranceRunScore
     }
 
     init(from decoder: Decoder) throws {
@@ -2781,6 +2840,13 @@ struct GradeRow: Identifiable, Hashable, Codable {
             decodedState = CourseGradeState(serverValue: raw)
         }
         state = decodedState ?? .backwardCompatibleDefault
+        let seconds = try container.decodeIfPresent(Int.self, forKey: .enduranceRunTimeSeconds)
+        enduranceRunTimeSeconds = seconds
+        enduranceRunStatus = EnduranceRunStatus(
+            serverValue: try container.decodeIfPresent(String.self, forKey: .enduranceRunStatus),
+            timeSeconds: seconds
+        )
+        enduranceRunScore = try container.decodeIfPresent(Int.self, forKey: .enduranceRunScore)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2796,27 +2862,12 @@ struct GradeRow: Identifiable, Hashable, Codable {
         try container.encode(missingItems, forKey: .missingItems)
         try container.encode(components, forKey: .components)
         try container.encode(state.rawValue, forKey: .state)
-    }
-
-    /// The breakdown to render: the published configuration when it exists,
-    /// otherwise the four fixed slices the app shipped before rule 4.3.
-    var resolvedComponents: [GradeComponent] {
-        guard components.isEmpty else { return components }
-        return [
-            GradeComponent(key: "checkin", title: "体育打卡", score: checkinScore, weight: 0.25, note: "以服务器当前已计入的有效小时为准"),
-            GradeComponent(key: "exam", title: "专项考试", score: exam, weight: 0.30, note: "由任课老师录入专项成绩"),
-            GradeComponent(key: "attendance", title: "平时表现 / 签到", score: attendance, weight: 0.20, note: "课堂签到与平时表现"),
-            GradeComponent(key: "physical", title: "体测", score: physical, weight: 0.25, note: "体测数据录入后参与计算")
-        ]
+        try container.encodeIfPresent(enduranceRunTimeSeconds, forKey: .enduranceRunTimeSeconds)
+        try container.encode(enduranceRunStatus.rawValue, forKey: .enduranceRunStatus)
+        try container.encodeIfPresent(enduranceRunScore, forKey: .enduranceRunScore)
     }
 
     var usesPublishedComponents: Bool { !components.isEmpty }
-
-    /// Items the teacher has not concluded on yet; the estimate stays short by
-    /// their weight until they are entered.
-    var unrecordedComponents: [GradeComponent] {
-        resolvedComponents.filter { !$0.countsTowardEstimate }
-    }
 }
 
 enum NoticeCategory: String, CaseIterable, Identifiable, Hashable, Codable {

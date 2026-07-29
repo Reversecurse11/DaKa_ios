@@ -5,6 +5,16 @@ protocol StudentRepository {
 }
 
 struct MockStudentRepository: StudentRepository {
+    /// The endurance-run card has four server-driven states that demo data
+    /// cannot show at once, so screenshot runs select one by launch argument.
+    static var mockEnduranceStatus: EnduranceRunStatus {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-testing-endurance-exempt") { return .exempt }
+        if arguments.contains("-ui-testing-endurance-absent") { return .absent }
+        if arguments.contains("-ui-testing-endurance-unrecorded") { return .notRecorded }
+        return .recorded
+    }
+
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(
             id: "demo-student-001",
@@ -17,7 +27,8 @@ struct MockStudentRepository: StudentRepository {
             enrollmentYear: 2024,
             birthDate: "2000-01-01",
             gender: .female,
-            gradeLevel: "sophomore"
+            gradeLevel: "sophomore",
+            gradeCalculatedAt: "2026-07-29T14:32:07Z"
         )
 
         let teamCredit = Membership(
@@ -84,6 +95,7 @@ struct MockStudentRepository: StudentRepository {
             className: student.className,
             course: 6,
             general: 10,
+            rawCourse: 6,
             rawGeneral: 0,
             exam: 86,
             attendance: 90,
@@ -192,7 +204,10 @@ struct MockStudentRepository: StudentRepository {
             physical: 78,
             total: 83,
             sourceTrace: "名单:课程初始名单; 打卡:组织抵扣:羽毛球队; 专项:已录入; 平时:已保存; 体测:已保存",
-            missingItems: ["打卡未满：课程相关还差 4h"]
+            missingItems: ["打卡未满：课程相关还差 4h"],
+            enduranceRunTimeSeconds: Self.mockEnduranceStatus == .recorded ? 245 : nil,
+            enduranceRunStatus: Self.mockEnduranceStatus,
+            enduranceRunScore: Self.mockEnduranceStatus == .exempt ? 85 : nil
         )
 
         let notices = [
@@ -269,6 +284,7 @@ struct EmptyStudentRepository: StudentRepository {
                 className: student.className,
                 course: 0,
                 general: 0,
+                rawCourse: 0,
                 rawGeneral: 0,
                 exam: 0,
                 attendance: 0,

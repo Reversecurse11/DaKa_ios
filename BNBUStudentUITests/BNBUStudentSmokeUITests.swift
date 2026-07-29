@@ -45,6 +45,34 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
     }
 
+    /// Temporary: captures the four endurance-run states plus the English
+    /// locale for the before/after comparison against the Android baseline.
+    func testTempShotsGradesBaseline() throws {
+        let base = ["-ui-testing-reset", "-ui-testing-authenticated"]
+        let configurations: [(name: String, arguments: [String])] = [
+            ("01-grades-recorded", base),
+            ("02-grades-exempt", base + ["-ui-testing-endurance-exempt"]),
+            ("03-grades-absent", base + ["-ui-testing-endurance-absent"]),
+            ("04-grades-unrecorded", base + ["-ui-testing-endurance-unrecorded"]),
+            ("05-grades-en", base + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        ]
+
+        for configuration in configurations {
+            app.terminate()
+            app = XCUIApplication()
+            app.launchArguments = configuration.arguments
+            app.launch()
+
+            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8), configuration.name)
+            // Positional lookup keeps this independent of the interface language.
+            let gradesTab = app.tabBars.buttons.element(boundBy: 3)
+            XCTAssertTrue(gradesTab.waitForExistence(timeout: 5), configuration.name)
+            gradesTab.tap()
+            XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 5), configuration.name)
+            attachScreenshot(named: configuration.name)
+        }
+    }
+
     func testStudentShellSmokeFlow() throws {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["体育学时进度"].exists)
@@ -57,7 +85,11 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 3))
 
         openTab(label: "成绩", screenIdentifier: "screen.grades")
-        XCTAssertTrue(app.staticTexts["成绩进度"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["体测与打卡"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["打卡学时"].exists)
+        // §1.4: teacher-side grading rules never reach the student view.
+        XCTAssertFalse(app.staticTexts["总分预估"].exists)
+        XCTAssertFalse(app.staticTexts["总分计算"].exists)
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertTrue(app.staticTexts["申请与审核"].waitForExistence(timeout: 3))
@@ -104,20 +136,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         tabButton("tab.grades").tap()
         XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))
-        for title in [
-            "PE Check-In",
-            "Specialized Exam",
-            "Class Performance / Attendance",
-            "Physical Fitness Test"
-        ] {
-            let componentTitle = app.staticTexts[title]
-            var found = componentTitle.waitForExistence(timeout: 1)
-            if !found {
-                app.swipeUp()
-                found = componentTitle.waitForExistence(timeout: 1)
-            }
-            XCTAssertTrue(found, "Missing localized grade component: \(title)")
+        for title in ["Fitness & check-ins", "Check-in hours"] {
+            XCTAssertTrue(
+                app.staticTexts[title].waitForExistence(timeout: 2),
+                "Missing localized grade text: \(title)"
+            )
         }
+        XCTAssertTrue(app.staticTexts["Endurance run time"].exists)
     }
 
     func testEnglishLayoutRegressionScreenshots() throws {
