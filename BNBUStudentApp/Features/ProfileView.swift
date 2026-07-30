@@ -723,16 +723,43 @@ private struct EnduranceScoringSheet: View {
                         SectionTitle(eyebrow: "ENDURANCE SCORING", title: "耐力跑成绩换算")
 
                         SwissPanel {
-                            HStack(spacing: 10) {
-                                Image(systemName: "figure.run")
+                            HStack(spacing: 14) {
+                                Image(systemName: "dumbbell.fill")
                                     .font(BNBUFont.titleLarge)
                                     .foregroundStyle(BNBUTheme.primary)
+                                    .frame(width: 36)
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("测试项目: \(runType)")
+                                    Text(verbatim: enduranceText("测试项目：", "Test item: ") + runType)
                                         .font(BNBUFont.titleMedium)
-                                    Text("\(appState.workspace.student.gender.title) · \(appState.academicProjection.grade)")
+                                    Text(verbatim: studentDemographic)
                                         .font(BNBUFont.bodyMedium)
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+
+                        SwissPanel {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(verbatim: enduranceText("试算说明", "Calculation notes"))
+                                    .font(BNBUFont.labelMedium)
+                                    .foregroundStyle(BNBUTheme.primary)
+                                Text(verbatim: enduranceText(
+                                    "输入用时后按性别和年级组换算。女生对应 800m，男生对应 1000m。此工具只用于试算，不写入正式成绩。",
+                                    "Enter a time to calculate by gender and grade group. Women use 800 m and men use 1000 m. This preview does not change official grades."
+                                ))
+                                    .font(BNBUFont.bodySmall)
+                                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if isPreview {
+                                    Text(verbatim: enduranceText(
+                                        "演示账号仅用于查看界面，不能执行成绩换算。请使用已连接校园体育服务器的正式账号。",
+                                        "The demo account is for interface preview only and cannot calculate a score. Sign in with a server-connected student account."
+                                    ))
+                                        .font(BNBUFont.bodySmall)
+                                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("endurance.availability.message")
                                 }
                             }
                         }
@@ -740,21 +767,32 @@ private struct EnduranceScoringSheet: View {
                         SwissPanel {
                             VStack(alignment: .leading, spacing: 14) {
                                 HStack(alignment: .bottom, spacing: 12) {
-                                    durationField(title: "分钟", placeholder: "0", text: $minutes)
+                                    durationField(
+                                        title: enduranceText("分钟", "Minutes"),
+                                        placeholder: "0",
+                                        text: $minutes
+                                    )
                                     Text("′")
                                         .font(.system(size: 28, weight: .medium))
-                                    durationField(title: "秒", placeholder: "00", text: $seconds)
+                                    durationField(
+                                        title: enduranceText("秒", "Seconds"),
+                                        placeholder: "00",
+                                        text: $seconds
+                                    )
                                     Text("″")
                                         .font(.system(size: 28, weight: .medium))
                                 }
 
                                 PrimaryActionButton(
-                                    title: appState.isLoading ? "换算中…" : "开始换算",
-                                    systemImage: "timer"
+                                    title: appState.isLoading
+                                        ? enduranceText("换算中…", "Calculating…")
+                                        : enduranceText("开始换算", "Calculate"),
+                                    systemImage: "timer",
+                                    accessibilityIdentifier: "endurance.calculate.button"
                                 ) {
                                     convert()
                                 }
-                                .disabled(appState.isLoading)
+                                .disabled(appState.isLoading || isPreview)
                             }
                         }
 
@@ -766,9 +804,9 @@ private struct EnduranceScoringSheet: View {
                             SectionTitle(eyebrow: "RESULT", title: "换算结果")
                             SwissPanel {
                                 VStack(alignment: .leading, spacing: 14) {
-                                    HStack {
+                                    HStack(alignment: .center) {
                                         VStack(alignment: .leading, spacing: 6) {
-                                            Text("单项得分")
+                                            Text(verbatim: enduranceText("单项得分", "Score"))
                                                 .font(BNBUFont.labelMedium)
                                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                             Text("\(result.score)")
@@ -777,26 +815,14 @@ private struct EnduranceScoringSheet: View {
                                         }
                                         Spacer()
                                         VStack(alignment: .leading, spacing: 6) {
-                                            Text("等级")
+                                            Text(verbatim: enduranceText("等级", "Level"))
                                                 .font(BNBUFont.labelMedium)
                                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                                            StatusBadge(text: result.tierTitle, filled: true)
+                                            StatusBadge(text: localizedTier(result.tier), filled: true)
                                         }
                                     }
 
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(BNBUTheme.primary)
-                                        Text("输入时间: \(result.timeSeconds / 60)′\(result.timeSeconds % 60)″")
-                                            .font(BNBUFont.titleSmall)
-                                        Spacer()
-                                        Text("\(appState.workspace.student.gender.title) · \(appState.academicProjection.grade)")
-                                            .font(BNBUFont.bodySmall)
-                                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                                    }
-                                    .padding(12)
-                                    .background(BNBUTheme.primaryContainer)
-                                    .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                                    resultSummary(result)
                                 }
                             }
                         }
@@ -810,6 +836,7 @@ private struct EnduranceScoringSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
+                        .disabled(appState.isLoading)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -817,10 +844,93 @@ private struct EnduranceScoringSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(appState.isLoading)
+        .accessibilityIdentifier("screen.profile.endurance")
     }
 
     private var runType: String {
         appState.workspace.student.gender == .male ? "1000m" : "800m"
+    }
+
+    private var isPreview: Bool {
+        !appState.isRemoteMode
+    }
+
+    private var studentDemographic: String {
+        [
+            BNBUL10n.dynamicText(appState.workspace.student.gender.title),
+            enduranceGradeLabel
+        ]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: " · ")
+    }
+
+    private var enduranceGradeLabel: String {
+        guard let value = appState.workspace.student.gradeLevel else {
+            return enduranceText("年级待同步", "Grade pending")
+        }
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "freshman":
+            return enduranceText("大一", "Year 1")
+        case "sophomore":
+            return enduranceText("大二", "Year 2")
+        case "junior":
+            return enduranceText("大三", "Year 3")
+        case "senior":
+            return enduranceText("大四", "Year 4")
+        default:
+            return BNBUL10n.dynamicText(value)
+        }
+    }
+
+    private func localizedTier(_ tier: String) -> String {
+        switch tier.lowercased() {
+        case "excellent":
+            return enduranceText("优秀", "Excellent")
+        case "good":
+            return enduranceText("良好", "Good")
+        case "pass":
+            return enduranceText("及格", "Pass")
+        case "fail":
+            return enduranceText("不及格", "Fail")
+        default:
+            return tier
+        }
+    }
+
+    private func resultSummary(_ result: EnduranceScoreResult) -> some View {
+        let timeText = enduranceText("输入时间：", "Input time: ")
+            + "\(result.timeSeconds / 60)′\(result.timeSeconds % 60)″"
+
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(BNBUTheme.primary)
+                Text(verbatim: timeText)
+                    .font(BNBUFont.titleSmall)
+                Spacer(minLength: 10)
+                Text(verbatim: studentDemographic)
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(BNBUTheme.primary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: timeText)
+                        .font(BNBUFont.titleSmall)
+                    Text(verbatim: studentDemographic)
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BNBUTheme.primaryContainer)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
     }
 
     private func durationField(
@@ -841,6 +951,7 @@ private struct EnduranceScoringSheet: View {
                 .onChange(of: text.wrappedValue) { _, value in
                     text.wrappedValue = String(value.filter(\.isNumber).prefix(2))
                 }
+                .disabled(appState.isLoading || isPreview)
         }
         .frame(maxWidth: .infinity)
     }
@@ -848,14 +959,20 @@ private struct EnduranceScoringSheet: View {
     private func convert() {
         let minuteValue = Int(minutes) ?? 0
         let secondValue = Int(seconds) ?? 0
-        guard secondValue >= 0 && secondValue <= 59 else {
-            validationMessage = "秒数请输入 0-59 之间的数字。"
+        guard (0...59).contains(secondValue) else {
+            validationMessage = enduranceText(
+                "秒数请输入 0-59 之间的数字。",
+                "Enter seconds between 0 and 59."
+            )
             result = nil
             return
         }
         let totalSeconds = minuteValue * 60 + secondValue
         guard totalSeconds > 0 else {
-            validationMessage = "请输入有效的跑步时间。"
+            validationMessage = enduranceText(
+                "请输入有效的跑步时间。",
+                "Enter a valid running time."
+            )
             result = nil
             return
         }
@@ -875,5 +992,9 @@ private struct EnduranceScoringSheet: View {
         case "fail": return BNBUTheme.error
         default: return BNBUTheme.onSurfaceVariant
         }
+    }
+
+    private func enduranceText(_ chinese: String, _ english: String) -> String {
+        BNBUL10n.locale.identifier.hasPrefix("zh") ? chinese : english
     }
 }

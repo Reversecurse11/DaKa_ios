@@ -1778,6 +1778,21 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(result.timeSeconds, 244)
     }
 
+    func testDemoEnduranceConversionRequiresRemoteServer() async {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+
+        let converted = await appState.convertEndurance(timeSeconds: 240)
+
+        XCTAssertNil(converted)
+        XCTAssertEqual(
+            appState.errorMessage,
+            BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
+        )
+    }
+
     func testSelfCheckInDraftRestoresSportSelection() {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)

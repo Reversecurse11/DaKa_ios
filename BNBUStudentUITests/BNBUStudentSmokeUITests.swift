@@ -726,7 +726,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         openTab(label: "我的", screenIdentifier: "screen.profile")
         scrollToAndTap(app.buttons["profile.endurance.button"])
         XCTAssertTrue(app.buttons["开始换算"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["测试项目: 800m"].exists)
+        XCTAssertTrue(app.staticTexts["测试项目：800m"].exists)
         app.buttons["关闭"].tap()
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
     }
