@@ -401,11 +401,18 @@ struct SettingLine: View {
     }
 }
 
+private enum ExemptionCenterTab: Hashable {
+    case applications
+    case submit
+}
+
 private struct ExemptionCenterSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedTab: ExemptionCenterTab = .applications
     @State private var showApplicationForm = false
     @State private var supplementApplication: ExemptionApplication?
+    @State private var selectedApplication: ExemptionApplication?
 
     var body: some View {
         NavigationStack {
@@ -413,44 +420,290 @@ private struct ExemptionCenterSheet: View {
                 BNBUPageBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        SectionTitle(eyebrow: "APPLICATION", title: "免测与免打卡")
-
-                        if appState.workspace.exemptions.isEmpty {
-                            EmptyPlaceholder(title: "暂无申请", message: "提交后的免测申请会显示在这里。")
+                        if let selectedApplication {
+                            detailContent(selectedApplication)
                         } else {
-                            ForEach(appState.workspace.exemptions) { application in
-                                SwissPanel {
-                                    ExemptionApplicationRow(application: application) {
-                                        supplementApplication = application
-                                    }
-                                }
-                            }
-                        }
-
-                        PrimaryActionButton(title: "提交新申请", systemImage: "plus") {
-                            showApplicationForm = true
+                            mainContent
                         }
                     }
                     .padding(BNBUSpacing.screen)
                 }
             }
-            .navigationTitle("免测与免打卡")
+            .navigationTitle(exemptionCenterText("免测与免打卡", "Exemptions"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
+                        .disabled(appState.isSubmittingExemption)
                 }
             }
-            .sheet(isPresented: $showApplicationForm) {
+            .sheet(isPresented: $showApplicationForm, onDismiss: refreshAfterFormDismissal) {
                 ExemptionApplicationSheet(mode: .create)
                     .environmentObject(appState)
             }
             .sheet(item: $supplementApplication) { application in
                 ExemptionApplicationSheet(mode: .supplement(application))
                     .environmentObject(appState)
+                    .onDisappear(perform: refreshAfterFormDismissal)
+            }
+        }
+        .interactiveDismissDisabled(appState.isSubmittingExemption)
+        .task {
+            guard appState.isRemoteMode else { return }
+            await appState.refreshRemoteExemptions()
+        }
+    }
+
+    private var mainContent: some View {
+        Group {
+            SectionTitle(eyebrow: "APPLICATION", title: "免测与免打卡")
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: appState.isRemoteMode
+                        ? exemptionCenterText("申请说明", "Application information")
+                        : exemptionCenterText("演示数据", "Demo data"))
+                        .font(BNBUFont.labelMedium)
+                        .foregroundStyle(BNBUTheme.primary)
+                    Text(verbatim: exemptionCenterText(
+                        "耐力跑免测仅适用于 800m / 1000m；通过后由任课教师单独评定耐力跑成绩。",
+                        "Endurance-run exemptions apply only to 800 m / 1000 m. After approval, the instructor assigns the endurance-run result."
+                    ))
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !appState.isRemoteMode {
+                        Text(verbatim: exemptionCenterText(
+                            "演示账号可查看申请状态，但不会伪造提交结果。正式提交请使用已连接服务器的学生账号。",
+                            "The demo account can preview application states but does not fake submissions. Use a server-connected student account to submit."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            BNBUSegmentedControl(
+                values: [.applications, .submit],
+                selection: $selectedTab,
+                title: {
+                    $0 == .applications
+                        ? exemptionCenterText("我的申请", "My applications")
+                        : exemptionCenterText("提交申请", "Submit")
+                },
+                identifier: {
+                    $0 == .applications
+                        ? "exemption.tab.applications"
+                        : "exemption.tab.submit"
+                }
+            )
+            .disabled(appState.isSubmittingExemption)
+
+            if selectedTab == .applications {
+                applicationsContent
+            } else {
+                submitLauncher
             }
         }
     }
+
+    @ViewBuilder
+    private var applicationsContent: some View {
+        if let errorMessage = appState.errorMessage {
+            BNBUErrorPanel(message: errorMessage)
+                .accessibilityIdentifier("exemption.applications.error")
+            Button {
+                Task { await appState.refreshRemoteExemptions() }
+            } label: {
+                Label(
+                    exemptionCenterText("重新加载", "Retry"),
+                    systemImage: "arrow.clockwise"
+                )
+                    .font(BNBUFont.titleSmall)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.isLoadingExemptions)
+            .accessibilityIdentifier("exemption.applications.retry")
+        }
+
+        if appState.isLoadingExemptions && appState.workspace.exemptions.isEmpty {
+            ProgressView()
+                .tint(BNBUTheme.primary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+                .accessibilityIdentifier("exemption.applications.loading")
+        } else if appState.workspace.exemptions.isEmpty {
+            EmptyPlaceholder(
+                title: exemptionCenterText("暂无申请", "No applications"),
+                message: exemptionCenterText(
+                    "你还没有提交过免测或免打卡申请。",
+                    "You have not submitted a test- or check-in-exemption application."
+                )
+            )
+        } else {
+            ForEach(appState.workspace.exemptions) { application in
+                Button {
+                    selectedApplication = application
+                } label: {
+                    SwissPanel {
+                        ExemptionApplicationRow(application: application)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("exemption.application.\(application.id)")
+            }
+        }
+    }
+
+    private var submitLauncher: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(
+                    exemptionCenterText("新建免测申请", "New exemption request"),
+                    systemImage: "doc.badge.plus"
+                )
+                    .font(BNBUFont.titleMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Text(verbatim: exemptionCenterText(
+                    "申请项目会依据学生资料自动匹配为女生 800m 或男生 1000m。证明材料必须使用本机相机现场拍摄。",
+                    "The item is matched automatically to 800 m for female students or 1000 m for male students. Proof must be photographed live with this device."
+                ))
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+                PrimaryActionButton(
+                    title: exemptionCenterText("填写申请", "Open application form"),
+                    systemImage: "plus"
+                ) {
+                    showApplicationForm = true
+                }
+                .disabled(appState.isSubmittingExemption)
+            }
+        }
+    }
+
+    private func detailContent(_ application: ExemptionApplication) -> some View {
+        Group {
+            BNBUBackRow(
+                title: exemptionCenterText("返回我的申请", "Back to applications")
+            ) {
+                selectedApplication = nil
+            }
+            .disabled(appState.isSubmittingExemption)
+            .accessibilityIdentifier("exemption.detail.back")
+
+            SectionTitle(eyebrow: "APPLICATION", title: application.item.rawValue)
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text(verbatim: exemptionCenterText("申请状态", "Application status"))
+                            .font(BNBUFont.titleMedium)
+                        Spacer()
+                        StatusBadge(
+                            text: application.status.rawValue,
+                            filled: application.status == .approved
+                        )
+                    }
+                    detailLine(
+                        title: exemptionCenterText("申请理由", "Application reason"),
+                        value: application.reason
+                    )
+                    if !application.detail.isEmpty {
+                        detailLine(
+                            title: exemptionCenterText("详细说明", "Details"),
+                            value: application.detail
+                        )
+                    }
+                    detailLine(
+                        title: exemptionCenterText("提交时间", "Submitted"),
+                        value: application.submittedAt.isEmpty
+                            ? exemptionCenterText("待同步", "Pending sync")
+                            : application.submittedAt
+                    )
+                }
+            }
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(verbatim: exemptionCenterText("证明材料", "Supporting documents"))
+                        .font(BNBUFont.titleMedium)
+                    if application.proofFiles.isEmpty {
+                        Text(verbatim: exemptionCenterText(
+                            "尚未上传证明材料",
+                            "No supporting documents uploaded"
+                        ))
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    } else {
+                        ForEach(Array(application.proofFiles.enumerated()), id: \.offset) { index, proof in
+                            Label {
+                                Text(verbatim: "\(index + 1). \(proof.fileName)")
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } icon: {
+                                Image(systemName: "doc.fill")
+                            }
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            if !application.teacherFeedback.isEmpty {
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(verbatim: exemptionCenterText("处理意见", "Review comments"))
+                            .font(BNBUFont.titleMedium)
+                        Text(application.teacherFeedback)
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            if application.status.canSupplement {
+                PrimaryActionButton(
+                    title: exemptionCenterText("补交证明材料", "Submit additional documents"),
+                    systemImage: "arrow.up.doc.fill",
+                    accessibilityIdentifier: "exemption.detail.supplement"
+                ) {
+                    supplementApplication = application
+                }
+                .disabled(appState.isSubmittingExemption)
+            }
+        }
+    }
+
+    private func detailLine(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: title)
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            Text(value)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func refreshAfterFormDismissal() {
+        guard appState.isRemoteMode else { return }
+        Task {
+            await appState.refreshRemoteExemptions()
+            if let selectedApplication,
+               let refreshed = appState.workspace.exemptions.first(where: { $0.id == selectedApplication.id }) {
+                self.selectedApplication = refreshed
+            }
+        }
+    }
+}
+
+private func exemptionCenterText(_ chinese: String, _ english: String) -> String {
+    BNBUL10n.locale.identifier.hasPrefix("zh") ? chinese : english
 }
 
 private struct EnduranceScoringSheet: View {

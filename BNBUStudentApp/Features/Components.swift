@@ -1153,6 +1153,7 @@ private struct PermissionStatusLine: View {
 
 struct CameraCapturePicker: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
+    var initialCaptureMode: UIImagePickerController.CameraCaptureMode? = nil
     let completion: (ProofAttachment) -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -1165,6 +1166,12 @@ struct CameraCapturePicker: UIViewControllerRepresentable {
         let availableTypes = UIImagePickerController.availableMediaTypes(for: .camera) ?? []
         let preferredTypes = [UTType.image.identifier, UTType.movie.identifier].filter { availableTypes.contains($0) }
         picker.mediaTypes = preferredTypes.isEmpty ? availableTypes : preferredTypes
+        if let initialCaptureMode,
+           initialCaptureMode == .photo,
+           picker.mediaTypes.contains(UTType.image.identifier) {
+            picker.cameraCaptureMode = .photo
+            picker.mediaTypes = [UTType.image.identifier]
+        }
         return picker
     }
 

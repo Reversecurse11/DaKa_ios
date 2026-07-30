@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Replicates the Android baseline `GradesScreen.kt`: a header plus exactly two
 /// cards. 业务流程 v6.0 §1.4 limits the student view to the endurance-run result
@@ -365,7 +366,10 @@ struct ExemptionApplicationSheet: View {
     @State private var reason: String
     @State private var detail: String
     @State private var proofAttachments: [ProofAttachment]
-    @State private var isConfirmationPresented = false
+    @State private var recoveryNotice: String?
+    private let livePhotoPolicy = ExemptionLivePhotoPolicy(
+        maxAttachmentCount: ExemptionProofRule.maxAttachmentCount
+    )
 
     init(mode: ExemptionSheetMode) {
         self.mode = mode
@@ -373,6 +377,7 @@ struct ExemptionApplicationSheet: View {
         _reason = State(initialValue: "")
         _detail = State(initialValue: "")
         _proofAttachments = State(initialValue: [])
+        _recoveryNotice = State(initialValue: nil)
     }
 
     var body: some View {
@@ -389,31 +394,34 @@ struct ExemptionApplicationSheet: View {
                         }
 
                         formPanel
-                        ProofAttachmentPanel(
-                            attachments: $proofAttachments,
-                            maxAttachmentCount: ExemptionProofRule.maxAttachmentCount,
-                            summaryText: ExemptionProofRule.summaryText
-                        )
+                        livePhotoPanel
 
                         if let validationHint {
-                            Text(validationHint)
+                            Text(verbatim: validationHint)
                                 .font(BNBUFont.labelMedium)
-                                .foregroundStyle(BNBUTheme.ink)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(12)
-                                .background(BNBUTheme.blueSoft)
+                                .background(BNBUTheme.surfaceVariant)
                                 .bnbuOutlinedSurface()
+                                .accessibilityIdentifier("exemption.validation.message")
                         }
 
                         DisabledAwareButton(
-                            title: mode.submitTitle,
+                            title: appState.isSubmittingExemption
+                                ? exemptionText("提交中…", "Submitting…")
+                                : mode.submitTitle,
                             systemImage: mode.systemImage,
-                            isDisabled: !canSubmit || appState.isLoading,
+                            isDisabled: !canSubmit || appState.isSubmittingExemption,
                             accessibilityIdentifier: "exemption.submit.button"
                         ) {
                             focusedField = nil
                             dismissBNBUKeyboard()
-                            isConfirmationPresented = true
+                            Task {
+                                if await submit() {
+                                    dismiss()
+                                }
+                            }
                         }
                     }
                     .padding(BNBUSpacing.screen)
@@ -429,6 +437,7 @@ struct ExemptionApplicationSheet: View {
                         dismissBNBUKeyboard()
                         dismiss()
                     }
+                    .disabled(appState.isSubmittingExemption)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -439,31 +448,14 @@ struct ExemptionApplicationSheet: View {
                     .font(BNBUFont.titleSmall)
                 }
             }
-            .confirmationDialog(
-                mode.title,
-                isPresented: $isConfirmationPresented,
-                titleVisibility: .visible
-            ) {
-                Button {
-                    focusedField = nil
-                    dismissBNBUKeyboard()
-                    Task {
-                        if await submit() {
-                            dismiss()
-                        }
-                    }
-                } label: {
-                    Text(LocalizedStringKey(mode.submitTitle))
-                }
-                Button("取消", role: .cancel) {}
-            } message: {
-                Text(mode.application == nil
-                    ? "确认提交后将进入老师审核流程。"
-                    : "确认提交后，补充凭证将进入老师复审流程。")
-            }
         }
+        .interactiveDismissDisabled(appState.isSubmittingExemption)
         .onAppear {
             restorePendingAttemptIfAvailable()
+            normalizeSelectedItemForStudent()
+        }
+        .onChange(of: appState.workspace.student.gender) { _, _ in
+            normalizeSelectedItemForStudent()
         }
     }
 
@@ -473,19 +465,44 @@ struct ExemptionApplicationSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("申请项目")
                         .font(BNBUFont.titleSmall)
-                    Picker("申请项目", selection: $selectedItem) {
-                        ForEach(ExemptionItem.allCases) { item in
-                            Label {
-                                Text(LocalizedStringKey(item.rawValue))
-                            } icon: {
-                                Image(systemName: item.symbolName)
-                            }
-                            .tag(item)
+                    HStack(spacing: 10) {
+                        Image(systemName: selectedItem.symbolName)
+                            .font(BNBUFont.titleLarge)
+                            .foregroundStyle(BNBUTheme.primary)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(verbatim: itemTitle(selectedItem))
+                                .font(BNBUFont.titleSmall)
+                                .foregroundStyle(BNBUTheme.onSurface)
+                            Text(verbatim: mode.application == nil
+                                ? exemptionText(
+                                    "已根据学生性别自动匹配，不能手动切换",
+                                    "Matched automatically from the student profile"
+                                )
+                                : exemptionText(
+                                    "补充材料沿用原申请项目",
+                                    "Additional documents keep the original application item"
+                                ))
+                                .font(BNBUFont.bodySmall)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         }
+                        Spacer(minLength: 0)
                     }
-                    .pickerStyle(.menu)
-                    .disabled(mode.application != nil)
+                    .padding(12)
+                    .background(BNBUTheme.surfaceVariant)
+                    .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
                     .accessibilityIdentifier("exemption.item.picker")
+
+                    if hasPendingSameType {
+                        Text(verbatim: exemptionText(
+                            "你已有相同类型的待审核申请，请等待教师处理后再提交。",
+                            "You already have a pending application of this type. Wait for the teacher's decision before submitting another."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.error)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("exemption.pending.sameType")
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -501,6 +518,7 @@ struct ExemptionApplicationSheet: View {
                         .bnbuOutlinedSurface(lineWidth: 1.5)
                         .focused($focusedField, equals: .reason)
                         .submitLabel(.done)
+                        .disabled(appState.isSubmittingExemption)
                         .onSubmit {
                             focusedField = .detail
                         }
@@ -520,8 +538,9 @@ struct ExemptionApplicationSheet: View {
                         .background(BNBUTheme.surface)
                         .bnbuOutlinedSurface(lineWidth: 1.5)
                         .focused($focusedField, equals: .detail)
+                        .disabled(appState.isSubmittingExemption)
                         .accessibilityIdentifier("exemption.detail.editor")
-                    Text(LocalizedStringKey(selectedItem.proofHint))
+                    Text(verbatim: proofHint(selectedItem))
                         .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.muted)
                 }
@@ -529,26 +548,140 @@ struct ExemptionApplicationSheet: View {
         }
     }
 
+    private var livePhotoPanel: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: exemptionText("证明材料", "Supporting documents"))
+                            .font(BNBUFont.titleSmall)
+                        Text(verbatim: exemptionText(
+                            "仅接受本机摄像头现场拍摄的照片；不可选择相册或视频，每张不超过 8MB。",
+                            "Only live photos from this device's camera are accepted. Library files and videos are not allowed; each photo must be 8 MB or smaller."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    StatusBadge(text: "\(proofAttachments.count)/\(livePhotoPolicy.maxAttachmentCount)")
+                }
+
+                ExerciseCameraCaptureButton(
+                    title: isAtPhotoLimit
+                        ? exemptionText("已达到照片上限", "Photo limit reached")
+                        : exemptionText("现场拍照", "Take live photo"),
+                    purpose: .exemption,
+                    initialCaptureMode: .photo,
+                    isDisabled: isAtPhotoLimit || appState.isSubmittingExemption,
+                    accessibilityIdentifier: "exemption.proof.camera"
+                ) { attachment in
+                    guard isLiveCameraPhoto(attachment), !isAtPhotoLimit else { return }
+                    proofAttachments.append(attachment)
+                }
+
+                if proofAttachments.isEmpty {
+                    Text(verbatim: exemptionText("尚未拍摄证明", "No proof photo captured"))
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(proofAttachments) { attachment in
+                        HStack(spacing: 10) {
+                            proofThumbnail(attachment)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: attachment.fileName)
+                                    .font(BNBUFont.labelMedium)
+                                    .lineLimit(1)
+                                Text(verbatim: formattedByteCount(attachment.byteCount))
+                                    .font(BNBUFont.bodySmall)
+                                    .foregroundStyle(BNBUTheme.muted)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                remove(attachment)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .frame(width: 44, height: 44)
+                            }
+                            .disabled(appState.isSubmittingExemption)
+                            .accessibilityLabel(Text(verbatim: exemptionText("删除照片", "Delete photo")))
+                        }
+                        .padding(8)
+                        .background(BNBUTheme.surfaceVariant)
+                        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func proofThumbnail(_ attachment: ProofAttachment) -> some View {
+        if let data = attachment.thumbnailData,
+           let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+        } else {
+            Image(systemName: "doc.richtext")
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 52, height: 52)
+                .background(BNBUTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+        }
+    }
+
     private var canSubmit: Bool {
-        let hasValidProof = !proofAttachments.isEmpty &&
-            ExemptionProofRule.accepts(proofAttachments) &&
-            proofAttachments.allSatisfy(\.isValidForUpload)
-        return ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) == nil &&
-            (hasValidProof || canResumePendingAttempt)
+        let hasValidProof = !proofAttachments.isEmpty
+            && proofAttachments.count <= ExemptionProofRule.maxAttachmentCount
+            && proofAttachments.allSatisfy(isLiveCameraPhoto)
+            && proofAttachments.allSatisfy(\.isValidForUpload)
+        return appState.isRemoteMode
+            && !hasPendingSameType
+            && ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) == nil
+            && (hasValidProof || canResumePendingAttempt)
     }
 
     private var validationHint: String? {
+        guard appState.isRemoteMode else {
+            return exemptionText(
+                "演示账号仅用于查看界面，不能提交免测申请或补充材料。",
+                "The demo account is for interface preview only and cannot submit exemption requests or supplements."
+            )
+        }
+        if let recoveryNotice {
+            return recoveryNotice
+        }
         if canResumePendingAttempt {
-            return "已恢复上次未确认的提交。继续提交会复用同一幂等键和已上传凭证，不会重复上传。"
+            return exemptionText(
+                "已恢复上次未确认的提交。继续提交会复用同一幂等键和已上传凭证，不会重复上传。",
+                "Your unconfirmed submission was restored. Retrying reuses the same idempotency key and uploaded proof."
+            )
+        }
+        if hasPendingSameType {
+            return nil
         }
         if proofAttachments.isEmpty {
-            return "请至少添加 1 个医院证明、校医室证明或相关材料。"
+            return exemptionText(
+                "请至少现场拍摄 1 张医院证明、校医室证明或诊断材料。",
+                "Take at least one live photo of a hospital certificate, campus-clinic certificate, or diagnostic document."
+            )
+        }
+        if proofAttachments.contains(where: { !isLiveCameraPhoto($0) }) {
+            return exemptionText(
+                "免测证明只接受现场拍摄的照片；视频、相册文件和占位凭证不能提交。",
+                "Exemption proof accepts live photos only. Videos, photo-library files, and placeholders cannot be submitted."
+            )
         }
         if proofAttachments.contains(where: { !$0.isValidForUpload }) {
-            return "有凭证超过大小限制，请删除或替换后再提交。"
-        }
-        if let proofLimitMessage = ExemptionProofRule.validationMessage(for: proofAttachments) {
-            return proofLimitMessage
+            return exemptionText(
+                "有照片无效或超过 8MB，请删除后重新拍摄。",
+                "A photo is invalid or larger than 8 MB. Remove it and take another photo."
+            )
         }
         if let inputMessage = ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) {
             return inputMessage
@@ -565,6 +698,7 @@ struct ExemptionApplicationSheet: View {
     }
 
     private func submit() async -> Bool {
+        guard canSubmit else { return false }
         if let application = mode.application {
             return await appState.submitExemptionSupplement(
                 for: application,
@@ -591,6 +725,71 @@ struct ExemptionApplicationSheet: View {
         )
     }
 
+    private var hasPendingSameType: Bool {
+        mode.application == nil && appState.hasPendingExemption(for: selectedItem)
+    }
+
+    private var isAtPhotoLimit: Bool {
+        proofAttachments.count >= livePhotoPolicy.maxAttachmentCount
+    }
+
+    private func isLiveCameraPhoto(_ attachment: ProofAttachment) -> Bool {
+        attachment.type == .image && attachment.source == "摄像头"
+    }
+
+    private func remove(_ attachment: ProofAttachment) {
+        proofAttachments.removeAll { $0.id == attachment.id }
+        ProofTransientFileStore.removeManagedCopy(at: attachment.sourceFileURL)
+    }
+
+    private func formattedByteCount(_ byteCount: Int?) -> String {
+        guard let byteCount else {
+            return exemptionText("大小待确认", "Size unavailable")
+        }
+        return ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
+    }
+
+    private func normalizeSelectedItemForStudent() {
+        guard mode.application == nil else { return }
+        selectedItem = appState.workspace.student.gender == .male ? .run1000m : .run800m
+    }
+
+    private func itemTitle(_ item: ExemptionItem) -> String {
+        switch item {
+        case .run800m:
+            return exemptionText("800m 免测", "800 m test exemption")
+        case .run1000m:
+            return exemptionText("1000m 免测", "1000 m test exemption")
+        case .enduranceRun:
+            return exemptionText("800/1000 米耐力跑", "800/1000 m run")
+        case .physicalTest:
+            return exemptionText("体测免测", "Physical-test exemption")
+        case .singlePhysicalItem:
+            return exemptionText("体测单项免测", "Single-item exemption")
+        }
+    }
+
+    private func proofHint(_ item: ExemptionItem) -> String {
+        switch item {
+        case .run800m:
+            return exemptionText(
+                "请现场拍摄医院或校医室证明，说明不适合参加 800 米耐力跑测试。",
+                "Take a live photo of a hospital or campus-clinic certificate showing that the 800 m run is unsuitable."
+            )
+        case .run1000m:
+            return exemptionText(
+                "请现场拍摄医院或校医室证明，说明不适合参加 1000 米耐力跑测试。",
+                "Take a live photo of a hospital or campus-clinic certificate showing that the 1000 m run is unsuitable."
+            )
+        default:
+            return item.proofHint
+        }
+    }
+
+    private func exemptionText(_ chinese: String, _ english: String) -> String {
+        BNBUL10n.locale.identifier.hasPrefix("zh") ? chinese : english
+    }
+
     private func restorePendingAttemptIfAvailable() {
         guard reason.isEmpty,
               detail.isEmpty,
@@ -603,8 +802,19 @@ struct ExemptionApplicationSheet: View {
         selectedItem = recovery.item
         reason = recovery.reason
         detail = recovery.detail
-        proofAttachments = recovery.sourceProofs
+        let livePhotos = recovery.sourceProofs.filter(isLiveCameraPhoto)
+        proofAttachments = livePhotos
+        if livePhotos.count != recovery.sourceProofs.count {
+            recoveryNotice = exemptionText(
+                "上次提交中不符合“仅现场照片”要求的材料已移除，请重新拍摄证明。",
+                "Documents from the previous attempt that were not live photos were removed. Take new proof photos."
+            )
+        }
     }
+}
+
+private struct ExemptionLivePhotoPolicy {
+    let maxAttachmentCount: Int
 }
 
 private enum ExemptionFormField: Hashable {

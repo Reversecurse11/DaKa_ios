@@ -631,6 +631,21 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(JoinRequestStatus(serverValue: nil))
     }
 
+    func testPendingExemptionBlocksOnlyTheSameType() throws {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        var application = try XCTUnwrap(appState.workspace.exemptions.first)
+        application.status = .pending
+        application.item = .run800m
+        appState.workspace.exemptions = [application]
+
+        XCTAssertTrue(appState.hasPendingExemption(for: .run800m))
+        XCTAssertTrue(appState.hasPendingExemption(for: .enduranceRun))
+        XCTAssertFalse(appState.hasPendingExemption(for: .run1000m))
+    }
+
     func testWorkspaceCacheKeepsJoinRequestAndToleratesOlderCaches() throws {
         let request = CourseJoinRequest(
             id: "r1",
@@ -1493,28 +1508,88 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(expired.canSupplement)
     }
 
-    func testAppStateSubmitsExemptionAsPendingWithProofs() async {
+    func testExemptionList404FallsBackToSportSummaryWithoutLoadingWorkspaceModules() async throws {
+        ExemptionRefreshURLProtocol.configure(.dedicatedRouteNotFound)
+        let repository = makeExemptionRefreshRepository()
+
+        let exemptions = try await repository.listExemptions()
+
+        XCTAssertEqual(exemptions.map(\.id), ["summary-exemption"])
+        XCTAssertEqual(ExemptionRefreshURLProtocol.paths, [
+            "/api/v1/student/physical-test-exemptions",
+            "/api/v1/sport/summary"
+        ])
+        XCTAssertFalse(ExemptionRefreshURLProtocol.paths.contains("/api/v1/student/courses"))
+        XCTAssertFalse(ExemptionRefreshURLProtocol.paths.contains("/api/v1/sport/records"))
+    }
+
+    func testExemptionListMalformedDedicatedPayloadThrowsInsteadOfReturningEmptyList() async {
+        ExemptionRefreshURLProtocol.configure(.malformedDedicatedPayload)
+        let repository = makeExemptionRefreshRepository()
+
+        do {
+            _ = try await repository.listExemptions()
+            XCTFail("Malformed exemption data must not be treated as an empty list")
+        } catch {
+            XCTAssertTrue(error is DecodingError)
+        }
+    }
+
+    func testRemoteExemptionRefreshKeepsCachedApplicationsAndSurfacesServerError() async {
+        ExemptionRefreshURLProtocol.configure(.serverFailure)
+        let defaults = isolatedDefaults()
+        let repository = makeExemptionRefreshRepository(defaults: defaults)
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults),
+            remoteRepo: repository
+        )
+        await appState.login(account: "s1", password: "test-password")
+        XCTAssertTrue(appState.isRemoteMode)
+        let cachedApplications = appState.workspace.exemptions
+        ExemptionRefreshURLProtocol.resetRecordedPaths()
+
+        await appState.refreshRemoteExemptions()
+
+        XCTAssertEqual(appState.workspace.exemptions, cachedApplications)
+        XCTAssertNotNil(appState.errorMessage)
+        XCTAssertFalse(appState.isLoadingExemptions)
+        XCTAssertEqual(
+            ExemptionRefreshURLProtocol.paths,
+            ["/api/v1/student/physical-test-exemptions"]
+        )
+    }
+
+    func testAppStateExemptionSubmissionFailsClosedInDemoMode() async {
         let defaults = isolatedDefaults()
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: defaults)
         )
+        let originalExemptions = appState.workspace.exemptions
+        let originalSyncOperations = appState.workspace.syncOperations
+        let originalNotices = appState.workspace.notices
 
-        await appState.submitExemption(
+        let submitted = await appState.submitExemption(
             item: .run800m,
             reason: "膝关节运动损伤",
             detail: "医生建议暂缓耐力跑测试。",
             proofAttachments: [
-                ProofAttachment(id: "proof", type: .image, fileName: "hospital-note.jpg", byteCount: 480_000, source: "test")
+                ProofAttachment(
+                    id: "proof",
+                    type: .image,
+                    fileName: "hospital-note.jpg",
+                    byteCount: 480_000,
+                    source: "摄像头"
+                )
             ]
         )
 
-        let application = appState.workspace.exemptions.first
-        XCTAssertEqual(application?.item, .run800m)
-        XCTAssertEqual(application?.status, .pending)
-        XCTAssertEqual(application?.proofFiles.count, 1)
-        XCTAssertEqual(appState.workspace.syncOperations.first?.type, .submitExemption)
-        XCTAssertTrue(appState.workspace.notices.first?.title.contains("免测") ?? false)
+        XCTAssertFalse(submitted)
+        XCTAssertEqual(appState.workspace.exemptions, originalExemptions)
+        XCTAssertEqual(appState.workspace.syncOperations, originalSyncOperations)
+        XCTAssertEqual(appState.workspace.notices, originalNotices)
+        XCTAssertTrue(appState.errorMessage?.contains("演示账户") == true)
     }
 
     func testAppStateRejectsInvalidExemptionProof() async {
@@ -2478,7 +2553,7 @@ final class BNBUStudentModelTests: XCTestCase {
             byteCount: 4,
             thumbnailData: Data([0xAA]),
             uploadData: Data([0xFF, 0xD8, 0xFF, 0xD9]),
-            source: "相册"
+            source: "摄像头"
         )
         let exemption = try XCTUnwrap(firstState.workspace.exemptions.first(where: { $0.id == "ex1" }))
 
@@ -3128,7 +3203,7 @@ final class BNBUStudentModelTests: XCTestCase {
             fileName: "new-proof.jpg",
             byteCount: 4,
             uploadData: Data([0xFF, 0xD8, 0xFF, 0xD9]),
-            source: "test"
+            source: "摄像头"
         )
 
         let expiredResult = await appState.submitExemptionSupplement(
@@ -3145,9 +3220,12 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         XCTAssertFalse(expiredResult)
-        XCTAssertTrue(supplementResult)
-        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.status, .pending)
-        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.proofFiles.count, 1)
+        XCTAssertFalse(supplementResult)
+        XCTAssertEqual(
+            appState.workspace.exemptions.first(where: { $0.id == base.id })?.status,
+            .supplementRequired
+        )
+        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.proofFiles.count, 0)
         XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == expired.id })?.status, .expired)
     }
 
@@ -3190,10 +3268,30 @@ final class BNBUStudentModelTests: XCTestCase {
         return appState
     }
 
+    private func makeExemptionRefreshRepository(
+        defaults: UserDefaults? = nil
+    ) -> RemoteStudentRepository {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ExemptionRefreshURLProtocol.self]
+        return RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: InMemoryCredentialStore(),
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: defaults ?? isolatedDefaults()
+        )
+    }
+
     private func submitFailClosedFlow(
         _ flow: FailClosedMutationFlow,
         on appState: AppState
     ) async throws -> Bool {
+        let source: String
+        switch flow {
+        case .createRecord:
+            source = "相册"
+        case .createExemption, .supplementExemption:
+            source = "摄像头"
+        }
         let proof = ProofAttachment(
             id: "fail-closed-\(flow.scope)",
             type: .image,
@@ -3201,7 +3299,7 @@ final class BNBUStudentModelTests: XCTestCase {
             byteCount: 4,
             thumbnailData: Data([0xFF, 0xD8]),
             uploadData: Data([0xFF, 0xD8, 0xFF, 0xD9]),
-            source: "相册"
+            source: source
         )
         switch flow {
         case .createRecord:
@@ -3236,6 +3334,143 @@ final class BNBUStudentModelTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
+    }
+}
+
+private enum ExemptionRefreshResponseMode {
+    case dedicatedRouteNotFound
+    case malformedDedicatedPayload
+    case serverFailure
+}
+
+private final class ExemptionRefreshURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var responseMode: ExemptionRefreshResponseMode = .serverFailure
+    private static var recordedPaths: [String] = []
+
+    static var paths: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedPaths
+    }
+
+    static func configure(_ mode: ExemptionRefreshResponseMode) {
+        lock.lock()
+        responseMode = mode
+        recordedPaths = []
+        lock.unlock()
+    }
+
+    static func resetRecordedPaths() {
+        lock.lock()
+        recordedPaths = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let path = request.url?.path ?? ""
+        let method = request.httpMethod ?? "GET"
+        Self.lock.lock()
+        Self.recordedPaths.append(path)
+        let mode = Self.responseMode
+        Self.lock.unlock()
+
+        if path == "/api/v1/auth/login", method == "POST" {
+            send(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {
+                      "token": "exemption-refresh-token",
+                      "user": {
+                        "id": "s1",
+                        "name": "Test Student",
+                        "email": "s1@example.edu",
+                        "college": "BNBU",
+                        "className": "2026A",
+                        "status": "正常"
+                      },
+                      "defaultRoute": "/student"
+                    }
+                    """.utf8
+                )
+            )
+            return
+        }
+
+        if path == "/api/v1/student/workspace", method == "GET" {
+            let workspace = MockStudentRepository().loadWorkspace()
+            send(statusCode: 200, data: (try? JSONEncoder().encode(workspace)) ?? Data("{}".utf8))
+            return
+        }
+
+        if path == "/api/v1/student/physical-test-exemptions", method == "GET" {
+            switch mode {
+            case .dedicatedRouteNotFound:
+                send(
+                    statusCode: 404,
+                    data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+                )
+            case .malformedDedicatedPayload:
+                send(statusCode: 200, data: Data("{\"items\":{\"unexpected\":true}}".utf8))
+            case .serverFailure:
+                send(
+                    statusCode: 503,
+                    data: Data("{\"code\":\"SERVICE_UNAVAILABLE\",\"message\":\"temporarily unavailable\"}".utf8)
+                )
+            }
+            return
+        }
+
+        if path == "/api/v1/sport/summary",
+           method == "GET",
+           case .dedicatedRouteNotFound = mode {
+            send(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {
+                      "exemptions": [
+                        {
+                          "id": "summary-exemption",
+                          "studentId": "s1",
+                          "type": "800m",
+                          "reason": "medical reason",
+                          "detail": "doctor note",
+                          "createdAt": "2026-07-16T00:00:00Z",
+                          "status": "pending",
+                          "proofFiles": []
+                        }
+                      ]
+                    }
+                    """.utf8
+                )
+            )
+            return
+        }
+
+        send(
+            statusCode: 404,
+            data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+        )
+    }
+
+    override func stopLoading() {}
+
+    private func send(statusCode: Int, data: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
     }
 }
 

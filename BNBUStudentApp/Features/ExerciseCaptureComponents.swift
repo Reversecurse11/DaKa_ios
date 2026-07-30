@@ -2,6 +2,33 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
+enum ExerciseCameraCapturePurpose {
+    case checkIn
+    case exemption
+
+    var unavailableMessage: String {
+        switch self {
+        case .checkIn:
+            return BNBUL10n.text("打卡凭证只能通过相机实时拍摄。模拟器或当前设备没有可用摄像头。")
+        case .exemption:
+            return BNBUL10n.locale.identifier.hasPrefix("zh")
+                ? "免测证明只能通过相机现场拍摄。模拟器或当前设备没有可用摄像头。"
+                : "Exemption proof must be captured live with the camera. This simulator or device has no available camera."
+        }
+    }
+
+    var deniedMessage: String {
+        switch self {
+        case .checkIn:
+            return BNBUL10n.text("打卡凭证只能通过相机实时拍摄，需要允许 BNBU Student 使用摄像头。")
+        case .exemption:
+            return BNBUL10n.locale.identifier.hasPrefix("zh")
+                ? "免测证明只能通过相机现场拍摄，需要允许 BNBU Student 使用摄像头。"
+                : "Exemption proof must be captured live. Allow BNBU Student to use the camera."
+        }
+    }
+}
+
 /// Camera-only capture entry for the check-in flow (business rule 6.4: no
 /// photo-library access for check-in proofs). Handles availability and
 /// permission states, then hands the capture to `onCapture`.
@@ -9,6 +36,8 @@ struct ExerciseCameraCaptureButton: View {
     @Environment(\.openURL) private var openURL
     let title: String
     var systemImage = "camera.fill"
+    var purpose: ExerciseCameraCapturePurpose = .checkIn
+    var initialCaptureMode: UIImagePickerController.CameraCaptureMode? = nil
     var isDisabled = false
     var accessibilityIdentifier: String?
     let onCapture: (ProofAttachment) -> Void
@@ -36,7 +65,7 @@ struct ExerciseCameraCaptureButton: View {
         .disabled(isDisabled)
         .accessibilityIdentifier(accessibilityIdentifier ?? "checkin.capture.camera")
         .fullScreenCover(isPresented: $isCameraPresented) {
-            CameraCapturePicker { attachment in
+            CameraCapturePicker(initialCaptureMode: initialCaptureMode) { attachment in
                 onCapture(attachment)
             }
             .ignoresSafeArea()
@@ -46,13 +75,13 @@ struct ExerciseCameraCaptureButton: View {
             case .unavailable:
                 return Alert(
                     title: Text("当前设备无法拍摄"),
-                    message: Text("打卡凭证只能通过相机实时拍摄。模拟器或当前设备没有可用摄像头。"),
+                    message: Text(purpose.unavailableMessage),
                     dismissButton: .default(Text("好"))
                 )
             case .denied:
                 return Alert(
                     title: Text("摄像头权限未开启"),
-                    message: Text("打卡凭证只能通过相机实时拍摄，需要允许 BNBU Student 使用摄像头。"),
+                    message: Text(purpose.deniedMessage),
                     primaryButton: .default(Text("去设置")) {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
                             openURL(url)

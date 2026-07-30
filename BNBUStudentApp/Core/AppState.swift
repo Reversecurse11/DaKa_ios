@@ -55,6 +55,8 @@ final class AppState: ObservableObject {
     @Published private(set) var isRemoteMode = false
     @Published private(set) var checkInSubmissionPhase: CheckInSubmissionPhase = .idle
     @Published private(set) var canSafelyRetryCheckIn = false
+    @Published private(set) var isSubmittingExemption = false
+    @Published private(set) var isLoadingExemptions = false
     @Published private(set) var pendingRemoteMutationSummaries: [PendingRemoteMutationSummary] = []
 
     private let repository: StudentRepository
@@ -170,6 +172,12 @@ final class AppState: ObservableObject {
 
     var hasPendingEnrollmentOnly: Bool {
         currentExerciseCourse == nil && !pendingEnrollmentCourses.isEmpty
+    }
+
+    func hasPendingExemption(for item: ExemptionItem) -> Bool {
+        workspace.exemptions.contains {
+            $0.status == .pending && $0.item.apiValue == item.apiValue
+        }
     }
 
     /// Submits a course join application (rule 4.2). The request endpoint ships
@@ -851,6 +859,7 @@ final class AppState: ObservableObject {
         isRemoteMode = false
         remoteCacheStudentID = nil
         isLoading = false
+        isLoadingExemptions = false
         isRefreshingWorkspace = false
         mutationGate.removeAll()
         let journalCleared = clearAllPendingRemoteMutations()
@@ -958,6 +967,31 @@ final class AppState: ObservableObject {
             let remoteWorkspace = try await remoteRepo.loadWorkspace()
             guard refreshEpoch == sessionEpoch, isRemoteMode else { return }
             applyRemoteWorkspace(remoteWorkspace, event: "已从服务器刷新工作台")
+        } catch {
+            await handleRemoteError(error, expectedSessionEpoch: refreshEpoch)
+        }
+    }
+
+    /// Refreshes only the exemption applications. A failed request deliberately
+    /// leaves the cached list intact so the centre never turns a transport error
+    /// into a misleading empty state.
+    func refreshRemoteExemptions() async {
+        guard isRemoteMode, !isLoadingExemptions else { return }
+        let refreshEpoch = sessionEpoch
+        isLoadingExemptions = true
+        errorMessage = nil
+        defer {
+            if refreshEpoch == sessionEpoch {
+                isLoadingExemptions = false
+            }
+        }
+        do {
+            let exemptions = try await remoteRepo.listExemptions(
+                fallback: workspace.exemptions
+            )
+            guard refreshEpoch == sessionEpoch, isRemoteMode else { return }
+            workspace.exemptions = exemptions
+            saveWorkspace(event: "已从服务器刷新免测申请")
         } catch {
             await handleRemoteError(error, expectedSessionEpoch: refreshEpoch)
         }
@@ -1101,21 +1135,19 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func submitExemption(item: ExemptionItem, reason: String, detail: String, proofAttachments: [ProofAttachment]) async -> Bool {
+        guard !isSubmittingExemption else {
+            errorMessage = BNBUL10n.text("免测申请正在提交，请勿重复操作。")
+            return false
+        }
+        isSubmittingExemption = true
+        defer { isSubmittingExemption = false }
+
         let mutationKey = "submit-exemption"
         guard beginMutation(mutationKey) else {
             errorMessage = BNBUL10n.text("免测申请正在提交，请勿重复操作。")
             return false
         }
         defer { endMutation(mutationKey) }
-        if isRemoteMode {
-            return await submitExemptionRemote(
-                item: item,
-                reason: reason,
-                detail: detail,
-                proofAttachments: proofAttachments,
-                expectedSessionEpoch: sessionEpoch
-            )
-        }
 
         let normalizedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1123,41 +1155,30 @@ final class AppState: ObservableObject {
             errorMessage = inputMessage
             return false
         }
-        guard !proofAttachments.isEmpty else { return false }
-        guard ExemptionProofRule.accepts(proofAttachments) else { return false }
-        guard proofAttachments.allSatisfy(\.isValidForUpload) else { return false }
+        guard isRemoteMode else {
+            errorMessage = exemptionCopy(
+                "演示账户仅供界面预览，不能提交免测申请。",
+                "The demo account is for interface preview only and cannot submit exemption requests."
+            )
+            return false
+        }
+        guard ExemptionProofRule.accepts(proofAttachments) else {
+            errorMessage = liveExemptionProofError
+            return false
+        }
+        guard acceptsLiveExemptionProofs(proofAttachments) ||
+                acceptsPersistedLiveExemptionProofs(proofAttachments) else {
+            errorMessage = liveExemptionProofError
+            return false
+        }
 
-        let application = ExemptionApplication(
-            id: UUID().uuidString,
-            studentId: workspace.student.id,
+        return await submitExemptionRemote(
             item: item,
             reason: normalizedReason,
             detail: normalizedDetail,
-            submittedAt: RecentTimestamp.justNow,
-            status: .pending,
-            proofFiles: proofAttachments,
-            teacherFeedback: BNBUL10n.text("免测申请已提交，等待老师审核。"),
-            updatedAt: RecentTimestamp.justNow
+            proofAttachments: proofAttachments,
+            expectedSessionEpoch: sessionEpoch
         )
-        workspace.exemptions.insert(application, at: 0)
-        workspace.notices.insert(
-            StudentNotice(
-                id: UUID().uuidString,
-                title: BNBUL10n.text("免测申请已提交"),
-                message: BNBUL10n.text("\(item.rawValue) 已进入审核流程。"),
-                time: RecentTimestamp.justNow,
-                category: .review,
-                isUnread: true
-            ),
-            at: 0
-        )
-        enqueueSyncOperation(
-            .submitExemption,
-            title: "提交免测申请",
-            detail: "\(item.rawValue) · \(proofSummary(proofAttachments: proofAttachments))"
-        )
-        saveWorkspace(event: "免测申请已保存")
-        return true
     }
 
     @discardableResult
@@ -1167,6 +1188,13 @@ final class AppState: ObservableObject {
         detail: String,
         proofAttachments: [ProofAttachment]
     ) async -> Bool {
+        guard !isSubmittingExemption else {
+            errorMessage = BNBUL10n.text("免测补充材料正在提交，请勿重复操作。")
+            return false
+        }
+        isSubmittingExemption = true
+        defer { isSubmittingExemption = false }
+
         let mutationKey = "supplement-exemption:\(application.id)"
         guard beginMutation(mutationKey) else {
             errorMessage = BNBUL10n.text("免测补充材料正在提交，请勿重复操作。")
@@ -1180,42 +1208,29 @@ final class AppState: ObservableObject {
             errorMessage = inputMessage
             return false
         }
-        guard application.status.canSupplement,
-              !proofAttachments.isEmpty,
-              ExemptionProofRule.accepts(proofAttachments) else {
+        guard application.status.canSupplement else {
             return false
         }
-
-        if isRemoteMode {
-            return await supplementExemptionRemote(
-                application: application,
-                reason: normalizedReason,
-                detail: normalizedDetail,
-                proofAttachments: proofAttachments,
-                expectedSessionEpoch: sessionEpoch
+        guard isRemoteMode else {
+            errorMessage = exemptionCopy(
+                "演示账户仅供界面预览，不能补交免测材料。",
+                "The demo account is for interface preview only and cannot submit exemption supplements."
             )
-        }
-
-        guard proofAttachments.allSatisfy(\.isValidForUpload) else { return false }
-
-        guard let index = workspace.exemptions.firstIndex(where: { $0.id == application.id && $0.status.canSupplement }) else {
             return false
         }
-        workspace.exemptions[index].status = .pending
-        workspace.exemptions[index].detail = ExemptionInputRule.combinedReason(
+        guard acceptsLiveExemptionProofs(proofAttachments) ||
+                acceptsPersistedLiveExemptionProofs(proofAttachments) else {
+            errorMessage = liveExemptionProofError
+            return false
+        }
+
+        return await supplementExemptionRemote(
+            application: application,
             reason: normalizedReason,
-            detail: normalizedDetail
+            detail: normalizedDetail,
+            proofAttachments: proofAttachments,
+            expectedSessionEpoch: sessionEpoch
         )
-        workspace.exemptions[index].proofFiles += proofAttachments
-        workspace.exemptions[index].teacherFeedback = BNBUL10n.text("补充材料已提交，等待老师复审。")
-        workspace.exemptions[index].updatedAt = RecentTimestamp.justNow
-        enqueueSyncOperation(
-            .supplementExemption,
-            title: "提交免测补充材料",
-            detail: "\(application.item.rawValue) · 新增 \(proofAttachments.count) 个凭证"
-        )
-        saveWorkspace(event: "免测补充材料已保存")
-        return true
     }
 
     func saveDraft(
@@ -1377,10 +1392,12 @@ final class AppState: ObservableObject {
                 attempt.requestFields["creditType"] == submission.creditType.apiValue
         }
         if scope == "exemption:create:physical-test" {
+            guard acceptsPersistedLiveExemptionProofs(attempt.sourceProofs) else { return false }
             guard let type = attempt.requestFields["type"] else { return false }
             return ExemptionItem.allCases.contains(where: { $0.apiValue == type })
         }
         if scope.hasPrefix("exemption:supplement:") {
+            guard acceptsPersistedLiveExemptionProofs(attempt.sourceProofs) else { return false }
             guard let applicationID = attempt.requestFields["exemptionId"] else { return false }
             return workspace.exemptions.contains(where: { $0.id == applicationID && $0.status.canSupplement })
         }
@@ -1458,6 +1475,7 @@ final class AppState: ObservableObject {
         guard isRemoteMode,
               let studentID = remoteCacheStudentID,
               let attempt = pendingRemoteMutations[scope],
+              acceptsPersistedLiveExemptionProofs(attempt.sourceProofs),
               attempt.matches(
                 scope: scope,
                 fingerprint: attempt.fingerprint,
@@ -1512,7 +1530,7 @@ final class AppState: ObservableObject {
         guard let studentID = remoteCacheStudentID,
               let attempt = pendingRemoteMutations[scope],
               attempt.uploadedProofs.count == proofAttachments.count,
-              !proofAttachments.isEmpty,
+              acceptsPersistedLiveExemptionProofs(proofAttachments),
               attempt.uploadedProofs.allSatisfy({ $0.cosKey?.isEmpty == false }) else {
             return false
         }
@@ -1816,8 +1834,11 @@ final class AppState: ObservableObject {
             errorMessage = inputMessage
             return false
         }
-        guard !proofAttachments.isEmpty else { return false }
-        guard ExemptionProofRule.accepts(proofAttachments) else { return false }
+        guard acceptsLiveExemptionProofs(proofAttachments) ||
+                acceptsPersistedLiveExemptionProofs(proofAttachments) else {
+            errorMessage = liveExemptionProofError
+            return false
+        }
 
         let scope = "exemption:create:physical-test"
         let requestFields = [
@@ -1956,6 +1977,11 @@ final class AppState: ObservableObject {
     ) async -> Bool {
         guard expectedSessionEpoch == sessionEpoch, isRemoteMode else { return false }
         guard workspace.exemptions.contains(where: { $0.id == application.id && $0.status.canSupplement }) else {
+            return false
+        }
+        guard acceptsLiveExemptionProofs(proofAttachments) ||
+                acceptsPersistedLiveExemptionProofs(proofAttachments) else {
+            errorMessage = liveExemptionProofError
             return false
         }
         let combinedReason = ExemptionInputRule.combinedReason(reason: reason, detail: detail)
@@ -2132,6 +2158,7 @@ final class AppState: ObservableObject {
             isRemoteMode = false
             remoteCacheStudentID = nil
             isLoading = false
+            isLoadingExemptions = false
             isRefreshingWorkspace = false
             workspace = repository.loadWorkspace()
             draft = nil
@@ -2298,6 +2325,39 @@ final class AppState: ObservableObject {
             parts.append(BNBUL10n.text("\(videoCount) 个短视频"))
         }
         return parts.isEmpty ? BNBUL10n.text("未添加凭证") : parts.joined(separator: BNBUL10n.text("，"))
+    }
+
+    private func acceptsLiveExemptionProofs(_ attachments: [ProofAttachment]) -> Bool {
+        ExemptionProofRule.accepts(attachments) &&
+            attachments.allSatisfy { attachment in
+                attachment.type == .image &&
+                    attachment.source == "摄像头" &&
+                    attachment.isValidForUpload
+            }
+    }
+
+    /// The protected retry journal drops original image bytes after upload.
+    /// Recovery still requires camera provenance, image-only content, a stable
+    /// digest and a valid count; the caller separately verifies every COS key.
+    private func acceptsPersistedLiveExemptionProofs(_ attachments: [ProofAttachment]) -> Bool {
+        !attachments.isEmpty &&
+            attachments.count <= ExemptionProofRule.maxAttachmentCount &&
+            attachments.allSatisfy { attachment in
+                attachment.type == .image &&
+                    attachment.source == "摄像头" &&
+                    attachment.contentDigest?.isEmpty == false
+            }
+    }
+
+    private var liveExemptionProofError: String {
+        exemptionCopy(
+            "免测材料必须至少包含 1 张现场拍摄照片；相册文件、视频和占位材料不能提交。",
+            "Exemption proof must include at least one live camera photo. Library files, videos, and placeholders cannot be submitted."
+        )
+    }
+
+    private func exemptionCopy(_ chinese: String, _ english: String) -> String {
+        BNBUL10n.locale.identifier.hasPrefix("zh") ? chinese : english
     }
 
     private func enqueueSyncOperation(

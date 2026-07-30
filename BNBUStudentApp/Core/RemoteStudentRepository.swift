@@ -302,12 +302,15 @@ struct ExemptionsPayload: Decodable {
         }
 
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        exemptions = (try? container.decodeIfPresent([ExemptionApplication].self, forKey: .exemptions))
-            ?? (try? container.decodeIfPresent([ExemptionApplication].self, forKey: .applications))
-            ?? (try? container.decodeIfPresent([ExemptionApplication].self, forKey: .items))
-            ?? (try? container.decodeIfPresent([ExemptionApplication].self, forKey: .list))
-            ?? (try? container.decodeIfPresent([ExemptionApplication].self, forKey: .data))
-            ?? []
+        for key in [CodingKeys.exemptions, .applications, .items, .list, .data]
+            where container.contains(key) {
+            exemptions = try container.decodeIfPresent(
+                [ExemptionApplication].self,
+                forKey: key
+            ) ?? []
+            return
+        }
+        exemptions = []
     }
 }
 
@@ -832,6 +835,23 @@ actor RemoteStudentRepository {
         return try decodeFlexible(StudentCoursesPayload.self, from: data).models()
     }
 
+    /// Refreshes only the exemption centre. Older servers may expose the same
+    /// list through `sport/summary`; only a real 404 uses that compatibility
+    /// path. Transport, 5xx, and decoding failures remain visible to the caller.
+    func listExemptions(
+        fallback: [ExemptionApplication] = []
+    ) async throws -> [ExemptionApplication] {
+        do {
+            let data = try await get("student/physical-test-exemptions")
+            return try decodeFlexible(ExemptionsPayload.self, from: data).exemptions
+        } catch let error as RepositoryError where Self.isNotFound(error) {
+            guard let summaryData = try await getIfBusinessReady("sport/summary") else {
+                return fallback
+            }
+            return try decodeFlexible(SportSummaryPayload.self, from: summaryData).exemptions
+        }
+    }
+
     /// Server release r19 returns explicit business-state errors while the
     /// teacher/admin side has not finished configuring a course. These states
     /// must degrade to an empty module instead of failing the whole workspace.
@@ -840,6 +860,17 @@ actor RemoteStudentRepository {
         "PUBLISHED_GRADE_RULE_REQUIRED",
         "LEGACY_BUSINESS_REMOVED"
     ]
+
+    private static func isNotFound(_ error: RepositoryError) -> Bool {
+        switch error {
+        case .httpError(let statusCode):
+            return statusCode == 404
+        case .serverError(let statusCode, _, _):
+            return statusCode == 404
+        default:
+            return false
+        }
+    }
 
     private func getIfBusinessReady(_ path: String) async throws -> Data? {
         do {
