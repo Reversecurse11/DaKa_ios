@@ -6,6 +6,14 @@ private enum LoginFormField: Hashable {
     case password
 }
 
+private enum LoginRoute: Hashable {
+    case chooser
+    case emailVerification
+    case phoneVerification
+    case accountPassword
+    case recovery
+}
+
 enum BNBUPrivacyConsent {
     static let currentVersion = "2026-07-23"
     static let defaultsKeyPrefix = "bnbu.privacy.consent.v1."
@@ -49,38 +57,465 @@ enum BNBUPrivacyConsent {
 
 struct LoginView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var route: LoginRoute
+    @State private var showCourseJoin = false
+
+    init() {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-testing-login-email") {
+            _route = State(initialValue: .emailVerification)
+        } else if arguments.contains("-ui-testing-login-phone") {
+            _route = State(initialValue: .phoneVerification)
+        } else if arguments.contains("-ui-testing-login-recovery") {
+            _route = State(initialValue: .recovery)
+        } else if arguments.contains("-ui-testing-login-password") {
+            _route = State(initialValue: .accountPassword)
+        } else {
+            _route = State(initialValue: .chooser)
+        }
+    }
+
+    var body: some View {
+        Group {
+            switch route {
+            case .chooser:
+                LoginMethodChooser(
+                    onEmail: { route = .emailVerification },
+                    onPhone: { route = .phoneVerification },
+                    onJoin: { showCourseJoin = true },
+                    onPassword: { route = .accountPassword },
+                    onRecovery: { route = .recovery },
+                    onMockLogin: { appState.demoLogin() }
+                )
+            case .emailVerification:
+                VerificationLoginView(
+                    initialMethod: .email,
+                    onBack: { route = .chooser }
+                )
+            case .phoneVerification:
+                VerificationLoginView(
+                    initialMethod: .phone,
+                    onBack: { route = .chooser }
+                )
+            case .accountPassword:
+                AccountPasswordLoginView(onBack: { route = .chooser })
+            case .recovery:
+                RecoveryRequestView(onBack: { route = .chooser })
+            }
+        }
+        .sheet(isPresented: $showCourseJoin) {
+            CourseJoinSheet()
+                .environmentObject(appState)
+        }
+    }
+}
+
+private struct LoginMethodChooser: View {
+    @Environment(\.locale) private var locale
+
+    let onEmail: () -> Void
+    let onPhone: () -> Void
+    let onJoin: () -> Void
+    let onPassword: () -> Void
+    let onRecovery: () -> Void
+    let onMockLogin: () -> Void
+
+    var body: some View {
+        ZStack {
+            BNBUPageBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                    HStack(spacing: BNBUSpacing.space12) {
+                        BrandMark(compact: true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(copy(
+                                "北师香港浸会大学",
+                                "Beijing Normal-Hong Kong Baptist University"
+                            ))
+                            .font(BNBUFont.titleMedium)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            Text(copy("BNBU · 学生体育", "BNBU · STUDENT SPORTS"))
+                                .font(BNBUFont.labelSmall)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                        Text(copy("登录 BNBU 体育", "Sign in to BNBU Sports"))
+                            .font(BNBUFont.headlineLarge)
+                            .tracking(BNBUFont.Tracking.headlineLarge)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Text(copy(
+                            "查看体育打卡、学时进度与成绩，一处完成。",
+                            "Check activities, hour progress, and grades in one place."
+                        ))
+                        .font(BNBUFont.bodyLarge)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+
+                    SwissPanel {
+                        VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                            Text(copy("选择登录方式", "Choose a sign-in method"))
+                                .font(BNBUFont.headlineSmall)
+                                .foregroundStyle(BNBUTheme.onSurface)
+
+                            LoginMethodRow(
+                                title: copy("邮箱验证码登录", "Sign in with email code"),
+                                subtitle: copy("使用学校邮箱", "Use your university email"),
+                                systemImage: "envelope.fill",
+                                isPrimary: true,
+                                action: onEmail
+                            )
+                            .accessibilityIdentifier("login.email")
+
+                            LoginMethodRow(
+                                title: copy("手机验证码登录", "Sign in with mobile code"),
+                                subtitle: copy("使用已绑定的手机号", "Use your linked mobile number"),
+                                systemImage: "iphone",
+                                action: onPhone
+                            )
+                            .accessibilityIdentifier("login.phone")
+
+                            Divider()
+                                .overlay(BNBUTheme.outlineVariant)
+                                .padding(.vertical, BNBUSpacing.space4)
+
+                            Text(copy("其他方式", "Other options"))
+                                .font(BNBUFont.labelMedium)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+                            LoginMethodRow(
+                                title: copy("扫码加入课程", "Join a course by scanning"),
+                                subtitle: copy("打开课程邀请并提交加入申请", "Open a course invitation and apply to join"),
+                                systemImage: "qrcode.viewfinder",
+                                action: onJoin
+                            )
+
+                            LoginMethodRow(
+                                title: copy("使用账号密码登录", "Sign in with account and password"),
+                                subtitle: copy("保留现有校园账号登录接口", "Use the existing campus-account endpoint"),
+                                systemImage: "person.crop.circle.fill",
+                                action: onPassword
+                            )
+                            .accessibilityIdentifier("login.password.route")
+
+                            LoginMethodRow(
+                                title: copy("使用 Mock 用户", "Use Mock user"),
+                                subtitle: copy("仅用于本地演示与调试", "Local demo and debugging only"),
+                                systemImage: "hammer.fill",
+                                action: onMockLogin
+                            )
+                            .accessibilityIdentifier("login.mockUser")
+                        }
+                    }
+
+                    Button(action: onRecovery) {
+                        Text(copy(
+                            "无法使用绑定的手机号或邮箱？",
+                            "Can't use your linked mobile number or email?"
+                        ))
+                        .font(BNBUFont.labelLarge)
+                        .foregroundStyle(BNBUTheme.primary)
+                        .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
+                    }
+                    .buttonStyle(BNBUPressStyle())
+                    .accessibilityIdentifier("login.recoveryRequest")
+                }
+                .frame(maxWidth: 520)
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.top, BNBUSpacing.space20)
+                .padding(.bottom, BNBUSpacing.space32)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityIdentifier("screen.login")
+    }
+
+    private func copy(_ chinese: String, _ english: String) -> String {
+        locale.identifier.hasPrefix("zh") ? chinese : english
+    }
+}
+
+private struct LoginMethodRow: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    var isPrimary = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: BNBUSpacing.space12) {
+                Image(systemName: systemImage)
+                    .font(BNBUFont.titleMedium)
+                    .foregroundStyle(isPrimary ? BNBUTheme.onPrimary : BNBUTheme.primary)
+                    .frame(width: 38, height: 38)
+                    .background(isPrimary ? BNBUTheme.onPrimary.opacity(0.13) : BNBUTheme.primaryContainer)
+                    .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(BNBUFont.titleMedium)
+                    Text(subtitle)
+                        .font(BNBUFont.bodySmall)
+                        .opacity(0.78)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(BNBUFont.bodyMedium.weight(.semibold))
+                    .opacity(0.72)
+            }
+            .foregroundStyle(isPrimary ? BNBUTheme.onPrimary : BNBUTheme.onSurface)
+            .padding(.horizontal, BNBUSpacing.space16)
+            .frame(minHeight: 66)
+            .background(isPrimary ? BNBUTheme.primary : BNBUTheme.surfaceContainerHigh)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.large, style: .continuous))
+        }
+        .buttonStyle(BNBUPressStyle())
+    }
+}
+
+private enum VerificationMethod {
+    case email
+    case phone
+}
+
+private struct VerificationLoginView: View {
+    @Environment(\.locale) private var locale
+    let onBack: () -> Void
+
+    @State private var method: VerificationMethod
+    @State private var contact = ""
+    @State private var code = ""
+    @State private var notice: String?
+
+    init(initialMethod: VerificationMethod, onBack: @escaping () -> Void) {
+        _method = State(initialValue: initialMethod)
+        self.onBack = onBack
+    }
+
+    var body: some View {
+        ZStack {
+            BNBUPageBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                    BNBUBackRow(action: onBack)
+                    BrandMark(compact: true)
+
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                        Text(title)
+                            .font(BNBUFont.headlineLarge)
+                            .tracking(BNBUFont.Tracking.headlineLarge)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Text(subtitle)
+                            .font(BNBUFont.bodyLarge)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+
+                    SwissPanel {
+                        VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                            contactField
+                            codeField
+
+                            Label(
+                                copy(
+                                    "验证码 10 分钟内有效，且仅可使用一次。",
+                                    "The code is valid for 10 minutes and can only be used once."
+                                ),
+                                systemImage: "info.circle"
+                            )
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+                            if let notice {
+                                BNBUErrorPanel(message: notice)
+                            }
+
+                            PrimaryActionButton(
+                                title: copy("登录", "Sign in"),
+                                systemImage: "arrow.right",
+                                accessibilityIdentifier: "verification.submit"
+                            ) {
+                                notice = unavailableMessage
+                            }
+                            .disabled(!canSubmit)
+                            .opacity(canSubmit ? 1 : 0.55)
+                        }
+                    }
+
+                    Button {
+                        method = method == .email ? .phone : .email
+                        contact = ""
+                        code = ""
+                        notice = nil
+                    } label: {
+                        Label(
+                            method == .email
+                                ? copy("改用手机验证码登录", "Use mobile verification instead")
+                                : copy("改用邮箱验证码登录", "Use email verification instead"),
+                            systemImage: method == .email ? "iphone" : "envelope"
+                        )
+                        .font(BNBUFont.labelLarge)
+                        .foregroundStyle(BNBUTheme.primary)
+                        .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
+                    }
+                    .buttonStyle(BNBUPressStyle())
+                }
+                .frame(maxWidth: 520)
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.bottom, BNBUSpacing.space32)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .accessibilityIdentifier(method == .email ? "screen.login.email" : "screen.login.phone")
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(copy("完成", "Done")) { dismissBNBUKeyboard() }
+            }
+        }
+    }
+
+    private var title: String {
+        method == .email
+            ? copy("使用邮箱登录", "Sign in with email")
+            : copy("使用手机号登录", "Sign in with mobile")
+    }
+
+    private var subtitle: String {
+        method == .email
+            ? copy(
+                "输入学校邮箱后，我们会向你发送登录验证码。",
+                "Enter your university email and we will send you a sign-in code."
+            )
+            : copy(
+                "输入手机号后，我们会向你发送短信验证码。",
+                "Enter your mobile number and we will send you a verification code."
+            )
+    }
+
+    private var contactField: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            Text(method == .email ? copy("学校邮箱", "University email") : copy("手机号", "Mobile number"))
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+            HStack(spacing: BNBUSpacing.space12) {
+                Image(systemName: method == .email ? "envelope" : "iphone")
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                if method == .phone {
+                    Text(verbatim: "+86")
+                        .font(BNBUFont.titleSmall)
+                    Divider().frame(height: 28)
+                }
+                TextField(
+                    method == .email
+                        ? "name@bnbu.edu.cn"
+                        : copy("请输入 11 位手机号", "11-digit mobile number"),
+                    text: $contact
+                )
+                .textContentType(method == .email ? .emailAddress : .telephoneNumber)
+                .keyboardType(method == .email ? .emailAddress : .phonePad)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            }
+            .padding(.horizontal, BNBUSpacing.space16)
+            .frame(height: 56)
+            .background(BNBUTheme.surfaceContainerHigh)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+            .accessibilityIdentifier("verification.contact")
+        }
+    }
+
+    private var codeField: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            Text(copy("验证码", "Verification code"))
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+            HStack(spacing: BNBUSpacing.space12) {
+                Image(systemName: "lock.fill")
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                TextField(copy("6 位数字", "6 digits"), text: $code)
+                    .keyboardType(.numberPad)
+                    .onChange(of: code) { _, value in
+                        code = String(value.filter(\.isNumber).prefix(6))
+                    }
+                Button(copy("获取验证码", "Get code")) {
+                    notice = unavailableMessage
+                }
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(isContactValid ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant.opacity(0.55))
+                .disabled(!isContactValid)
+            }
+            .padding(.horizontal, BNBUSpacing.space16)
+            .frame(height: 56)
+            .background(BNBUTheme.surfaceContainerHigh)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+            .accessibilityIdentifier("verification.code")
+        }
+    }
+
+    private var unavailableMessage: String {
+        copy(
+            "验证码登录接口尚未接入 iOS，当前不能发送或验证验证码。",
+            "The verification-code API is not connected on iOS, so codes cannot be sent or verified."
+        )
+    }
+
+    private var isContactValid: Bool {
+        let trimmed = contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        if method == .email {
+            return trimmed.contains("@") && trimmed.contains(".")
+        }
+        return trimmed.filter(\.isNumber).count == 11
+    }
+
+    private var canSubmit: Bool {
+        isContactValid && code.count == 6
+    }
+
+    private func copy(_ chinese: String, _ english: String) -> String {
+        locale.identifier.hasPrefix("zh") ? chinese : english
+    }
+}
+
+private struct AccountPasswordLoginView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
     @FocusState private var focusedField: LoginFormField?
+    let onBack: () -> Void
+
     @State private var account = ""
     @State private var password = ""
     @State private var passwordVisible = false
     @State private var showPrivacyPolicy = false
-    @State private var agreedToPrivacy = false
 
     var body: some View {
         ZStack {
             GridBackground()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                    BNBUBackRow(action: onBack)
                     universityBrandLockup
                     headerBlock
                     loginPanel
-
-                    Text("第一阶段仅包含学生端体育打卡与成绩透明化；老师端和管理端由 Web 承担。")
-                        .font(BNBUFont.bodySmall)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 }
-                .padding(24)
+                .frame(maxWidth: 520)
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.bottom, BNBUSpacing.space32)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.immediately)
         }
-        .accessibilityIdentifier("screen.login")
-        .onAppear {
-            agreedToPrivacy = BNBUPrivacyConsent.hasAccepted(account: account)
-        }
-        .onChange(of: account) { _, newValue in
-            agreedToPrivacy = BNBUPrivacyConsent.hasAccepted(account: newValue)
-        }
+        .accessibilityIdentifier("screen.login.password")
         .sheet(isPresented: $showPrivacyPolicy) {
             NavigationStack {
                 PrivacyPolicyView()
@@ -184,7 +619,9 @@ struct LoginView: View {
                 }
 
                 PrimaryActionButton(
-                    title: appState.isLoading ? "登录中…" : "进入学生端",
+                    title: appState.isLoading
+                        ? copy("登录中…", "Signing in…")
+                        : copy("登录", "Sign in"),
                     systemImage: "arrow.right",
                     accessibilityIdentifier: "login.submit.button"
                 ) {
@@ -193,31 +630,13 @@ struct LoginView: View {
                 .disabled(!canLogin)
                 .opacity(canLogin ? 1 : 0.55)
 
-                Button("登录前请阅读《隐私政策》") {
+                Button(copy("查看《隐私政策》", "Read the Privacy Policy")) {
                     showPrivacyPolicy = true
                 }
                 .font(BNBUFont.titleSmall)
                 .foregroundStyle(BNBUTheme.primary)
                 .frame(maxWidth: .infinity)
                 .buttonStyle(.plain)
-
-                Button {
-                    agreedToPrivacy.toggle()
-                } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: agreedToPrivacy ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(agreedToPrivacy ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
-                        Text("我已阅读并同意当前版本《隐私政策》")
-                            .font(BNBUFont.bodyMedium)
-                            .foregroundStyle(BNBUTheme.onSurface)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("login.privacy.consent")
-                .accessibilityValue(agreedToPrivacy ? "已同意" : "未同意")
             }
         }
     }
@@ -241,7 +660,6 @@ struct LoginView: View {
     private var canLogin: Bool {
         !account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !password.isEmpty &&
-            agreedToPrivacy &&
             !appState.isLoading
     }
 
@@ -255,6 +673,178 @@ struct LoginView: View {
                 account: account.trimmingCharacters(in: .whitespacesAndNewlines),
                 password: password
             )
+        }
+    }
+
+    private func copy(_ chinese: String, _ english: String) -> String {
+        locale.identifier.hasPrefix("zh") ? chinese : english
+    }
+}
+
+private struct RecoveryRequestView: View {
+    @Environment(\.locale) private var locale
+    let onBack: () -> Void
+
+    @State private var studentID = ""
+    @State private var name = ""
+    @State private var explanation = ""
+    @State private var newPhone = ""
+    @State private var newEmail = ""
+    @State private var notice: String?
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            BNBUPageBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                    BNBUBackRow(title: copy("账号恢复", "Account recovery"), action: onBack)
+
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                        Text(copy("换手机后无法登录？", "Can't sign in after changing phones?"))
+                            .font(BNBUFont.headlineSmall)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Text(copy(
+                            "填写身份和情况说明。接口发布后，老师或管理员可据此核验并协助换绑。",
+                            "Provide your identity and an explanation. Once the endpoint ships, staff can verify it and help update your contact details."
+                        ))
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+
+                    if let notice {
+                        BNBUErrorPanel(message: notice)
+                    }
+
+                    recoverySection(
+                        title: copy("身份信息", "Identity details"),
+                        detail: copy("请填写与校园账号一致的信息", "Use the same details as your campus account.")
+                    ) {
+                        RecoveryField(
+                            title: copy("学号", "Student ID"),
+                            placeholder: copy("请输入学号", "Enter your student ID"),
+                            text: $studentID
+                        )
+                        RecoveryField(
+                            title: copy("姓名", "Name"),
+                            placeholder: copy("请输入姓名", "Enter your name"),
+                            text: $name
+                        )
+                    }
+
+                    recoverySection(
+                        title: copy("情况说明", "What happened"),
+                        detail: copy(
+                            "简要说明原联系方式无法使用的情况",
+                            "Briefly explain why the original contact details cannot be used."
+                        )
+                    ) {
+                        RecoveryField(
+                            title: copy("说明", "Description"),
+                            placeholder: copy("请描述遇到的问题", "Describe what happened"),
+                            text: $explanation,
+                            axis: .vertical
+                        )
+                    }
+
+                    recoverySection(
+                        title: copy("新的联系方式", "New contact details"),
+                        detail: copy(
+                            "选填；填写当前可用的手机号或邮箱",
+                            "Optional. Add a mobile number or email you can currently use."
+                        )
+                    ) {
+                        RecoveryField(
+                            title: copy("新手机号", "New mobile number"),
+                            placeholder: copy("请输入新手机号", "Enter a new mobile number"),
+                            text: $newPhone
+                        )
+                        RecoveryField(
+                            title: copy("新邮箱", "New email"),
+                            placeholder: copy("请输入新邮箱", "Enter a new email"),
+                            text: $newEmail
+                        )
+                    }
+
+                    Spacer(minLength: 88)
+                }
+                .frame(maxWidth: 680)
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.bottom, BNBUSpacing.space32)
+                .frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+
+            PrimaryActionButton(
+                title: copy("提交恢复申请", "Submit recovery request"),
+                systemImage: "paperplane.fill",
+                accessibilityIdentifier: "recovery.submit"
+            ) {
+                notice = copy(
+                    "账号恢复接口尚未接入 iOS，当前无法提交。请联系课程老师或系统管理员。",
+                    "The account-recovery API is not connected on iOS. Contact your teacher or system administrator."
+                )
+            }
+            .disabled(!canSubmit)
+            .opacity(canSubmit ? 1 : 0.55)
+            .padding(.horizontal, BNBUSpacing.screen)
+            .padding(.vertical, BNBUSpacing.space12)
+            .background(.ultraThinMaterial)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("screen.recoveryRequest")
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(copy("完成", "Done")) { dismissBNBUKeyboard() }
+            }
+        }
+    }
+
+    private func recoverySection<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                Text(title)
+                    .font(BNBUFont.titleMedium)
+                Text(detail)
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                content()
+            }
+        }
+    }
+
+    private var canSubmit: Bool {
+        !studentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !explanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func copy(_ chinese: String, _ english: String) -> String {
+        locale.identifier.hasPrefix("zh") ? chinese : english
+    }
+}
+
+private struct RecoveryField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    var axis: Axis = .horizontal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            Text(title)
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            TextField(placeholder, text: $text, axis: axis)
+                .lineLimit(axis == .vertical ? 4...7 : 1...1)
+                .padding(BNBUSpacing.space12)
+                .background(BNBUTheme.surface)
+                .bnbuOutlinedSurface()
         }
     }
 }

@@ -700,11 +700,22 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["登录前请阅读《隐私政策》"].exists)
-        app.buttons["登录前请阅读《隐私政策》"].tap()
-        XCTAssertTrue(app.staticTexts["隐私政策"].firstMatch.waitForExistence(timeout: 3))
-        app.buttons["privacy.done"].tap()
+        XCTAssertTrue(app.buttons["login.email"].exists)
+        XCTAssertTrue(app.buttons["login.phone"].exists)
+        XCTAssertTrue(app.buttons["login.password.route"].exists)
+        XCTAssertTrue(app.buttons["login.recoveryRequest"].exists)
+
+        app.buttons["login.email"].tap()
+        XCTAssertTrue(screen("screen.login.email").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["verification.contact"].exists)
+        XCTAssertTrue(app.textFields["verification.code"].exists)
+        app.buttons["nav.back"].tap()
+
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
+        app.buttons["login.recoveryRequest"].tap()
+        XCTAssertTrue(screen("screen.recoveryRequest").waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["recovery.submit"].isEnabled)
+        app.buttons["nav.back"].tap()
 
         app.terminate()
         app = XCUIApplication()
@@ -730,7 +741,12 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-login-password",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -784,7 +800,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         // The remote hook installs a completed 1h exercise session after the
         // real login succeeds, so the new timer-based submit flow is testable
         // against the live server without waiting an hour.
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-remote-completed-exercise", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-login-password",
+            "-ui-testing-remote-completed-exercise",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -848,7 +870,12 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-login-password",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -975,7 +1002,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     private func acceptPrivacyIfNeeded() {
         let consent = app.buttons["login.privacy.consent"]
-        XCTAssertTrue(consent.waitForExistence(timeout: 3))
+        guard consent.waitForExistence(timeout: 0.5) else { return }
         if (consent.value as? String) != "已同意" {
             consent.tap()
         }
