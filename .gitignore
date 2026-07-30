@@ -1,6 +1,7 @@
 # Xcode build artifacts
 build/
 DerivedData/
+.derived-data*/
 *.xcresult
 
 # Xcode user state
@@ -18,3 +19,7 @@ xcuserdata/
 # Secrets / local config (never commit real credentials)
 *.env
 *.secrets.*
+
+# Local visual-parity evidence and simulator captures
+artifacts/
+__pycache__/
