@@ -1968,10 +1968,10 @@ final class BNBUStudentModelTests: XCTestCase {
         let before = StudentAcademicProjection.resolve(profile: profile, at: august, calendar: calendar)
         let after = StudentAcademicProjection.resolve(profile: profile, at: september, calendar: calendar)
 
-        XCTAssertEqual(before.academicYear, "2025–2026 学年")
+        XCTAssertEqual(before.academicYear, "2025-2026 学年")
         XCTAssertEqual(before.grade, "大二")
         XCTAssertEqual(before.semester, "春季学期")
-        XCTAssertEqual(after.academicYear, "2026–2027 学年")
+        XCTAssertEqual(after.academicYear, "2026-2027 学年")
         XCTAssertEqual(after.grade, "大三")
         XCTAssertEqual(after.semester, "秋季学期")
         XCTAssertEqual(after.physicalStandard, "女生 · 大三体测标准")

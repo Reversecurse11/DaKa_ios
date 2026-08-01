@@ -24,6 +24,15 @@ enum StudentGender: String, Hashable, Codable {
         }
     }
 
+    /// Compact form used where the label sits beside other facts, matching Android.
+    var shortTitle: String {
+        switch self {
+        case .female: return "女"
+        case .male: return "男"
+        case .unknown: return "性别待同步"
+        }
+    }
+
     var apiValue: String? {
         switch self {
         case .female: return "female"
@@ -216,7 +225,7 @@ struct StudentAcademicProjection: Equatable {
         let semester = month >= 9 ? "秋季学期" : "春季学期"
 
         return StudentAcademicProjection(
-            academicYear: "\(academicStartYear)–\(academicStartYear + 1) 学年",
+            academicYear: "\(academicStartYear)-\(academicStartYear + 1) 学年",
             semester: semester,
             grade: grade,
             enrollmentYear: projectedEnrollmentYear.map { "\($0) 级" } ?? "入学年份待同步",
@@ -2455,6 +2464,16 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
             parts.append("\(videoCount) 个视频")
         }
         return parts.isEmpty ? "未添加证明材料" : parts.joined(separator: "，")
+    }
+
+    /// Android surfaces the attachment count as a single tappable line.
+    var proofCountSummary: String? {
+        guard !proofFiles.isEmpty else { return nil }
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "已上传 \(proofFiles.count) 个证明文件"
+        }
+        let noun = proofFiles.count == 1 ? "file" : "files"
+        return "\(proofFiles.count) proof \(noun) uploaded"
     }
 
     private static func decodeProofFiles(from container: KeyedDecodingContainer<CodingKeys>) -> [ProofAttachment] {

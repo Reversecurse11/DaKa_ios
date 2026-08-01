@@ -489,6 +489,23 @@
         }
       }
     },
+    "800m / 1000m": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "800 m / 1000 m"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "800m / 1000m"
+          }
+        }
+      }
+    },
     "99+": {
       "extractionState": "stale",
       "localizations": {
@@ -1247,6 +1264,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "体育 II"
+          }
+        }
+      }
+    },
+    "体育免测与免打卡申请": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PE exemption and check-in waiver"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体育免测与免打卡申请"
           }
         }
       }
@@ -3052,6 +3086,23 @@
         }
       }
     },
+    "女": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Female"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "女"
+          }
+        }
+      }
+    },
     "女生": {
       "extractionState": "stale",
       "localizations": {
@@ -3421,6 +3472,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "审核反馈"
+          }
+        }
+      }
+    },
+    "审核意见": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review note"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "审核意见"
           }
         }
       }
@@ -4094,6 +4162,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "帮助中心"
+          }
+        }
+      }
+    },
+    "常用服务": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick services"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常用服务"
           }
         }
       }
@@ -7415,6 +7500,23 @@
         }
       }
     },
+    "本学期": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This semester"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本学期"
+          }
+        }
+      }
+    },
     "本学期完成情况": {
       "extractionState": "manual",
       "localizations": {
@@ -7714,6 +7816,23 @@
         }
       }
     },
+    "校队或社团免打卡须填写组织名称并上传证明，审核通过后由教师确认可抵扣的运动时长。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team or club check-in exemptions require the organisation name and proof. After approval, the instructor confirms how many hours can be credited."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "校队或社团免打卡须填写组织名称并上传证明，审核通过后由教师确认可抵扣的运动时长。"
+          }
+        }
+      }
+    },
     "核对信息后再加入": {
       "extractionState": "manual",
       "localizations": {
@@ -7942,6 +8061,23 @@
         }
       }
     },
+    "每学期仅可选择一门课程": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You may enrol in one course per semester"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每学期仅可选择一门课程"
+          }
+        }
+      }
+    },
     "每日开放时段 %@ 内可开始运动；开始后即使超出时段也可正常结束和提交。开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。开始时会尝试获取一次位置，获取失败不影响打卡。": {
       "localizations": {
         "en": {
@@ -8154,6 +8290,23 @@
         }
       }
     },
+    "演示试算": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview calculation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演示试算"
+          }
+        }
+      }
+    },
     "照片和视频凭证有什么限制？": {
       "extractionState": "stale",
       "localizations": {
@@ -8321,6 +8474,23 @@
         }
       }
     },
+    "申请与进度": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply and track"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申请与进度"
+          }
+        }
+      }
+    },
     "申请中心动态演示：展示选择申请、提交材料和教师审核进度。": {
       "extractionState": "stale",
       "localizations": {
@@ -8366,6 +8536,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "申请项目"
+          }
+        }
+      }
+    },
+    "男": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Male"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "男"
           }
         }
       }

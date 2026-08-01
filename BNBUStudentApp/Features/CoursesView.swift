@@ -11,12 +11,15 @@ struct CoursesView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: "My Courses", title: "我的课程")
-
-                    Text("教学班以课程代码 + Section 区分；同一课程代码的不同 Section 会作为不同教学班展示。")
-                        .font(BNBUFont.bodyMedium)
-                        .foregroundStyle(BNBUTheme.muted)
-                        .lineSpacing(3)
+                    VStack(alignment: .leading, spacing: 6) {
+                        SectionTitle(eyebrow: "My Courses", title: "我的课程")
+                        Text(verbatim: enrolmentHeadline)
+                            .font(BNBUFont.bodyLarge)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Text("每学期仅可选择一门课程")
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.muted)
+                    }
 
                     joinEntry
 
@@ -43,7 +46,13 @@ struct CoursesView: View {
                             message: "当前账号还没有可展示的体育教学班；课程同步后会按课程代码和 Section 显示。"
                         )
                     } else {
-                        SectionTitle(eyebrow: "CURRENT", title: "当前学期课程")
+                        HStack(alignment: .firstTextBaseline) {
+                            SectionTitle(eyebrow: "CURRENT", title: "本学期")
+                            Spacer()
+                            Text(verbatim: currentCourseCountLabel)
+                                .font(BNBUFont.bodyMedium)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
 
                         if currentCourses.isEmpty {
                             EmptyPlaceholder(title: "当前学期暂无课程", message: "历史课程仍可在下方展开查看。")
@@ -175,6 +184,22 @@ struct CoursesView: View {
             .sorted { $0.displayTitle < $1.displayTitle }
     }
 
+    private var enrolmentHeadline: String {
+        let count = currentCourses.count
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(count) 门课程正在修读"
+        }
+        return count == 1 ? "1 course in progress" : "\(count) courses in progress"
+    }
+
+    private var currentCourseCountLabel: String {
+        let count = currentCourses.count
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(count) 门"
+        }
+        return count == 1 ? "1 course" : "\(count) courses"
+    }
+
     private var historyCourses: [Course] {
         appState.workspace.courses
             .filter { !$0.isCurrent && !$0.isAwaitingEnrollmentReview }
@@ -211,8 +236,6 @@ private struct PendingEnrollmentCard: View {
 }
 
 private struct CourseCard: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     let course: Course
     let academicYear: String
     let term: String
@@ -220,63 +243,78 @@ private struct CourseCard: View {
 
     var body: some View {
         SwissPanel {
-            VStack(alignment: .leading, spacing: 16) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top) {
-                        courseIdentity
-                        Spacer(minLength: 8)
-                        StatusBadge(text: localizedTerm(course.semester))
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        courseIdentity
-                        StatusBadge(text: localizedTerm(course.semester))
-                    }
-                }
-
-                LazyVGrid(columns: factColumns, spacing: 10) {
-                    CourseFact(
-                        label: "任课老师",
-                        value: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
-                    )
-                    CourseFact(label: "学年", value: academicYear.replacingOccurrences(of: " 学年", with: ""))
-                    CourseFact(label: "学期", value: localizedTerm(term))
-                    CourseFact(
-                        label: "选课状态",
-                        value: isCurrent ? BNBUL10n.text("修读中") : BNBUL10n.text("已完成")
-                    )
-                }
-
-                HStack {
-                    Text(LocalizedStringKey(isCurrent ? "当前教学班" : "历史学期"))
-                        .font(BNBUFont.bodyMedium)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    Spacer()
-                    Label("查看课程详情", systemImage: "chevron.right")
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 8) {
+                    courseIdentity
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
                         .font(BNBUFont.labelMedium)
-                        .foregroundStyle(BNBUTheme.primary)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .padding(.top, 4)
+                }
+
+                Divider()
+                    .overlay(BNBUTheme.outlineVariant)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    courseFactLine(
+                        systemImage: "person",
+                        text: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
+                    )
+                    courseFactLine(
+                        systemImage: "calendar",
+                        text: "\(academicYear.replacingOccurrences(of: " 学年", with: "")) · \(localizedTerm(term))"
+                    )
+                }
+
+                HStack(spacing: 10) {
+                    StatusBadge(text: isCurrent ? "修读中" : "已完成", filled: isCurrent)
+                    Text(verbatim: enrolmentTermSummary)
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    Spacer(minLength: 0)
                 }
             }
         }
     }
 
     private var courseIdentity: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(course.displayTitle)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(course.name)
                 .font(BNBUFont.titleLarge)
                 .foregroundStyle(BNBUTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(course.name)
-                .font(BNBUFont.titleSmall)
+            Text(course.displayTitle)
+                .font(BNBUFont.bodyMedium)
                 .foregroundStyle(BNBUTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var factColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible())]
+    private func courseFactLine(systemImage: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .frame(width: 18, alignment: .leading)
+            Text(verbatim: text)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        return [GridItem(.flexible()), GridItem(.flexible())]
+    }
+
+    private var enrolmentTermSummary: String {
+        let year = academicYear.replacingOccurrences(of: " 学年", with: "")
+        // Course semesters may arrive already prefixed with their own year
+        // ("2026 春季学期"), which would otherwise read twice in one line.
+        let term = localizedTerm(course.semester)
+            .replacingOccurrences(of: #"^\s*\d{4}[\s\-–/]*"#, with: "", options: .regularExpression)
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(year) 学年\(term)"
+        }
+        return "\(year) · \(term)"
     }
 
     private func localizedTerm(_ value: String) -> String {
@@ -285,26 +323,5 @@ private struct CourseCard: View {
             .replacingOccurrences(of: "秋季学期", with: BNBUL10n.text("秋季学期"))
             .replacingOccurrences(of: "SPRING", with: BNBUL10n.text("春季学期"))
             .replacingOccurrences(of: "FALL", with: BNBUL10n.text("秋季学期"))
-    }
-}
-
-private struct CourseFact: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(LocalizedStringKey(label))
-                .font(BNBUFont.labelSmall)
-                .foregroundStyle(BNBUTheme.muted)
-            Text(verbatim: value)
-                .font(BNBUFont.titleMedium)
-                .foregroundStyle(BNBUTheme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(BNBUTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
     }
 }

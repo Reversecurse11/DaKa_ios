@@ -156,24 +156,26 @@ struct ProfileView: View {
 
     private var applicationPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(eyebrow: "APPLICATIONS", title: "申请与审核")
+            SectionTitle(eyebrow: "SERVICES", title: "常用服务")
 
-            ProfileNavigationCard(
-                title: "免测与免打卡",
-                detail: "查看申请进度、提交新申请",
-                systemImage: "figure.strengthtraining.traditional",
-                accessibilityIdentifier: "profile.exemption.button"
-            ) {
-                showExemptionCenter = true
-            }
+            HStack(alignment: .top, spacing: 12) {
+                ProfileServiceTile(
+                    title: "免测与免打卡",
+                    detail: "申请与进度",
+                    systemImage: "figure.strengthtraining.traditional",
+                    accessibilityIdentifier: "profile.exemption.button"
+                ) {
+                    showExemptionCenter = true
+                }
 
-            ProfileNavigationCard(
-                title: "耐力跑成绩换算",
-                detail: "按服务器规则换算 800m / 1000m 成绩",
-                systemImage: "gauge.with.dots.needle.67percent",
-                accessibilityIdentifier: "profile.endurance.button"
-            ) {
-                showEnduranceScoring = true
+                ProfileServiceTile(
+                    title: "耐力跑成绩换算",
+                    detail: "800m / 1000m",
+                    systemImage: "gauge.with.dots.needle.67percent",
+                    accessibilityIdentifier: "profile.endurance.button"
+                ) {
+                    showEnduranceScoring = true
+                }
             }
         }
     }
@@ -266,20 +268,27 @@ struct ProfileView: View {
         if !teachers.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(eyebrow: "MY TEACHER", title: "我的老师")
-                ForEach(teachers, id: \.self) { teacher in
-                    SwissPanel {
-                        HStack(spacing: 12) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(BNBUFont.titleLarge)
-                                .foregroundStyle(BNBUTheme.primary)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(teacher)
-                                    .font(BNBUFont.titleMedium)
-                                Text("任课教师")
-                                    .font(BNBUFont.labelMedium)
-                                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                SwissPanel {
+                    VStack(spacing: 0) {
+                        ForEach(Array(teachers.enumerated()), id: \.element) { index, teacher in
+                            if index > 0 {
+                                Divider()
+                                    .overlay(BNBUTheme.outlineVariant)
+                                    .padding(.vertical, 12)
                             }
-                            Spacer()
+                            HStack(spacing: 12) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(BNBUFont.titleLarge)
+                                    .foregroundStyle(BNBUTheme.primary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(teacher)
+                                        .font(BNBUFont.titleMedium)
+                                    Text("任课教师")
+                                        .font(BNBUFont.labelMedium)
+                                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                }
+                                Spacer()
+                            }
                         }
                     }
                 }
@@ -329,7 +338,7 @@ struct ProfileView: View {
 
 }
 
-private struct ProfileNavigationCard: View {
+private struct ProfileServiceTile: View {
     let title: String
     let detail: String
     let systemImage: String
@@ -339,39 +348,31 @@ private struct ProfileNavigationCard: View {
     var body: some View {
         Button(action: action) {
             SwissPanel {
-                HStack(alignment: .top, spacing: 12) {
-                    navigationIdentity
-                        .layoutPriority(1)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                        .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 12) {
+                    Image(systemName: systemImage)
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.primary)
+                        .frame(width: 40, height: 40)
+                        .background(BNBUTheme.primaryContainer)
+                        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(LocalizedStringKey(title))
+                            .font(BNBUFont.titleMedium)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(LocalizedStringKey(detail))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier)
-    }
-
-    private var navigationIdentity: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: systemImage)
-                .font(BNBUFont.titleLarge)
-                .foregroundStyle(BNBUTheme.primary)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(LocalizedStringKey(title))
-                    .font(BNBUFont.titleMedium)
-                    .foregroundStyle(BNBUTheme.onSurface)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(LocalizedStringKey(detail))
-                    .font(BNBUFont.bodySmall)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
 
@@ -456,7 +457,7 @@ private struct ExemptionCenterSheet: View {
 
     private var mainContent: some View {
         Group {
-            SectionTitle(eyebrow: "APPLICATION", title: "免测与免打卡")
+            SectionTitle(eyebrow: "APPLICATION", title: "体育免测与免打卡申请")
 
             SwissPanel {
                 VStack(alignment: .leading, spacing: 8) {
@@ -471,6 +472,13 @@ private struct ExemptionCenterSheet: View {
                     ))
                         .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurface)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: exemptionCenterText(
+                        "校队或社团免打卡须填写组织名称并上传证明，审核通过后由教师确认可抵扣的运动时长。",
+                        "Team or club check-in exemptions require the organisation name and proof. After approval, the instructor confirms how many hours can be credited."
+                    ))
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .fixedSize(horizontal: false, vertical: true)
                     if !appState.isRemoteMode {
                         Text(verbatim: exemptionCenterText(
@@ -741,7 +749,7 @@ private struct EnduranceScoringSheet: View {
 
                         SwissPanel {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(verbatim: enduranceText("试算说明", "Calculation notes"))
+                                Text(verbatim: enduranceText("演示试算", "Preview calculation"))
                                     .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.primary)
                                 Text(verbatim: enduranceText(
@@ -858,7 +866,7 @@ private struct EnduranceScoringSheet: View {
 
     private var studentDemographic: String {
         [
-            BNBUL10n.dynamicText(appState.workspace.student.gender.title),
+            BNBUL10n.dynamicText(appState.workspace.student.gender.shortTitle),
             enduranceGradeLabel
         ]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

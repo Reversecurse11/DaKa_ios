@@ -315,7 +315,7 @@ struct ExemptionApplicationRow: View {
                     .foregroundStyle(BNBUTheme.blue)
                     .frame(width: 28)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(LocalizedStringKey(application.item.rawValue))
                             .font(BNBUFont.titleSmall)
@@ -324,22 +324,32 @@ struct ExemptionApplicationRow: View {
                         StatusBadge(text: application.status.rawValue, filled: application.status == .approved)
                     }
 
-                    Text(application.reason)
-                        .font(BNBUFont.labelMedium)
-                        .foregroundStyle(BNBUTheme.ink)
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "doc.text")
+                            .font(BNBUFont.labelMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        Text(application.reason)
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                    Text(application.teacherFeedback)
-                        .font(BNBUFont.bodySmall)
-                        .foregroundStyle(BNBUTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let proofCountSummary = application.proofCountSummary {
+                        Text(verbatim: proofCountSummary)
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.primary)
+                    }
+
+                    if !application.teacherFeedback.isEmpty {
+                        reviewNote
+                    }
                 }
             }
 
-            HStack(spacing: 8) {
-                StatusBadge(text: application.submittedAt.isEmpty ? "待同步时间" : application.submittedAt)
-                StatusBadge(text: application.proofSummary)
-                Spacer()
-            }
+            Text(verbatim: submissionFooter)
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
 
             if application.status.canSupplement {
                 if let onSupplement {
@@ -353,6 +363,37 @@ struct ExemptionApplicationRow: View {
                 }
             }
         }
+    }
+
+    private var reviewNote: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("审核意见")
+                    .font(BNBUFont.titleSmall)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Text(application.teacherFeedback)
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(BNBUTheme.surfaceVariant)
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+    }
+
+    private var submissionFooter: String {
+        let time = application.submittedAt.isEmpty
+            ? BNBUL10n.text("待同步时间")
+            : application.submittedAt
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "提交时间：\(time) · 点击查看详情"
+        }
+        return "Submitted \(time) · Tap for details"
     }
 }
 

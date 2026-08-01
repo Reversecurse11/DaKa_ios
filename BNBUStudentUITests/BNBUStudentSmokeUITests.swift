@@ -364,7 +364,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["总分计算"].exists)
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
-        XCTAssertTrue(app.staticTexts["申请与审核"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["常用服务"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["组织认证与抵扣记录"].exists)
         assertProfileNavigationCardsAligned()
     }
@@ -748,7 +748,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertTrue(app.staticTexts["暂无认证记录"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["申请与审核"].exists)
+        XCTAssertTrue(app.staticTexts["常用服务"].exists)
     }
 
     func testCourseJoinApplicationFlow() throws {
@@ -877,7 +877,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         attachScreenshot(named: "remote-grades")
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
-        XCTAssertTrue(app.staticTexts["申请与审核"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["常用服务"].waitForExistence(timeout: 5))
         attachScreenshot(named: "remote-profile")
     }
 
@@ -1115,8 +1115,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         let enduranceCard = app.buttons["profile.endurance.button"]
         XCTAssertTrue(exemptionCard.waitForExistence(timeout: 3), file: file, line: line)
         XCTAssertTrue(enduranceCard.waitForExistence(timeout: 3), file: file, line: line)
-        XCTAssertEqual(exemptionCard.frame.minX, enduranceCard.frame.minX, accuracy: 1, file: file, line: line)
+        // Android renders the two service entries as an equal-width pair on one row.
+        XCTAssertEqual(exemptionCard.frame.minY, enduranceCard.frame.minY, accuracy: 1, file: file, line: line)
         XCTAssertEqual(exemptionCard.frame.width, enduranceCard.frame.width, accuracy: 1, file: file, line: line)
+        XCTAssertLessThan(exemptionCard.frame.maxX, enduranceCard.frame.minX + 1, file: file, line: line)
     }
 
     private func scrollToAndTap(_ element: XCUIElement, maxSwipes: Int = 6) {

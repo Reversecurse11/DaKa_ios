@@ -278,6 +278,20 @@ requireText(
     "The fourth tab is labelled 运动进度 as on Android"
 );
 
+// Courses, profile and exemption parity with the Android baseline
+// (Android_PICTURE 1/8).
+requireText(coursesView, 'title: "本学期"', "The courses list keeps Android's 本学期 section header");
+requireText(coursesView, "currentCourseCountLabel", "The section header carries Android's course count on the trailing edge");
+requireText(coursesView, "enrolmentHeadline", "The page header states how many courses are in progress, as on Android");
+requireText(coursesView, "courseFactLine", "Course cards list teacher and term as icon rows, not a fact grid");
+rejectText(coursesView, "CourseFact(", "Course cards no longer use the 2x2 fact grid Android does not have");
+requireText(profileView, 'title: "常用服务"', "The profile services block keeps Android's 常用服务 heading");
+requireText(profileView, "ProfileServiceTile", "The two service entries render as Android's side-by-side tiles");
+requireText(profileView, 'title: "体育免测与免打卡申请"', "The exemption centre keeps Android's full page title");
+requireText(profileView, "校队或社团免打卡须填写组织名称", "The exemption notes keep Android's team/club paragraph");
+requireText(gradesView, "reviewNote", "Exemption cards show the review note in Android's callout block");
+requireText(models, "var proofCountSummary", "Exemption cards surface Android's uploaded-file count line");
+
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
