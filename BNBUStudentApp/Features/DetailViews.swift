@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CourseDetailView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     let course: Course
 
     var body: some View {
@@ -10,28 +11,32 @@ struct CourseDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: course.semester, title: course.displayTitle)
+                    BNBUBackRow(title: "我的课程") { dismiss() }
+                    courseHeader
 
                     SwissPanel {
-                        VStack(alignment: .leading, spacing: 14) {
-                            DetailFactRow(label: "课程名称", value: course.name)
-                            DetailFactRow(label: "Section", value: "Section \(course.section)")
-                            DetailFactRow(label: "任课老师", value: course.teacher)
-                        }
-                    }
-
-                    SwissPanel {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("我的课程相关进度")
-                                .font(BNBUFont.titleMedium)
-                            HourProgressBar(value: appState.workspace.progress.course, total: appState.hourRule.courseRequired)
-                            DetailFactRow(label: "已完成", value: appState.workspace.progress.course.localizedHourText)
-                            DetailFactRow(label: "仍缺口", value: appState.courseRemaining.localizedHourText)
+                        VStack(alignment: .leading, spacing: 0) {
+                            CourseDetailFactRow(label: "课程代码", value: course.code)
+                            Divider().overlay(BNBUTheme.outlineVariant)
+                            CourseDetailFactRow(label: "教学班", value: "Section \(course.section)")
+                            Divider().overlay(BNBUTheme.outlineVariant)
+                            CourseDetailFactRow(
+                                label: "任课教师",
+                                value: course.teacher.isEmpty ? BNBUL10n.text("待公布") : course.teacher
+                            )
+                            Divider().overlay(BNBUTheme.outlineVariant)
+                            CourseDetailFactRow(label: "开课学期", value: offeringTerm)
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        SectionTitle(eyebrow: "Trace", title: "相关记录")
+                        HStack(alignment: .firstTextBaseline) {
+                            SectionTitle(eyebrow: "Trace", title: "相关记录")
+                            Spacer()
+                            Text(verbatim: recordCountLabel)
+                                .font(BNBUFont.bodyMedium)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
                         if appState.records(for: course).isEmpty {
                             EmptyPlaceholder(title: "暂无相关记录", message: "当前教学班还没有课程相关打卡记录。")
                         } else {
@@ -39,7 +44,7 @@ struct CourseDetailView: View {
                                 NavigationLink {
                                     RecordDetailView(record: record)
                                 } label: {
-                                    RecordCard(record: record)
+                                    RecordCard(record: record, courseTitle: course.displayTitle)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -49,8 +54,76 @@ struct CourseDetailView: View {
                 .padding(BNBUSpacing.screen)
             }
         }
-        .navigationTitle("课程详情")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .accessibilityIdentifier("screen.courseDetail")
+    }
+
+    private var courseHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(course.name)
+                .font(BNBUFont.headlineMedium)
+                .foregroundStyle(BNBUTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: course.displayTitle)
+                .font(BNBUFont.bodyLarge)
+                .foregroundStyle(BNBUTheme.muted)
+            HStack(spacing: 10) {
+                StatusBadge(text: course.isCurrent ? "修读中" : "已完成", filled: course.isCurrent)
+                Text(verbatim: enrolmentTermSummary)
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var academicYear: String {
+        appState.academicProjection.academicYear.replacingOccurrences(of: " 学年", with: "")
+    }
+
+    private var courseTerm: String {
+        course.semester
+            .replacingOccurrences(of: #"^\s*\d{4}[\s\-–/]*"#, with: "", options: .regularExpression)
+            .bnbuLocalizedTerm
+    }
+
+    private var enrolmentTermSummary: String {
+        BNBUL10n.locale.identifier.hasPrefix("zh")
+            ? "\(academicYear) 学年\(courseTerm)"
+            : "\(academicYear) · \(courseTerm)"
+    }
+
+    private var offeringTerm: String {
+        "\(academicYear) · \(courseTerm)"
+    }
+
+    private var recordCountLabel: String {
+        let count = appState.records(for: course).count
+        if BNBUL10n.locale.identifier.hasPrefix("zh") {
+            return "\(count) 条"
+        }
+        return count == 1 ? "1 record" : "\(count) records"
+    }
+}
+
+private struct CourseDetailFactRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(LocalizedStringKey(label))
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .frame(width: 76, alignment: .leading)
+            Text(verbatim: value)
+                .font(BNBUFont.bodyLarge)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 14)
     }
 }
 
@@ -107,6 +180,8 @@ struct RecordDetailView: View {
                                     .font(BNBUFont.bodyMedium)
                                     .foregroundStyle(BNBUTheme.muted)
                             } else {
+                                RecordMediaGrid(proofs: record.proofFiles)
+
                                 ForEach(record.proofFiles) { proof in
                                     HStack(spacing: 10) {
                                         Image(systemName: proof.type == .video ? "video.fill" : "photo.fill")
@@ -206,50 +281,119 @@ struct NoticeDetailView: View {
 
 struct RecordCard: View {
     let record: CheckInRecord
+    /// Android names the linked class rather than echoing its identifier.
+    var courseTitle: String? = nil
 
     var body: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
+                HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(record.taskTitle)
                             .font(BNBUFont.titleMedium)
-                        Text(record.submittedAt)
-                            .font(BNBUFont.labelMedium)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(verbatim: sportAndDate)
+                            .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.muted)
+                        Text(LocalizedStringKey(record.creditType.rawValue))
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
-                    Spacer()
-                    StatusBadge(
-                        text: record.validity == .invalid ? "无效" : "已提交",
-                        filled: record.validity == .valid
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(record.hours.localizedHourText)
+                            .font(BNBUFont.titleMedium)
+                            .foregroundStyle(BNBUTheme.primary)
+                        if record.validity == .invalid {
+                            StatusBadge(text: "无效")
+                        }
+                    }
+                }
+
+                Divider().overlay(BNBUTheme.outlineVariant)
+
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                    alignment: .leading,
+                    spacing: 12
+                ) {
+                    RecordFact(systemImage: "calendar", label: "开始时间", value: record.startedAt)
+                    RecordFact(systemImage: "stopwatch", label: "结束时间", value: record.endedAt)
+                    RecordFact(systemImage: "stopwatch", label: "实际运动时长", value: record.activeDuration)
+                    RecordFact(
+                        systemImage: "checkmark.circle",
+                        label: "计入学时",
+                        value: record.hours.localizedHourText
                     )
                 }
 
-                HStack {
-                    StatusBadge(text: record.creditType.rawValue)
-                    Text(record.hours.localizedHourText)
-                        .font(BNBUFont.titleMedium)
-                    Spacer()
+                if let linkedCourse = courseTitle ?? record.courseId, !linkedCourse.isEmpty {
+                    RecordInlineFact(systemImage: "checkmark.circle", label: "关联课程", value: linkedCourse)
                 }
-
-                if let sportType = record.sportType, !sportType.isEmpty {
-                    Text("运动项目：\(sportType.bnbuSportTypeTitle)")
-                        .font(BNBUFont.bodyMedium)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                }
-
-                Text("打卡照片 / 视频")
-                    .font(BNBUFont.titleMedium)
-
-                RecordMediaGrid(proofs: record.proofFiles)
+                RecordInlineFact(systemImage: "paperclip", label: "运动凭证", value: record.proofSummary)
 
                 if !record.note.isEmpty && record.note != "学生未填写补充说明。" {
-                    Text("备注：\(record.note)")
+                    Text("运动说明：\(record.note)")
                         .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
             }
+        }
+    }
+
+    private var sportAndDate: String {
+        let sport = record.sportType?.bnbuSportTypeTitle ?? ""
+        return [sport, record.submittedAt]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+}
+
+private struct RecordFact: View {
+    let systemImage: String
+    let label: String
+    let value: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(LocalizedStringKey(label))
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                Text(verbatim: value?.isEmpty == false ? value! : BNBUL10n.text("未提供"))
+                    .font(BNBUFont.titleSmall)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct RecordInlineFact: View {
+    let systemImage: String
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .frame(width: 18)
+            Text(LocalizedStringKey(label))
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            Text(verbatim: value)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 }
@@ -369,5 +513,12 @@ private extension String {
         case "cycling": return "骑行"
         default: return self
         }
+    }
+
+    var bnbuLocalizedTerm: String {
+        replacingOccurrences(of: "春季学期", with: BNBUL10n.text("春季学期"))
+            .replacingOccurrences(of: "秋季学期", with: BNBUL10n.text("秋季学期"))
+            .replacingOccurrences(of: "SPRING", with: BNBUL10n.text("春季学期"))
+            .replacingOccurrences(of: "FALL", with: BNBUL10n.text("秋季学期"))
     }
 }

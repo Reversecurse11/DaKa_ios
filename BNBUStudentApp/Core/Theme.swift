@@ -8,6 +8,9 @@ enum BNBUAppearanceMode: String, CaseIterable, Identifiable {
 
     static let defaultsKey = "bnbu.appearance.mode.v3"
 
+    /// Settings lists the explicit modes first and 跟随系统 last, as Android does.
+    static let displayOrder: [BNBUAppearanceMode] = [.light, .dark, .system]
+
     var id: String { rawValue }
 
     var title: String {

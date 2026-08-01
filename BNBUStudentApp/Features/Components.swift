@@ -133,8 +133,8 @@ struct BNBUGroupLabel: View {
 
     var body: some View {
         Text(LocalizedStringKey(title))
-            .font(BNBUFont.labelMedium)
-            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            .font(BNBUFont.titleMedium)
+            .foregroundStyle(BNBUTheme.onSurface)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

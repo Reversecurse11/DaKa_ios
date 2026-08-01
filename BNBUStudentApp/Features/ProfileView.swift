@@ -311,11 +311,14 @@ struct ProfileView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("\(membership.typeTitle) · \(membership.organization)")
                                 .font(BNBUFont.titleMedium)
-                            Text("有效至 \(membership.validUntil)")
+                            Text("有效至 \(membership.validUntilText)")
                                 .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                             HStack(spacing: 8) {
-                                StatusBadge(text: membership.status, filled: membership.status == "认证有效")
+                                StatusBadge(
+                                    text: membership.status,
+                                    filled: membership.status == "有效" || membership.status == "认证有效"
+                                )
                                 Text("抵扣: \(membership.offset)")
                                     .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.primary)

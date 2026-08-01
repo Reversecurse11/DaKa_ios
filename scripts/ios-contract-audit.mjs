@@ -292,6 +292,22 @@ requireText(profileView, "校队或社团免打卡须填写组织名称", "The e
 requireText(gradesView, "reviewNote", "Exemption cards show the review note in Android's callout block");
 requireText(models, "var proofCountSummary", "Exemption cards surface Android's uploaded-file count line");
 
+// Course detail, records, settings and memberships parity with the Android
+// baseline (Android_PICTURE 232654 / 232702 / 232916 / 232922).
+const detailViews = read("BNBUStudentApp/Features/DetailViews.swift");
+const settingsViews = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
+requireText(detailViews, "CourseDetailFactRow", "Course detail lists Android's four divided fact rows");
+requireText(detailViews, 'label: "开课学期"', "Course detail states the term the class is offered in");
+requireText(detailViews, "recordCountLabel", "The related-records heading carries Android's trailing count");
+rejectText(detailViews, "我的课程相关进度", "Course detail drops the progress card Android does not show there");
+requireText(detailViews, "RecordFact(", "Record cards use Android's start/end/duration/credited grid");
+requireText(detailViews, 'label: "运动凭证"', "Record cards summarise evidence as a line, as on Android");
+requireText(models, "var startedAt: String?", "Records carry session timings once the server sends them");
+requireText(theme, "static let displayOrder: [BNBUAppearanceMode]", "Appearance modes list 浅色/深色/跟随系统 as on Android");
+requireText(settingsViews, "BNBUAppearanceMode.displayOrder", "Settings renders the appearance modes in Android's order");
+requireText(components, "BNBUGroupLabel", "Settings group headings exist");
+requireText(models, "var validUntilText", "Membership expiry prints as a written date, as on Android");
+
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");

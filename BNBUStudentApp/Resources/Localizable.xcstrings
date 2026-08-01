@@ -1972,6 +1972,23 @@
         }
       }
     },
+    "关联课程": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Linked course"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关联课程"
+          }
+        }
+      }
+    },
     "关闭": {
       "localizations": {
         "en": {
@@ -2017,6 +2034,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他运动"
+          }
+        }
+      }
+    },
+    "其他运动时长抵扣 10 小时": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Credits 10 h of other exercise"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他运动时长抵扣 10 小时"
           }
         }
       }
@@ -2786,6 +2820,23 @@
         }
       }
     },
+    "名单确认后生效": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effective once the roster is confirmed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名单确认后生效"
+          }
+        }
+      }
+    },
     "四、用户权利": {
       "extractionState": "stale",
       "localizations": {
@@ -3455,6 +3506,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "实时运动，实时记录"
+          }
+        }
+      }
+    },
+    "实际运动时长": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active duration"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实际运动时长"
           }
         }
       }
@@ -4358,6 +4426,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "开始运动后计时，允许时获取一次定位；结束后只能选择运动过程中拍摄的凭证。"
+          }
+        }
+      }
+    },
+    "开课学期": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Term offered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开课学期"
           }
         }
       }
@@ -6224,6 +6309,23 @@
         }
       }
     },
+    "搜索帮助内容...": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search help..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索帮助内容..."
+          }
+        }
+      }
+    },
     "摄像头受系统限制": {
       "localizations": {
         "en": {
@@ -6434,6 +6536,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "放弃这次操作"
+          }
+        }
+      }
+    },
+    "教学班": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "教学班"
           }
         }
       }
@@ -7337,6 +7456,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未提交内容或拍摄凭证还能找回吗？"
+          }
+        }
+      }
+    },
+    "未提供": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not provided"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未提供"
           }
         }
       }
@@ -9775,6 +9911,23 @@
         }
       }
     },
+    "计入学时": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Credited hours"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计入学时"
+          }
+        }
+      }
+    },
     "计时已暂停，可现场拍摄": {
       "extractionState": "stale",
       "localizations": {
@@ -10495,6 +10648,23 @@
         }
       }
     },
+    "课程代码": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Course code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程代码"
+          }
+        }
+      }
+    },
     "课程加入申请审核中，老师通过后才能开始运动。": {
       "localizations": {
         "en": {
@@ -10939,6 +11109,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "You can take photos or record video at any point. Evidence stays on this device and is only submitted after you end the session and confirm."
+          }
+        }
+      }
+    },
+    "运动凭证": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evidence"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运动凭证"
           }
         }
       }

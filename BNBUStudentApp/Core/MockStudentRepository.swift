@@ -37,9 +37,9 @@ struct MockStudentRepository: StudentRepository {
             organization: "羽毛球队",
             studentId: student.id,
             studentName: student.name,
-            status: "认证有效",
+            status: "有效",
             validUntil: "2026-09-01",
-            offset: "可抵扣",
+            offset: "其他运动时长抵扣 10 小时",
             comment: "校队名单已确认，抵扣其他运动 10 小时",
             updatedBy: "体育部管理员",
             updatedAt: "2026.06.01 10:30"
@@ -53,7 +53,7 @@ struct MockStudentRepository: StudentRepository {
             studentName: student.name,
             status: "待确认",
             validUntil: "2026-09-01",
-            offset: "待确认",
+            offset: "名单确认后生效",
             comment: "社团负责人尚未确认本学期名单",
             updatedBy: "跑步社负责人",
             updatedAt: "2026.06.08 18:00"

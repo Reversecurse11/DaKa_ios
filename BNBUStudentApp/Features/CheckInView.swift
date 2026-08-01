@@ -837,11 +837,16 @@ struct CheckInView: View {
                 NavigationLink {
                     RecordDetailView(record: record)
                 } label: {
-                    RecordCard(record: record)
+                    RecordCard(record: record, courseTitle: courseTitle(for: record))
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func courseTitle(for record: CheckInRecord) -> String? {
+        guard let courseId = record.courseId else { return nil }
+        return appState.workspace.courses.first { $0.id == courseId }?.displayTitle
     }
 
     private var submissionContext: (creditType: CreditType, courseId: String?)? {

@@ -279,7 +279,7 @@ struct HelpCenterView: View {
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: Text("搜索帮助内容")
+                prompt: Text("搜索帮助内容...")
             )
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

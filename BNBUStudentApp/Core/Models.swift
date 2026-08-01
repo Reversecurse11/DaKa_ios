@@ -1221,6 +1221,11 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
     var proofFiles: [ProofAttachment]
     var note: String
     var sportType: String?
+    /// Session timings ship with the OpenAPI document. Until then the server
+    /// omits them and both clients show 未提供, as the Android baseline does.
+    var startedAt: String?
+    var endedAt: String?
+    var activeDuration: String?
 
     var representsCompleteServerRecord: Bool {
         hours == 1 || hours == 2
@@ -1240,7 +1245,10 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         proofVideoCount: Int,
         proofFiles: [ProofAttachment],
         note: String,
-        sportType: String? = nil
+        sportType: String? = nil,
+        startedAt: String? = nil,
+        endedAt: String? = nil,
+        activeDuration: String? = nil
     ) {
         self.id = id
         self.courseId = courseId
@@ -1256,6 +1264,9 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         self.proofFiles = proofFiles
         self.note = note
         self.sportType = sportType
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.activeDuration = activeDuration
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1285,6 +1296,12 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         case proofFiles
         case note
         case description
+        case startedAt
+        case startTime
+        case endedAt
+        case endTime
+        case activeDuration
+        case actualDuration
     }
 
     init(from decoder: Decoder) throws {
@@ -1335,6 +1352,12 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent(String.self, forKey: .description)
             ?? ""
         sportType = try container.decodeIfPresent(String.self, forKey: .sportType)
+        startedAt = try container.decodeIfPresent(String.self, forKey: .startedAt)
+            ?? container.decodeIfPresent(String.self, forKey: .startTime)
+        endedAt = try container.decodeIfPresent(String.self, forKey: .endedAt)
+            ?? container.decodeIfPresent(String.self, forKey: .endTime)
+        activeDuration = try container.decodeIfPresent(String.self, forKey: .activeDuration)
+            ?? container.decodeIfPresent(String.self, forKey: .actualDuration)
         invalidReason = decodedInvalidReason?.isEmpty == false ? decodedInvalidReason : nil
     }
 
@@ -1354,6 +1377,9 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         try container.encode(proofFiles, forKey: .proofFiles)
         try container.encode(note, forKey: .note)
         try container.encodeIfPresent(sportType, forKey: .sportType)
+        try container.encodeIfPresent(startedAt, forKey: .startedAt)
+        try container.encodeIfPresent(endedAt, forKey: .endedAt)
+        try container.encodeIfPresent(activeDuration, forKey: .activeDuration)
     }
 
     private static func proofSummary(for proofFiles: [ProofAttachment]) -> String {
@@ -2490,6 +2516,24 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
 }
 
 struct Membership: Identifiable, Hashable, Codable {
+    /// Android prints the expiry as a written date rather than the raw
+    /// ISO string the server stores.
+    var validUntilText: String {
+        let parsers = ["yyyy-MM-dd", "yyyy/MM/dd", "yyyy-MM-dd'T'HH:mm:ssXXXXX"]
+        let parsed = parsers.lazy.compactMap { format -> Date? in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = format
+            return formatter.date(from: validUntil)
+        }.first
+        guard let parsed else { return validUntil }
+        let display = DateFormatter()
+        display.locale = BNBUL10n.locale
+        display.dateStyle = .long
+        display.timeStyle = .none
+        return display.string(from: parsed)
+    }
+
     let id: String
     let type: String
     let organization: String

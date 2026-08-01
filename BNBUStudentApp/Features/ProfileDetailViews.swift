@@ -183,7 +183,7 @@ struct ProfileSettingsView: View {
                     .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.onSurface)
                 BNBUSegmentedControl(
-                    values: BNBUAppearanceMode.allCases.map(\.rawValue),
+                    values: BNBUAppearanceMode.displayOrder.map(\.rawValue),
                     selection: $appearanceModeRaw,
                     title: { raw in
                         BNBUAppearanceMode(rawValue: raw).map(shortAppearanceTitle) ?? raw
@@ -274,6 +274,8 @@ struct ProfileSettingsView: View {
                 Text("退出登录")
                     .font(BNBUFont.titleMedium)
                 Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(BNBUFont.labelMedium)
             }
             .foregroundStyle(BNBUTheme.onErrorContainer)
             .padding(BNBUSpacing.panel)

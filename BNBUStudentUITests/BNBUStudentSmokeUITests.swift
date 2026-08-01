@@ -245,6 +245,29 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
         app.buttons["profile.exemption.button"].tap()
         attachScreenshot(named: "w10-exemption")
+
+        home()
+        tabButton("tab.courses").tap()
+        XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 5))
+        let courseCard = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS %@", "GEPE101")
+        ).firstMatch
+        if courseCard.waitForExistence(timeout: 3) {
+            tapCenter(of: courseCard)
+            XCTAssertTrue(app.staticTexts["课程代码"].waitForExistence(timeout: 5))
+            attachScreenshot(named: "w11-course-detail-top")
+            app.swipeUp()
+            attachScreenshot(named: "w12-course-detail-lower")
+        }
+
+        home()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["settings.helpCenter"])
+        XCTAssertTrue(screen("screen.help").waitForExistence(timeout: 5))
+        attachScreenshot(named: "w13-help-center")
     }
 
     /// Temporary: captures the eight pages added on 29 July for the page-by-page
@@ -611,9 +634,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["查看记录"].tap()
 
         XCTAssertTrue(app.staticTexts["自主运动打卡"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["已提交"].exists)
         XCTAssertFalse(app.staticTexts["待审核"].exists)
-        XCTAssertTrue(app.staticTexts["打卡照片 / 视频"].exists)
+        // Android's record card summarises the session instead of badging it.
+        XCTAssertTrue(app.staticTexts["计入学时"].exists)
+        XCTAssertTrue(app.staticTexts["运动凭证"].exists)
     }
 
     // Business rules 3.2.1/5.5/5.6: pause/resume, in-session capture drafts,
@@ -707,7 +731,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 3))
         // The mock workspace ships one teacher-invalidated record (r4);
         // its badge must render the new validity model, not review states.
         XCTAssertTrue(app.staticTexts["无效"].firstMatch.exists)
@@ -868,7 +892,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 5))
         app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["待审核"].exists)
         attachScreenshot(named: "remote-records")
 
@@ -948,7 +972,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["查看记录"].tap()
 
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["待审核"].exists)
         attachScreenshot(named: "remote-submit-records-readback")
     }
