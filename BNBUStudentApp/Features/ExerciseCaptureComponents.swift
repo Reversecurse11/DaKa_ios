@@ -57,7 +57,7 @@ struct ExerciseCameraCaptureButton: View {
                 .font(BNBUFont.titleSmall)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .foregroundStyle(isDisabled ? BNBUTheme.muted : BNBUTheme.ink)
+                .foregroundStyle(isDisabled ? BNBUTheme.muted : BNBUTheme.primary)
                 .background(BNBUTheme.surface)
                 .bnbuOutlinedSurface(radius: BNBURadius.extraLarge, lineWidth: 1.5)
         }
@@ -137,6 +137,97 @@ private enum ExerciseCameraAlert: Identifiable {
         case .unavailable: return "unavailable"
         case .denied: return "denied"
         case .restricted: return "restricted"
+        }
+    }
+}
+
+/// Small tinted capsule used for the session lifecycle state and the location
+/// result, matching the pills Android puts on the trailing edge of each card.
+struct SessionStatePill: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(tint)
+                .frame(width: 6, height: 6)
+            Text(verbatim: text)
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.12))
+        .clipShape(Capsule())
+    }
+}
+
+/// Read-only strip of what has been captured so far. The evidence form still
+/// owns selection; this only mirrors Android's "已拍摄素材" preview.
+struct ExerciseDraftThumbnailStrip: View {
+    let drafts: [ExerciseMediaDraft]
+    let onDelete: (ExerciseMediaDraft) -> Void
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            ForEach(drafts) { draft in
+                VStack(alignment: .leading, spacing: 6) {
+                    // A filled rectangle owns the cell size; the thumbnail rides
+                    // in an overlay so a short or oversized capture cannot drag
+                    // the row height around.
+                    Rectangle()
+                        .fill(BNBUTheme.surfaceVariant)
+                        .frame(height: 78)
+                        .overlay {
+                            thumbnail(for: draft)
+                        }
+                        .overlay {
+                            if draft.type == .video {
+                                Image(systemName: "play.fill")
+                                    .font(BNBUFont.labelMedium)
+                                    .foregroundStyle(BNBUTheme.surface)
+                                    .frame(width: 30, height: 30)
+                                    .background(BNBUTheme.overlayBlack.opacity(0.55))
+                                    .clipShape(Circle())
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.extraSmall, style: .continuous))
+
+                    HStack(spacing: 4) {
+                        Text(draft.type == .video ? "现场视频" : "现场照片")
+                            .font(BNBUFont.labelSmall)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Spacer(minLength: 0)
+                        Button {
+                            onDelete(draft)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(BNBUFont.labelSmall)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("checkin.draft.delete.\(draft.id)")
+                        .accessibilityLabel("删除草稿 \(draft.fileName)")
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func thumbnail(for draft: ExerciseMediaDraft) -> some View {
+        if let data = draft.thumbnailData, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            Image(systemName: draft.type == .video ? "video.fill" : "photo.fill")
+                .font(BNBUFont.titleMedium)
+                .foregroundStyle(BNBUTheme.primary)
         }
     }
 }

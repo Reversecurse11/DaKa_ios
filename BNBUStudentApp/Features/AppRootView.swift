@@ -4,7 +4,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case dashboard = "首页"
     case courses = "课程"
     case checkin = "打卡"
-    case grades = "成绩"
+    case grades = "运动进度"
     case profile = "我的"
 
     var id: String { rawValue }

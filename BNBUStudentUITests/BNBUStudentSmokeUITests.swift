@@ -151,6 +151,38 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
     }
 
+    /// Temporary: captures the check-in tab states the lead flagged as the
+    /// weakest match against the Android baseline (Android_PICTURE 22 and 24).
+    func testTempShotsCheckInBaseline() throws {
+        func relaunch(_ arguments: [String]) {
+            app.terminate()
+            app = XCUIApplication()
+            app.launchArguments = arguments + ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+            app.launch()
+        }
+
+        relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
+        tabButton("tab.checkin").tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 8))
+        attachScreenshot(named: "checkin-01-prepare-top")
+        app.swipeUp()
+        attachScreenshot(named: "checkin-02-prepare-lower")
+
+        relaunch(["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise"])
+        tabButton("tab.checkin").tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 8))
+        attachScreenshot(named: "checkin-03-active-top")
+        app.swipeUp()
+        attachScreenshot(named: "checkin-04-active-lower")
+
+        relaunch(["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-completed-exercise"])
+        tabButton("tab.checkin").tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 8))
+        attachScreenshot(named: "checkin-05-completed-top")
+        app.swipeUp()
+        attachScreenshot(named: "checkin-06-completed-lower")
+    }
+
     /// Temporary: captures the eight pages added on 29 July for the page-by-page
     /// comparison against the Android baseline.
     func testTempShotsNewPagesBaseline() throws {
@@ -258,9 +290,9 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["我的课程"].waitForExistence(timeout: 3))
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 3))
 
-        openTab(label: "成绩", screenIdentifier: "screen.grades")
+        openTab(label: "运动进度", screenIdentifier: "screen.grades")
         XCTAssertTrue(app.staticTexts["体测与打卡"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["打卡学时"].exists)
         // §1.4: teacher-side grading rules never reach the student view.
@@ -350,7 +382,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(tabButton("tab.dashboard").label, "首页")
         XCTAssertEqual(tabButton("tab.courses").label, "课程")
         XCTAssertEqual(tabButton("tab.checkin").label, "打卡")
-        XCTAssertEqual(tabButton("tab.grades").label, "成绩")
+        XCTAssertEqual(tabButton("tab.grades").label, "运动进度")
         XCTAssertEqual(tabButton("tab.profile").label, "我的")
     }
 
@@ -370,7 +402,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(tabButton("tab.dashboard").label, "Home")
         XCTAssertEqual(tabButton("tab.courses").label, "Courses")
         XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
-        XCTAssertEqual(tabButton("tab.grades").label, "Grades")
+        XCTAssertEqual(tabButton("tab.grades").label, "Progress")
         XCTAssertEqual(tabButton("tab.profile").label, "Profile")
 
         XCTAssertTrue(app.staticTexts["Sports credit progress"].waitForExistence(timeout: 3))
@@ -414,7 +446,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         tabButton("tab.checkin").tap()
         XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
-        for label in ["Start Time", "Location", "End Time", "Eligible Hours"] {
+        for label in ["Started", "Projected Hours", "End Time", "Eligible Hours"] {
             XCTAssertTrue(
                 app.staticTexts[label].waitForExistence(timeout: 2),
                 "Missing localized check-in field: \(label)"
@@ -451,7 +483,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(tabButton("tab.dashboard").label, "Home")
         XCTAssertEqual(tabButton("tab.courses").label, "Courses")
         XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
-        XCTAssertEqual(tabButton("tab.grades").label, "Grades")
+        XCTAssertEqual(tabButton("tab.grades").label, "Progress")
         XCTAssertEqual(tabButton("tab.profile").label, "Profile")
     }
 
@@ -484,7 +516,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(tabButton("tab.dashboard").label, "Home")
         XCTAssertEqual(tabButton("tab.courses").label, "Courses")
         XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
-        XCTAssertEqual(tabButton("tab.grades").label, "Grades")
+        XCTAssertEqual(tabButton("tab.grades").label, "Progress")
         XCTAssertEqual(tabButton("tab.profile").label, "Profile")
     }
 
@@ -492,7 +524,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
 
-        app.buttons["提交"].firstMatch.tap()
+        app.buttons["运动"].firstMatch.tap()
 
         // Q&A 7/23 (Q5): the sport note is required before submitting.
         let noteEditor = app.textViews["运动说明"]
@@ -530,19 +562,18 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.buttons["提交"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["记录中"].waitForExistence(timeout: 5))
 
         // The launch fixture seeds one hidden draft without exposing a debug
         // capture control in the user interface.
         XCTAssertFalse(app.buttons["checkin.capture.demo"].exists)
-        XCTAssertTrue(app.staticTexts["照片草稿 1/6"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["照片 1/6"].waitForExistence(timeout: 3))
 
         // Pause freezes the timer; resume brings the session back.
         scrollToAndTap(app.buttons["checkin.exercise.pause"])
-        XCTAssertTrue(app.staticTexts["运动已暂停"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["已暂停"].waitForExistence(timeout: 3))
         scrollToAndTap(app.buttons["checkin.exercise.resume"])
-        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["记录中"].waitForExistence(timeout: 3))
 
         // Business rule 5.6: ending always passes the anti-mistap dialog
         // first;「取消」returns to the running session with the timer intact.
@@ -550,7 +581,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         scrollToAndTap(app.buttons["checkin.exercise.end"])
         XCTAssertTrue(endAlert.waitForExistence(timeout: 3))
         endAlert.buttons["取消"].tap()
-        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["记录中"].waitForExistence(timeout: 3))
 
         // An under-one-hour end then shows the notice, keeps drafts, and
         // reopens the start form.
@@ -589,21 +620,21 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.launch()
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.buttons["提交"].firstMatch.tap()
+        app.buttons["运动"].firstMatch.tap()
 
         scrollToAndTap(app.buttons["跑步"])
         scrollToAndTap(app.buttons["checkin.exercise.start"])
-        XCTAssertTrue(app.staticTexts["运动进行中"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["记录中"].waitForExistence(timeout: 5))
 
         // Interruption monitors only fire on interaction; nudge the app while
         // polling so the permission alert gets answered, then wait for the
         // fix to attach and render in the session detail rows.
-        let attached = app.staticTexts["已获取"]
+        let attached = app.staticTexts["已获取位置"]
         for _ in 0..<12 where !attached.exists {
-            app.staticTexts["运动进行中"].firstMatch.tap()
+            app.staticTexts["记录中"].firstMatch.tap()
             _ = attached.waitForExistence(timeout: 2)
         }
-        XCTAssertTrue(attached.exists, "开始运动后应附加一次 GPS 定位并显示“已获取”")
+        XCTAssertTrue(attached.exists, "开始运动后应附加一次 GPS 定位并显示“已获取位置”")
     }
 
     func testSubmittedHistoryNoticeReadAndLogoutFlow() throws {
@@ -649,7 +680,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["暂无课程"].waitForExistence(timeout: 3))
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 3))
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertTrue(app.staticTexts["暂无认证记录"].waitForExistence(timeout: 3))
@@ -770,14 +801,14 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         attachScreenshot(named: "remote-courses")
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 5))
         app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["已提交"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["待审核"].exists)
         attachScreenshot(named: "remote-records")
 
-        openTab(label: "成绩", screenIdentifier: "screen.grades")
+        openTab(label: "运动进度", screenIdentifier: "screen.grades")
         XCTAssertTrue(app.staticTexts["成绩进度"].waitForExistence(timeout: 5))
         attachScreenshot(named: "remote-grades")
 
@@ -822,8 +853,8 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         dismissSavePasswordPromptIfNeeded()
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.buttons["提交"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["提交打卡"].waitForExistence(timeout: 5))
+        app.buttons["运动"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["运动已结束"].waitForExistence(timeout: 5))
 
         let noteEditor = app.textViews["运动说明"]
@@ -973,7 +1004,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         case "首页": identifier = "tab.dashboard"
         case "课程": identifier = "tab.courses"
         case "打卡": identifier = "tab.checkin"
-        case "成绩": identifier = "tab.grades"
+        case "运动进度": identifier = "tab.grades"
         default: identifier = "tab.profile"
         }
         tabButton(identifier).tap()

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum CheckInSegment: String, CaseIterable, Identifiable {
-    case submit = "提交"
+    case submit = "运动"
     case records = "记录"
 
     var id: String { rawValue }
@@ -14,6 +14,7 @@ private extension ExerciseSportType {
         case .basketball: return "basketball"
         case .football: return "soccerball"
         case .badminton: return "figure.badminton"
+        case .tableTennis: return "figure.table.tennis"
         case .swimming: return "figure.pool.swim"
         case .fitness: return "dumbbell"
         case .cycling: return "bicycle"
@@ -75,21 +76,33 @@ struct CheckInView: View {
         ZStack {
             BNBUPageBackground()
 
-            VStack(spacing: 0) {
-                BNBUSegmentedControl(
-                    values: CheckInSegment.allCases,
-                    selection: $selectedSegment,
-                    title: \.rawValue,
-                    identifier: { "checkin.segment.\($0.rawValue)" }
-                )
-                .padding([.horizontal, .top], 18)
-                .padding(.bottom, 10)
+            VStack(alignment: .leading, spacing: 0) {
+                // Android drops the page chrome once a session is running: the
+                // whole tab becomes the session view.
+                if !hasRunningSession {
+                    Text("运动打卡")
+                        .font(BNBUFont.headlineSmall)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                        .padding(.horizontal, BNBUSpacing.screen)
+                        .padding(.top, BNBUSpacing.space12)
+                        .padding(.bottom, BNBUSpacing.space16)
+
+                    BNBUSegmentedControl(
+                        values: CheckInSegment.allCases,
+                        selection: $selectedSegment,
+                        title: \.rawValue,
+                        identifier: { "checkin.segment.\($0.rawValue)" }
+                    )
+                    .padding(.horizontal, BNBUSpacing.screen)
+                    .padding(.bottom, BNBUSpacing.space8)
+                }
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         content
                     }
                     .padding(BNBUSpacing.screen)
+                    .padding(.bottom, BNBUSpacing.bottomSpacer)
                 }
                 .scrollDismissesKeyboard(.immediately)
                 .refreshable {
@@ -200,9 +213,28 @@ struct CheckInView: View {
         }
     }
 
+    /// A running session takes over the whole tab, so the page title and the
+    /// segmented control step aside. A finished session still needs them: the
+    /// student has to reach 记录 after submitting the evidence.
+    private var hasRunningSession: Bool {
+        appState.exerciseSession?.status == .active && selectedSegment == .submit
+    }
+
     private var submitForm: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SectionTitle(eyebrow: "Submit", title: "提交打卡")
+            if appState.exerciseSession?.status != .active {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("本次运动")
+                        .font(BNBUFont.titleLarge)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                    if appState.exerciseSession == nil {
+                        Spacer(minLength: BNBUSpacing.space12)
+                        Text("选择打卡类别与运动项目")
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+                }
+            }
 
             if let localRecoveryMessage {
                 LocalRecoveryBanner(message: localRecoveryMessage)
@@ -235,56 +267,56 @@ struct CheckInView: View {
     }
 
     private var exerciseStartForm: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("运动类型")
-                        .font(BNBUFont.titleMedium)
-                    BNBUSegmentedControl(
-                        values: ExerciseCategory.allCases,
-                        selection: $selectedCategory,
-                        title: \.title,
-                        identifier: { "checkin.category.\($0.rawValue)" }
-                    )
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            SwissPanel {
+                VStack(alignment: .leading, spacing: 18) {
+                    CheckInCategorySelector(selection: $selectedCategory)
 
-                if let course = appState.currentExerciseCourse {
-                    Label(course.displayTitle, systemImage: "book.closed")
-                        .font(BNBUFont.titleSmall)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                } else if appState.hasPendingEnrollmentOnly {
-                    Label("课程加入申请审核中，老师通过后才能开始运动。", systemImage: "hourglass")
-                        .font(BNBUFont.titleSmall)
-                        .foregroundStyle(BNBUTheme.muted)
-                        .accessibilityIdentifier("checkin.enrollment.pending")
-                } else {
-                    Text("当前没有在读体育课程，暂时不能开始运动。")
-                        .font(BNBUFont.titleSmall)
-                        .foregroundStyle(BNBUTheme.muted)
-                }
+                    if let course = appState.currentExerciseCourse, selectedCategory == .courseRelated {
+                        Label(course.displayTitle, systemImage: "book.closed")
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    } else if appState.hasPendingEnrollmentOnly {
+                        Label("课程加入申请审核中，老师通过后才能开始运动。", systemImage: "hourglass")
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.muted)
+                            .accessibilityIdentifier("checkin.enrollment.pending")
+                    } else if appState.currentExerciseCourse == nil, selectedCategory == .courseRelated {
+                        Text("当前没有在读体育课程，暂时不能开始运动。")
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.muted)
+                    }
 
-                SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
+                    Divider()
+                        .overlay(BNBUTheme.outlineVariant)
 
-                Text("每日开放时段 \(CheckInTimeWindowRule.displayText) 内可开始运动；开始后即使超出时段也可正常结束和提交。开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。开始时会尝试获取一次位置，获取失败不影响打卡。")
-                    .font(BNBUFont.bodySmall)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .lineSpacing(3)
-
-                if let startValidationMessage {
-                    Text(startValidationMessage)
-                        .font(BNBUFont.labelMedium)
-                        .foregroundStyle(BNBUTheme.muted)
-                }
-
-                DisabledAwareButton(
-                    title: "开始运动",
-                    systemImage: "play.fill",
-                    isDisabled: startValidationMessage != nil,
-                    accessibilityIdentifier: "checkin.exercise.start"
-                ) {
-                    startExercise()
+                    SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
                 }
             }
+
+            Label {
+                Text("运动中可随时现场拍照或录像。凭证仅保存在本机，结束运动并确认后才会提交。")
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineSpacing(BNBUFont.LineSpacing.bodySmall)
+            } icon: {
+                Image(systemName: "camera")
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            }
+
+            Divider()
+                .overlay(BNBUTheme.outlineVariant)
+
+            DisabledAwareButton(
+                title: startValidationMessage == nil ? "开始运动" : "当前不可开始",
+                systemImage: "play.fill",
+                isDisabled: startValidationMessage != nil,
+                accessibilityIdentifier: "checkin.exercise.start"
+            ) {
+                startExercise()
+            }
+            .accessibilityHint(startValidationMessage.map { Text($0) } ?? Text(""))
         }
     }
 
@@ -292,24 +324,35 @@ struct CheckInView: View {
     private func exerciseSessionPanel(_ session: ExerciseSession) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let displayedSession = session.reconciled(at: context.date)
-            SwissPanel {
-                VStack(alignment: .leading, spacing: 18) {
-                    sessionHeader(displayedSession)
+            VStack(alignment: .leading, spacing: 16) {
+                sessionHeader(displayedSession)
 
-                    // Business rule 3.5: the check-in page centres on the
-                    // timer. No distance, pace, calories or map in v1.
-                    VStack(spacing: 8) {
-                        Text(formatDuration(displayedSession.elapsed(at: context.date)))
-                            .font(.system(size: 52, weight: .semibold).monospacedDigit())
-                            .tracking(-1)
-                            .contentTransition(.numericText())
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.55)
-                            .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
+                // Business rule 3.5: the check-in page centres on the
+                // timer. No distance, pace, calories or map in v1.
+                SwissPanel {
+                    VStack(spacing: 14) {
+                        Image(systemName: "stopwatch")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(BNBUTheme.primary)
 
-                        Text(creditSummary(for: displayedSession, at: context.date))
-                            .font(BNBUFont.labelMedium)
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        VStack(spacing: 4) {
+                            Text(formatDuration(displayedSession.elapsed(at: context.date)))
+                                .font(.system(size: 52, weight: .semibold).monospacedDigit())
+                                .tracking(-1)
+                                .contentTransition(.numericText())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.55)
+                                .accessibilityLabel("已运动 \(formatDurationForVoiceOver(displayedSession.elapsed(at: context.date)))")
+
+                            Text("有效运动时长")
+                                .font(BNBUFont.bodyMedium)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
+
+                        Divider()
+                            .overlay(BNBUTheme.outlineVariant)
+
+                        sessionStatRow(displayedSession, at: context.date)
 
                         if displayedSession.isPaused {
                             Text("运动已暂停 · 暂停时间不计入运动时长")
@@ -318,23 +361,11 @@ struct CheckInView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
+                }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        sessionDetailRow(
-                            title: "运动项目",
-                            value: BNBUL10n.dynamicText(displayedSession.resolvedSportName)
-                        )
-                        sessionDetailRow(title: "开始时间", value: formattedTime(displayedSession.startTime))
-                        if displayedSession.pausedDuration(at: context.date) > 0 {
-                            sessionDetailRow(title: "暂停累计", value: formatDuration(displayedSession.pausedDuration(at: context.date)))
-                        }
-                        sessionDetailRow(
-                            title: "位置记录",
-                            value: displayedSession.locationStatus == .available
-                                ? BNBUL10n.text("已获取")
-                                : BNBUL10n.text("未获取（不影响计时）")
-                        )
-                        if displayedSession.status == .completed {
+                if displayedSession.status == .completed {
+                    SwissPanel {
+                        VStack(alignment: .leading, spacing: 8) {
                             sessionDetailRow(title: "结束时间", value: formattedTime(displayedSession.endTime ?? context.date))
                             sessionDetailRow(
                                 title: "可计学时",
@@ -342,51 +373,52 @@ struct CheckInView: View {
                             )
                         }
                     }
+                }
 
-                    if displayedSession.status == .active {
-                        // Camera stays available while exercising and paused
-                        // (business rule 5.5); captures land in the draft pool.
-                        exerciseCaptureSection
+                if displayedSession.status == .active {
+                    // Camera stays available while exercising and paused
+                    // (business rule 5.5); captures land in the draft pool.
+                    exerciseCaptureSection(displayedSession)
 
-                        HStack(spacing: 10) {
-                            if displayedSession.isPaused {
-                                SecondaryActionButton(title: "继续运动", systemImage: "play.fill") {
-                                    appState.resumeExerciseSession()
-                                }
-                                .accessibilityIdentifier("checkin.exercise.resume")
-                            } else {
-                                SecondaryActionButton(title: "暂停", systemImage: "pause.fill") {
-                                    appState.pauseExerciseSession()
-                                }
-                                .accessibilityIdentifier("checkin.exercise.pause")
-                            }
-
-                            SecondaryActionButton(title: "结束运动", systemImage: "stop.fill") {
-                                requestEndExercise(displayedSession, at: context.date)
-                            }
-                            .accessibilityIdentifier("checkin.exercise.end")
+                    if displayedSession.isPaused {
+                        PrimaryActionButton(title: "继续运动", systemImage: "play.fill") {
+                            appState.resumeExerciseSession()
                         }
-
-                        Button {
-                            confirmAbandon = true
-                        } label: {
-                            Text("放弃本次运动")
-                                .font(BNBUFont.labelMedium)
-                                .foregroundStyle(BNBUTheme.muted)
-                                .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("checkin.exercise.resume")
+                    } else {
+                        PrimaryActionButton(title: "暂停运动", systemImage: "pause.fill") {
+                            appState.pauseExerciseSession()
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("checkin.exercise.abandon")
-                    } else if displayedSession.creditedHours() == 0 {
-                        Text("本次运动不足 1 小时，不计入体育学时，不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
+                        .accessibilityIdentifier("checkin.exercise.pause")
+                    }
+
+                    OutlinedActionButton(
+                        title: "结束运动",
+                        systemImage: "stop.fill",
+                        accessibilityIdentifier: "checkin.exercise.end"
+                    ) {
+                        requestEndExercise(displayedSession, at: context.date)
+                    }
+
+                    Button {
+                        confirmAbandon = true
+                    } label: {
+                        Text("放弃本次运动")
                             .font(BNBUFont.labelMedium)
                             .foregroundStyle(BNBUTheme.muted)
-                        SecondaryActionButton(title: "完成并返回", systemImage: "arrow.counterclockwise") {
-                            appState.finishUncreditedExerciseSession()
-                            resetFormAfterSubmit()
-                        }
-                        .accessibilityIdentifier("checkin.exercise.finish.uncredited")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("checkin.exercise.abandon")
+                } else if displayedSession.creditedHours() == 0 {
+                    Text("本次运动不足 1 小时，不计入体育学时，不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
+                        .font(BNBUFont.labelMedium)
+                        .foregroundStyle(BNBUTheme.muted)
+                    SecondaryActionButton(title: "完成并返回", systemImage: "arrow.counterclockwise") {
+                        appState.finishUncreditedExerciseSession()
+                        resetFormAfterSubmit()
+                    }
+                    .accessibilityIdentifier("checkin.exercise.finish.uncredited")
                 }
             }
             .task(id: displayedSession.status) {
@@ -398,59 +430,152 @@ struct CheckInView: View {
         }
     }
 
+    /// Android titles the running session with the sport itself and puts the
+    /// lifecycle state in a tinted pill on the trailing edge.
     private func sessionHeader(_ session: ExerciseSession) -> some View {
-        let status = sessionStatusTitle(session)
-        let category = BNBUL10n.dynamicText(session.category.title)
-
-        return ViewThatFits(in: .horizontal) {
-            HStack {
-                Label(status, systemImage: sessionStatusIcon(session))
-                    .font(BNBUFont.titleMedium)
-                    .foregroundStyle(BNBUTheme.primary)
-                Spacer(minLength: 8)
-                StatusBadge(text: category, filled: true)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: BNBUL10n.dynamicText(session.resolvedSportName))
+                    .font(BNBUFont.headlineSmall)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Text(verbatim: BNBUL10n.dynamicText(session.category.title))
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                Label(status, systemImage: sessionStatusIcon(session))
-                    .font(BNBUFont.titleMedium)
-                    .foregroundStyle(BNBUTheme.primary)
-                StatusBadge(text: category, filled: true)
-            }
+            Spacer(minLength: BNBUSpacing.space12)
+            SessionStatePill(
+                text: sessionStatusTitle(session),
+                tint: sessionStatusTint(session)
+            )
         }
     }
 
-    private var exerciseCaptureSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("运动过程拍摄")
-                    .font(BNBUFont.titleMedium)
-                Spacer()
-                StatusBadge(text: "照片草稿 \(appState.exercisePhotoDraftCount)/\(ExerciseMediaDraftRule.maximumPhotoDrafts)")
-            }
-            Text("凭证只能通过相机实时拍摄，照片和视频先保存为本地草稿，结束打卡时可选择作为凭证。")
+    /// Android's three-up summary under the timer: start time, the hours this
+    /// session will earn, and how many on-site captures exist.
+    private func sessionStatRow(_ session: ExerciseSession, at date: Date) -> some View {
+        HStack(alignment: .top, spacing: BNBUSpacing.space8) {
+            sessionStat(value: formattedTime(session.startTime), caption: "开始")
+            sessionStat(
+                value: session.creditedHours(at: date).localizedHourText,
+                caption: "预计学时"
+            )
+            sessionStat(
+                value: String(appState.exerciseMediaDrafts.count),
+                caption: "现场凭证"
+            )
+        }
+    }
+
+    private func sessionStat(value: String, caption: String) -> some View {
+        VStack(spacing: 4) {
+            Text(verbatim: value)
+                .font(BNBUFont.titleLarge)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(LocalizedStringKey(caption))
                 .font(BNBUFont.bodySmall)
-                .foregroundStyle(BNBUTheme.muted)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+        }
+        .frame(maxWidth: .infinity)
+    }
 
-            ExerciseCameraCaptureButton(
-                title: "拍摄照片 / 录制视频",
-                accessibilityIdentifier: "checkin.capture.camera"
-            ) { attachment in
-                handleCapturedAttachment(attachment, autoSelect: false)
+    /// Android splits capture into a dedicated card with separate photo and
+    /// video buttons, running counters and a thumbnail strip.
+    private func exerciseCaptureSection(_ session: ExerciseSession) -> some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("现场凭证")
+                            .font(BNBUFont.titleMedium)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Text("仅保存在本机，结束后再确认提交")
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+                    Spacer(minLength: BNBUSpacing.space8)
+                    SessionStatePill(
+                        text: session.locationStatus == .available
+                            ? BNBUL10n.text("已获取位置")
+                            : BNBUL10n.text("未获取位置"),
+                        tint: session.locationStatus == .available
+                            ? BNBUTheme.tertiary
+                            : BNBUTheme.secondary
+                    )
+                    .accessibilityIdentifier("checkin.location.status")
+                }
+
+                HStack(spacing: 10) {
+                    ExerciseCameraCaptureButton(
+                        title: "现场拍照",
+                        systemImage: "camera.fill",
+                        initialCaptureMode: .photo,
+                        isDisabled: appState.exercisePhotoDraftCount >= ExerciseMediaDraftRule.maximumPhotoDrafts,
+                        accessibilityIdentifier: "checkin.capture.photo"
+                    ) { attachment in
+                        handleCapturedAttachment(attachment, autoSelect: false)
+                    }
+
+                    ExerciseCameraCaptureButton(
+                        title: "现场录像",
+                        systemImage: "video.fill",
+                        initialCaptureMode: .video,
+                        isDisabled: appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts,
+                        accessibilityIdentifier: "checkin.capture.video"
+                    ) { attachment in
+                        handleCapturedAttachment(attachment, autoSelect: false)
+                    }
+                }
+
+                if appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts {
+                    Text("视频已达到 \(ExerciseMediaDraftRule.maximumVideoDrafts) 个上限，删除后可继续录制。")
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.secondary)
+                }
+
+                HStack {
+                    Text("已拍摄素材")
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                    Spacer(minLength: BNBUSpacing.space8)
+                    StatusBadge(text: "照片 \(appState.exercisePhotoDraftCount)/\(ExerciseMediaDraftRule.maximumPhotoDrafts)")
+                    StatusBadge(text: "视频 \(appState.exerciseVideoDraftCount)/\(ExerciseMediaDraftRule.maximumVideoDrafts)")
+                }
+
+                if appState.exerciseMediaDrafts.isEmpty {
+                    Label {
+                        Text("拍摄完成后，照片和视频会立即显示在这里。")
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    } icon: {
+                        Image(systemName: "camera")
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.primary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BNBUTheme.surfaceContainerLow)
+                    .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                } else {
+                    ExerciseDraftThumbnailStrip(drafts: appState.exerciseMediaDrafts) { draft in
+                        appState.removeExerciseMediaDraft(id: draft.id)
+                    }
+                }
             }
-
         }
     }
 
     private func sessionStatusTitle(_ session: ExerciseSession) -> String {
-        if session.status == .completed { return BNBUL10n.text("运动已结束") }
+        if session.status == .completed { return BNBUL10n.text("已结束") }
         return session.isPaused
-            ? BNBUL10n.text("运动已暂停")
-            : BNBUL10n.text("运动进行中")
+            ? BNBUL10n.text("已暂停")
+            : BNBUL10n.text("记录中")
     }
 
-    private func sessionStatusIcon(_ session: ExerciseSession) -> String {
-        if session.status == .completed { return "checkmark.circle.fill" }
-        return session.isPaused ? "pause.circle.fill" : "figure.run.circle.fill"
+    private func sessionStatusTint(_ session: ExerciseSession) -> Color {
+        if session.status == .completed { return BNBUTheme.primary }
+        return session.isPaused ? BNBUTheme.secondary : BNBUTheme.tertiary
     }
 
     private func creditSummary(for session: ExerciseSession, at date: Date) -> String {
@@ -1041,85 +1166,129 @@ private struct CheckInSessionDialogs: ViewModifier {
     }
 }
 
+/// Android picks the check-in category with two equal-width filled buttons
+/// rather than a sliding pill, so the selected side reads as a tinted block.
+private struct CheckInCategorySelector: View {
+    @Binding var selection: ExerciseCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("打卡类别")
+                .font(BNBUFont.titleMedium)
+
+            HStack(spacing: 10) {
+                ForEach(ExerciseCategory.allCases) { category in
+                    let isSelected = selection == category
+                    Button {
+                        withAnimation(.easeInOut(duration: BNBUMotion.stateChange)) {
+                            selection = category
+                        }
+                    } label: {
+                        Text(LocalizedStringKey(category.title))
+                            .font(isSelected ? BNBUFont.titleSmall : BNBUFont.bodyMedium)
+                            .foregroundStyle(isSelected ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+                            .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
+                            .background(isSelected ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
+                            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("checkin.category.\(category.rawValue)")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+    }
+}
+
+/// Android shows every sport at once in a four-column grid of icon-over-label
+/// tiles, with "other" as a full-width tile that reveals a free-text field.
 private struct SportTypeSelector: View {
     @Binding var selected: ExerciseSportType?
     @Binding var customValue: String
-    @State private var showAll = false
 
-    private var visibleOptions: [ExerciseSportType] {
-        let needsExpandedSelection = selected.map { ExerciseSportType.allCases.dropFirst(4).contains($0) } ?? false
-        return showAll || needsExpandedSelection
-            ? ExerciseSportType.allCases
-            : Array(ExerciseSportType.allCases.prefix(4))
-    }
+    private static let customNameLimit = 32
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("运动项目")
                 .font(BNBUFont.titleMedium)
-            Text("请选择本次运动项目。")
-                .font(BNBUFont.bodySmall)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(visibleOptions) { option in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.24)) {
-                            selected = selected == option ? nil : option
-                            if selected != .other {
-                                customValue = ""
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(ExerciseSportType.gridOptions) { option in
+                    tile(option) {
+                        VStack(spacing: 6) {
                             Image(systemName: option.systemImage)
-                                .font(BNBUFont.titleMedium)
-                                .foregroundStyle(selected == option ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+                                .font(.system(size: 20, weight: .regular))
                             Text(LocalizedStringKey(option.title))
-                                .font(selected == option ? BNBUFont.titleSmall : BNBUFont.bodyMedium)
-                                .foregroundStyle(BNBUTheme.onSurface)
-                            Spacer(minLength: 0)
+                                .font(BNBUFont.bodySmall)
                         }
-                        .padding(.horizontal, 14)
-                        .frame(maxWidth: .infinity, minHeight: 58)
-                        .background(selected == option ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
-                        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+                        .frame(maxWidth: .infinity, minHeight: 72)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(LocalizedStringKey(option.title)))
-                    .accessibilityValue(selected == option ? "已选择" : "未选择")
-                    .accessibilityHint(selected == option ? "双击取消选择" : "双击选择")
-                    .accessibilityAddTraits(selected == option ? .isSelected : [])
                 }
             }
 
-            if selected == nil || ExerciseSportType.allCases.prefix(4).contains(selected!) {
-                Button(showAll ? "收起运动项目" : "查看更多运动项目") {
-                    withAnimation(.easeInOut(duration: 0.24)) {
-                        showAll.toggle()
-                    }
+            tile(.other) {
+                VStack(spacing: 4) {
+                    Image(systemName: ExerciseSportType.other.systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                    Text(LocalizedStringKey(ExerciseSportType.other.title))
+                        .font(BNBUFont.bodySmall)
                 }
-                .font(BNBUFont.titleSmall)
-                .foregroundStyle(BNBUTheme.primary)
-                .frame(maxWidth: .infinity)
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: 64)
             }
 
             if selected == .other {
-                TextField("填写其他运动项目", text: $customValue)
-                    .bnbuInputText()
-                    .accessibilityLabel("其他运动项目")
-                    .accessibilityHint("最多 32 个字符")
-                    .padding(14)
-                    .background(BNBUTheme.surfaceVariant)
-                    .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
-                    .onChange(of: customValue) { _, value in
-                        if value.count > 32 {
-                            customValue = String(value.prefix(32))
+                VStack(alignment: .trailing, spacing: 4) {
+                    TextField("具体运动名称", text: $customValue)
+                        .bnbuInputText()
+                        .accessibilityLabel("其他运动项目")
+                        .accessibilityHint("最多 32 个字符")
+                        .padding(.horizontal, 16)
+                        .frame(height: BNBUSpacing.touchTarget)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
+                                .stroke(BNBUTheme.outlineVariant, lineWidth: 1)
+                        )
+                        .onChange(of: customValue) { _, value in
+                            if value.count > Self.customNameLimit {
+                                customValue = String(value.prefix(Self.customNameLimit))
+                            }
                         }
-                    }
+
+                    Text(verbatim: "\(customValue.count)/\(Self.customNameLimit)")
+                        .font(BNBUFont.labelSmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
+    }
+
+    private func tile<Content: View>(
+        _ option: ExerciseSportType,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        let isSelected = selected == option
+        return Button {
+            withAnimation(.easeInOut(duration: BNBUMotion.stateChange)) {
+                selected = isSelected ? nil : option
+                if selected != .other {
+                    customValue = ""
+                }
+            }
+        } label: {
+            label()
+                .foregroundStyle(isSelected ? BNBUTheme.primary : BNBUTheme.onSurface)
+                .background(isSelected ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
+                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("checkin.sport.\(option.rawValue)")
+        .accessibilityLabel(Text(LocalizedStringKey(option.title)))
+        .accessibilityValue(isSelected ? "已选择" : "未选择")
+        .accessibilityHint(isSelected ? "双击取消选择" : "双击选择")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

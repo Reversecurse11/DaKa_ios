@@ -825,6 +825,17 @@
         }
       }
     },
+    "乒乓球": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Table Tennis"
+          }
+        }
+      }
+    },
     "二、信息使用": {
       "extractionState": "stale",
       "localizations": {
@@ -871,6 +882,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "五、政策更新"
+          }
+        }
+      }
+    },
+    "仅保存在本机，结束后再确认提交": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kept on this device; confirm after you finish"
           }
         }
       }
@@ -1559,6 +1581,7 @@
       }
     },
     "免测与免打卡": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1640,6 +1663,7 @@
       }
     },
     "免测申请已提交，等待老师审核。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2025,6 +2049,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他运动项目名称不能超过 32 个字符。"
+          }
+        }
+      }
+    },
+    "具体运动名称": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sport name"
           }
         }
       }
@@ -2455,6 +2490,7 @@
       }
     },
     "单项得分": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3595,6 +3631,7 @@
       }
     },
     "已同意": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3726,6 +3763,17 @@
         }
       }
     },
+    "已拍摄素材": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Captured Material"
+          }
+        }
+      }
+    },
     "已提交": {
       "extractionState": "stale",
       "localizations": {
@@ -3754,6 +3802,17 @@
         }
       }
     },
+    "已暂停": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused"
+          }
+        }
+      }
+    },
     "已有进行中或待提交的运动，请先完成当前记录。": {
       "localizations": {
         "en": {
@@ -3770,6 +3829,17 @@
         }
       }
     },
+    "已结束": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ended"
+          }
+        }
+      }
+    },
     "已获取": {
       "localizations": {
         "en": {
@@ -3782,6 +3852,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "已获取"
+          }
+        }
+      }
+    },
+    "已获取位置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Location captured"
           }
         }
       }
@@ -4096,6 +4177,17 @@
         }
       }
     },
+    "开始": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Started"
+          }
+        }
+      }
+    },
     "开始使用": {
       "localizations": {
         "en": {
@@ -4209,6 +4301,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "归档审核中"
+          }
+        }
+      }
+    },
+    "当前不可开始": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot start yet"
           }
         }
       }
@@ -5172,6 +5275,7 @@
       }
     },
     "我已阅读并同意当前版本《隐私政策》": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5457,6 +5561,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "打卡照片 / 视频"
+          }
+        }
+      }
+    },
+    "打卡类别": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check-In Category"
           }
         }
       }
@@ -5748,6 +5863,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "拍摄凭证有什么限制？"
+          }
+        }
+      }
+    },
+    "拍摄完成后，照片和视频会立即显示在这里。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos and videos appear here as soon as you capture them."
           }
         }
       }
@@ -6827,6 +6953,17 @@
         }
       }
     },
+    "有效运动时长": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effective duration"
+          }
+        }
+      }
+    },
     "有未提交草稿": {
       "localizations": {
         "en": {
@@ -7025,6 +7162,7 @@
       }
     },
     "未同意": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7146,6 +7284,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "未确认的提交可沿用原请求安全重试；服务器已确认成功的条目只会清理本地标记，绝不会再次提交。"
+          }
+        }
+      }
+    },
+    "未获取位置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No location"
           }
         }
       }
@@ -7344,6 +7493,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "本次打卡记录已提交并保存。"
+          }
+        }
+      }
+    },
+    "本次运动": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Session"
           }
         }
       }
@@ -7861,6 +8021,7 @@
       }
     },
     "测试项目: %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8022,6 +8183,61 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片草稿无法安全保存，请检查设备存储空间。"
+          }
+        }
+      }
+    },
+    "现场凭证": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-Site Evidence"
+          }
+        }
+      }
+    },
+    "现场录像": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record Video"
+          }
+        }
+      }
+    },
+    "现场拍照": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take Photo"
+          }
+        }
+      }
+    },
+    "现场照片": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo"
+          }
+        }
+      }
+    },
+    "现场视频": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video"
           }
         }
       }
@@ -8200,6 +8416,7 @@
       }
     },
     "登录前请阅读《隐私政策》": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8444,6 +8661,7 @@
       }
     },
     "确认提交后将进入老师审核流程。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8460,6 +8678,7 @@
       }
     },
     "确认提交后，补充凭证将进入老师复审流程。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8591,6 +8810,7 @@
       }
     },
     "第一阶段仅包含学生端体育打卡与成绩透明化；老师端和管理端由 Web 承担。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8639,6 +8859,7 @@
       }
     },
     "等级": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9110,6 +9331,17 @@
         }
       }
     },
+    "自主运动": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Self-Directed"
+          }
+        }
+      }
+    },
     "至少 2 个字符，与情况说明合计最多 2000 个字符": {
       "localizations": {
         "en": {
@@ -9274,6 +9506,7 @@
       }
     },
     "补充材料已提交，等待老师复审。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9436,6 +9669,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "记录"
+          }
+        }
+      }
+    },
+    "记录中": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording"
           }
         }
       }
@@ -10147,6 +10391,7 @@
       }
     },
     "课程相关": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10441,6 +10686,7 @@
       }
     },
     "输入时间: %lld′%lld″": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10472,6 +10718,17 @@
         }
       }
     },
+    "运动": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exercise"
+          }
+        }
+      }
+    },
     "运动不足 1 小时，不能提交。": {
       "localizations": {
         "en": {
@@ -10484,6 +10741,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "运动不足 1 小时，不能提交。"
+          }
+        }
+      }
+    },
+    "运动中可随时现场拍照或录像。凭证仅保存在本机，结束运动并确认后才会提交。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can take photos or record video at any point. Evidence stays on this device and is only submitted after you end the session and confirm."
           }
         }
       }
@@ -10733,6 +11001,17 @@
         }
       }
     },
+    "运动进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Progress"
+          }
+        }
+      }
+    },
     "运动进行中": {
       "localizations": {
         "en": {
@@ -10912,6 +11191,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择 %@ 作为凭证"
+          }
+        }
+      }
+    },
+    "选择打卡类别与运动项目": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a category and a sport"
           }
         }
       }
@@ -11264,6 +11554,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要确认后才会删除"
+          }
+        }
+      }
+    },
+    "预计学时": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projected Hours"
           }
         }
       }

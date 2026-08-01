@@ -257,6 +257,27 @@ requireText(models, "请填写运动说明", "The sport note is required for all
 requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
+// Check-in page parity with the Android baseline (Android_PICTURE 22/24).
+requireText(checkinView, 'Text("运动打卡")', "The check-in tab keeps its Android page title");
+requireText(checkinView, 'case submit = "运动"', "The check-in segments read 运动/记录 as on Android");
+requireText(checkinView, 'Text("本次运动")', "The preparation page keeps the Android section header");
+requireText(checkinView, "CheckInCategorySelector", "Category selection uses Android's paired buttons, not a sliding pill");
+requireText(checkinView, 'Text("有效运动时长")', "The running timer keeps its Android caption");
+requireText(checkinView, "sessionStatRow", "The timer card carries Android's three-up 开始/预计学时/现场凭证 row");
+requireText(checkinView, 'Text("现场凭证")', "Evidence lives in its own card as on Android");
+requireText(checkinView, 'title: "现场拍照"', "Photo capture is its own button as on Android");
+requireText(checkinView, 'title: "现场录像"', "Video capture is its own button as on Android");
+requireText(models, "static let maximumVideoDrafts", "The video counter is backed by an explicit cap");
+requireText(checkinView, "struct SportTypeSelector", "The sport picker stays a dedicated component");
+requireText(checkinView, "ExerciseSportType.gridOptions", "Every sport is offered at once in the grid");
+rejectText(checkinView, "查看更多运动项目", "The sport grid is never collapsed behind a 'show more' link");
+requireText(models, "case tableTennis", "The sport list covers all eight Android options");
+requireText(
+    read("BNBUStudentApp/Features/AppRootView.swift"),
+    'case grades = "运动进度"',
+    "The fourth tab is labelled 运动进度 as on Android"
+);
+
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");

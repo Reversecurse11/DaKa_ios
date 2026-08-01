@@ -340,6 +340,38 @@ struct SecondaryActionButton: View {
     }
 }
 
+/// Mirrors Android `OutlinedButton`: a surface fill behind a hairline outline
+/// with neutral content. Reserved for destructive-adjacent actions that sit
+/// under a filled primary, such as ending a running exercise.
+struct OutlinedActionButton: View {
+    let title: String
+    let systemImage: String
+    var accessibilityIdentifier: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: BNBUSpacing.space8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(LocalizedStringKey(title))
+                    .font(BNBUFont.labelLarge)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: BNBUSpacing.primaryControlHeight)
+            .foregroundStyle(BNBUTheme.onSurface)
+            .background(BNBUTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous)
+                    .stroke(BNBUTheme.outlineVariant, lineWidth: 1)
+            )
+        }
+        .buttonStyle(BNBUPressStyle())
+        .accessibilityIdentifier(accessibilityIdentifier ?? title)
+    }
+}
+
 /// A primary action that can be blocked. Android expresses the disabled state
 /// with a `surfaceVariant` fill and `onSurfaceVariant` content.
 struct DisabledAwareButton: View {

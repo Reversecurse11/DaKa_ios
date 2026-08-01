@@ -388,6 +388,10 @@ final class AppState: ObservableObject {
         exerciseMediaDrafts.filter { $0.type == .image }.count
     }
 
+    var exerciseVideoDraftCount: Int {
+        exerciseMediaDrafts.filter { $0.type == .video }.count
+    }
+
     var canAddExercisePhotoDraft: Bool {
         ExerciseMediaDraftRule.canAddPhoto(to: exerciseMediaDrafts)
     }

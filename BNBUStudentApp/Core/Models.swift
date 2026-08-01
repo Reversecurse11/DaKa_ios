@@ -271,17 +271,20 @@ enum ExerciseCategory: String, CaseIterable, Identifiable, Hashable, Codable {
 
     var title: String {
         switch self {
-        case .courseRelated: return "课程相关运动"
-        case .general: return "自主其他运动"
+        case .courseRelated: return "课程相关"
+        case .general: return "自主运动"
         }
     }
 }
 
 enum ExerciseSportType: String, CaseIterable, Identifiable, Hashable, Codable {
+    // Order matches the Android baseline grid, which reads left to right in
+    // rows of four before the full-width "other" tile.
     case running
     case basketball
     case football
     case badminton
+    case tableTennis
     case swimming
     case fitness
     case cycling
@@ -289,12 +292,18 @@ enum ExerciseSportType: String, CaseIterable, Identifiable, Hashable, Codable {
 
     var id: String { rawValue }
 
+    /// The eight concrete sports, excluding the free-text "other" entry.
+    static var gridOptions: [ExerciseSportType] {
+        allCases.filter { $0 != .other }
+    }
+
     var title: String {
         switch self {
         case .running: return "跑步"
         case .basketball: return "篮球"
         case .football: return "足球"
         case .badminton: return "羽毛球"
+        case .tableTennis: return "乒乓球"
         case .swimming: return "游泳"
         case .fitness: return "健身"
         case .cycling: return "骑行"
@@ -576,6 +585,9 @@ enum ExerciseMediaDraftRule {
     /// Business rule 5.5/7: at most 6 photo drafts per check-in lifecycle.
     /// Video recordings do not count toward the photo cap.
     static let maximumPhotoDrafts = 6
+    /// Matches the single video a submission can carry, so the counter the
+    /// student sees while recording cannot promise more than they can attach.
+    static let maximumVideoDrafts = ProofUploadRule.maxVideoCount
 
     static func canAddPhoto(to drafts: [ExerciseMediaDraft]) -> Bool {
         drafts.filter { $0.type == .image }.count < maximumPhotoDrafts
