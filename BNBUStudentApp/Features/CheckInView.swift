@@ -222,6 +222,8 @@ struct CheckInView: View {
 
     private var submitForm: some View {
         VStack(alignment: .leading, spacing: 16) {
+            readinessCard
+
             if appState.exerciseSession?.status != .active {
                 HStack(alignment: .firstTextBaseline) {
                     Text("本次运动")
@@ -266,17 +268,74 @@ struct CheckInView: View {
         }
     }
 
+    /// Android heads the preparation page with an eligibility summary card
+    /// whenever the session will be booked against a course.
+    @ViewBuilder
+    private var readinessCard: some View {
+        if appState.exerciseSession == nil,
+           selectedCategory == .courseRelated,
+           let course = appState.currentExerciseCourse {
+            // The pill reports whether today's window is open, not whether the
+            // form is complete — picking a sport is a separate step.
+            let windowIsOpen = CheckInTimeWindowRule.canStartExercise(at: Date())
+            SwissPanel {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("准备开始")
+                                .font(BNBUFont.titleMedium)
+                                .foregroundStyle(BNBUTheme.onSurface)
+                            Text("选择运动项目，开始记录有效时长")
+                                .font(BNBUFont.bodySmall)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        }
+                        Spacer(minLength: BNBUSpacing.space8)
+                        SessionStatePill(
+                            text: windowIsOpen
+                                ? BNBUL10n.text("可打卡")
+                                : BNBUL10n.text("暂不可打卡"),
+                            tint: windowIsOpen ? BNBUTheme.tertiary : BNBUTheme.secondary
+                        )
+                        .accessibilityIdentifier("checkin.readiness.status")
+                    }
+
+                    readinessRow(systemImage: "stopwatch") {
+                        Text("每日 \(CheckInTimeWindowRule.displayText)")
+                    }
+                    readinessRow(systemImage: "circle.fill", iconSize: 8) {
+                        Text(verbatim: BNBUL10n.dynamicText(course.displayTitle))
+                    }
+                }
+            }
+        }
+    }
+
+    private func readinessRow<Content: View>(
+        systemImage: String,
+        iconSize: CGFloat = 16,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: iconSize, weight: .medium))
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 18)
+            label()
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+            Spacer(minLength: 0)
+        }
+    }
+
     private var exerciseStartForm: some View {
         VStack(alignment: .leading, spacing: 16) {
             SwissPanel {
                 VStack(alignment: .leading, spacing: 18) {
                     CheckInCategorySelector(selection: $selectedCategory)
 
-                    if let course = appState.currentExerciseCourse, selectedCategory == .courseRelated {
-                        Label(course.displayTitle, systemImage: "book.closed")
-                            .font(BNBUFont.bodyMedium)
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    } else if appState.hasPendingEnrollmentOnly {
+                    // The bound course is already named in the readiness card
+                    // above, so only the blocking states repeat it here.
+                    if appState.hasPendingEnrollmentOnly {
                         Label("课程加入申请审核中，老师通过后才能开始运动。", systemImage: "hourglass")
                             .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.muted)

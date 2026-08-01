@@ -168,6 +168,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.swipeUp()
         attachScreenshot(named: "checkin-02-prepare-lower")
 
+        // The readiness card only appears for course-bound sessions.
+        relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
+        tabButton("tab.checkin").tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 8))
+        app.buttons["checkin.category.courseRelated"].tap()
+        attachScreenshot(named: "checkin-07-prepare-course")
+
         relaunch(["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise"])
         tabButton("tab.checkin").tap()
         XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 8))
@@ -181,6 +188,63 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         attachScreenshot(named: "checkin-05-completed-top")
         app.swipeUp()
         attachScreenshot(named: "checkin-06-completed-lower")
+    }
+
+    /// Temporary: one screenshot per page for the full walkthrough against the
+    /// 43-shot Android baseline captured on 31 July.
+    func testTempShotsFullWalkthrough() throws {
+        func relaunch(_ arguments: [String]) {
+            app.terminate()
+            app = XCUIApplication()
+            app.launchArguments = arguments + ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+            app.launch()
+        }
+
+        func home() {
+            relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
+            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
+        }
+
+        relaunch(["-ui-testing-reset"])
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 8))
+        attachScreenshot(named: "w01-login")
+
+        home()
+        attachScreenshot(named: "w02-dashboard-top")
+        app.swipeUp()
+        attachScreenshot(named: "w03-dashboard-lower")
+
+        home()
+        tabButton("tab.courses").tap()
+        XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 5))
+        attachScreenshot(named: "w04-courses")
+
+        home()
+        tabButton("tab.grades").tap()
+        XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 5))
+        attachScreenshot(named: "w05-grades-top")
+        app.swipeUp()
+        attachScreenshot(named: "w06-grades-lower")
+
+        home()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
+        attachScreenshot(named: "w07-profile-top")
+        app.swipeUp()
+        attachScreenshot(named: "w08-profile-lower")
+
+        home()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
+        app.buttons["profile.endurance.button"].tap()
+        XCTAssertTrue(screen("screen.profile.endurance").waitForExistence(timeout: 5))
+        attachScreenshot(named: "w09-endurance")
+
+        home()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
+        app.buttons["profile.exemption.button"].tap()
+        attachScreenshot(named: "w10-exemption")
     }
 
     /// Temporary: captures the eight pages added on 29 July for the page-by-page
