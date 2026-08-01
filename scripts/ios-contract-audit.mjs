@@ -269,6 +269,9 @@ requireText(checkinView, 'title: "现场拍照"', "Photo capture is its own butt
 requireText(checkinView, 'title: "现场录像"', "Video capture is its own button as on Android");
 requireText(models, "static let maximumVideoDrafts", "The video counter is backed by an explicit cap");
 requireText(checkinView, "struct SportTypeSelector", "The sport picker stays a dedicated component");
+requireText(checkinView, "struct CourseSportRow", "A course-related session states the course's sport instead of offering a choice");
+requireText(checkinView, "selectedCategory == .courseRelated, let sport = boundCourseSport", "The sport grid is withheld once the course names its sport");
+requireText(models, "var sportType: ExerciseSportType?", "A course carries the sport its section is taught as");
 requireText(checkinView, "ExerciseSportType.gridOptions", "Every sport is offered at once in the grid");
 rejectText(checkinView, "查看更多运动项目", "The sport grid is never collapsed behind a 'show more' link");
 requireText(models, "case tableTennis", "The sport list covers all eight Android options");
@@ -324,7 +327,12 @@ requireText(appState, "workspace.courses.contains(where: { $0.id == courseId && 
 requireText(courseJoinViews, "CourseQRScannerView", "Course joining offers a QR scanning entry");
 requireText(courseJoinViews, "AVCaptureMetadataOutput", "The QR entry reads codes through live capture");
 requireText(courseJoinViews, "case .unavailable:", "The QR entry degrades gracefully without a camera");
-requireText(coursesView, "courses.join.entry", "The courses page exposes the join entry");
+rejectText(coursesView, "courses.join.entry", "Joining a course is offered on the sign-in screen only");
+rejectText(coursesView, "JoinRequestEntryPanel", "The courses page lists courses, not join applications");
+rejectText(dashboardView, "JoinRequestEntryPanel", "The dashboard lists no join application entry");
+rejectText(dashboardView, "dashboard.join.scan", "The dashboard offers no scan entry");
+requireText(loginView, "扫码加入课程", "The sign-in screen keeps the only join entry");
+rejectText(loginView, "login.password.route", "Students are not offered account-and-password sign-in");
 requireText(coursesView, "PendingEnrollmentCard", "Pending applications render as their own state");
 requireText(modelTests, "testPendingEnrollmentBlocksExerciseStartAndSubmission", "Pending enrolments are proven not to produce check-ins");
 
@@ -373,8 +381,6 @@ requireOrder(
   [
     "header",
     "todayCheckInPanel",
-    "JoinRequestEntryPanel(",
-    "courseJoinEntryPanel",
     "ExerciseResumePanel(session:",
     "progressOverview",
     "progressBreakdown"

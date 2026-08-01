@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "": {},
     " / %@ 小时": {
       "extractionState": "manual",
       "localizations": {
@@ -1482,6 +1483,7 @@
       }
     },
     "修读中": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2149,6 +2151,7 @@
         }
       }
     },
+    "准备开始": {},
     "准备提交": {
       "extractionState": "stale",
       "localizations": {
@@ -2195,6 +2198,7 @@
       }
     },
     "凭证只能通过相机实时拍摄，照片和视频先保存为本地草稿，结束打卡时可选择作为凭证。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2736,6 +2740,7 @@
         }
       }
     },
+    "可打卡": {},
     "可计学时": {
       "extractionState": "stale",
       "localizations": {
@@ -2972,6 +2977,7 @@
       }
     },
     "填写其他运动项目": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3021,6 +3027,7 @@
       }
     },
     "备注：%@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3545,7 +3552,6 @@
       }
     },
     "审核意见": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3977,6 +3983,7 @@
       }
     },
     "已获取": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4918,6 +4925,7 @@
         }
       }
     },
+    "待同步时间": {},
     "待完善": {
       "localizations": {
         "en": {
@@ -5512,6 +5520,7 @@
       }
     },
     "我的课程相关进度": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5720,6 +5729,7 @@
       }
     },
     "打卡照片 / 视频": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6294,6 +6304,7 @@
       }
     },
     "搜索帮助内容": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6310,7 +6321,6 @@
       }
     },
     "搜索帮助内容...": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6397,6 +6407,7 @@
       }
     },
     "收起运动项目": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6558,6 +6569,7 @@
       }
     },
     "教学班以课程代码 + Section 区分；同一课程代码的不同 Section 会作为不同教学班展示。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -6862,6 +6874,7 @@
         }
       }
     },
+    "暂不可打卡": {},
     "暂停": {
       "extractionState": "stale",
       "localizations": {
@@ -7461,7 +7474,6 @@
       }
     },
     "未提供": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7521,6 +7533,7 @@
       }
     },
     "未获取（不影响计时）": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7856,6 +7869,7 @@
       }
     },
     "查看更多运动项目": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -7905,6 +7919,7 @@
       }
     },
     "查看课程详情": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8198,7 +8213,6 @@
       }
     },
     "每学期仅可选择一门课程": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -8214,7 +8228,9 @@
         }
       }
     },
+    "每日 %@": {},
     "每日开放时段 %@ 内可开始运动；开始后即使超出时段也可正常结束和提交。开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。开始时会尝试获取一次位置，获取失败不影响打卡。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9879,6 +9895,7 @@
         }
       }
     },
+    "视频已达到 %lld 个上限，删除后可继续录制。": {},
     "视频草稿无法安全保存，请检查设备存储空间。": {
       "localizations": {
         "en": {
@@ -10527,6 +10544,7 @@
       }
     },
     "请选择本次运动项目。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10831,6 +10849,23 @@
         }
       }
     },
+    "课程相关运动由课程安排决定，不能自行更改。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sport is set by the course and cannot be changed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程相关运动由课程安排决定，不能自行更改。"
+          }
+        }
+      }
+    },
     "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。": {
       "extractionState": "stale",
       "localizations": {
@@ -10866,6 +10901,7 @@
       }
     },
     "课程详情": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11131,6 +11167,7 @@
       }
     },
     "运动已暂停": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11163,6 +11200,7 @@
       }
     },
     "运动已结束": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11211,7 +11249,6 @@
       }
     },
     "运动打卡": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11312,6 +11349,7 @@
       }
     },
     "运动类型": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11359,7 +11397,9 @@
         }
       }
     },
+    "运动说明：%@": {},
     "运动过程拍摄": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11419,6 +11459,7 @@
       }
     },
     "运动项目：%@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11630,6 +11671,7 @@
         }
       }
     },
+    "选择运动项目，开始记录有效时长": {},
     "选课状态": {
       "extractionState": "stale",
       "localizations": {

@@ -291,25 +291,6 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
         attachScreenshot(named: "03-guide-step2")
 
-        // Join request states.
-        for (name, argument) in [
-            ("04-join-request-pending", ""),
-            ("05-join-request-correction", "-ui-testing-join-request-correction"),
-            ("06-join-request-rejected", "-ui-testing-join-request-rejected")
-        ] {
-            var arguments = ["-ui-testing-reset", "-ui-testing-authenticated"]
-            if !argument.isEmpty { arguments.append(argument) }
-            relaunch(arguments)
-            XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8), name)
-            tabButton("tab.courses").tap()
-            XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 5), name)
-            let entry = app.buttons["courses.joinRequest.entry"]
-            XCTAssertTrue(entry.waitForExistence(timeout: 3), name)
-            entry.tap()
-            XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 5), name)
-            attachScreenshot(named: name)
-        }
-
         func openProfile() {
             relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
             XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
@@ -775,18 +756,16 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["常用服务"].exists)
     }
 
-    func testCourseJoinApplicationFlow() throws {
+    // Joining a course is offered on the sign-in screen only; the courses tab
+    // lists courses and carries no join or application entry.
+    func testCourseJoinLivesOnTheSignInScreenOnly() throws {
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
-        login()
-        openTab(label: "课程", screenIdentifier: "screen.courses")
-
-        let entry = app.buttons["courses.join.entry"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 3))
-        entry.tap()
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
+        app.staticTexts["扫码加入课程"].firstMatch.tap()
 
         XCTAssertTrue(screen("screen.courseJoin").waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["course.join.scan"].exists)
@@ -801,15 +780,23 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(submit.isEnabled)
         submit.tap()
 
-        XCTAssertTrue(app.staticTexts["加入申请已提交"].waitForExistence(timeout: 3))
-        let done = app.buttons["course.join.done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 3))
-        done.tap()
+        // A join request belongs to an account, so an unauthenticated attempt
+        // is refused rather than queued.
+        XCTAssertTrue(app.staticTexts["请先登录后再提交课程加入申请。"].waitForExistence(timeout: 3))
 
-        XCTAssertTrue(screen("screen.courses").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["待审核课程"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["等待任课老师审核"].exists)
-        XCTAssertTrue(app.staticTexts["审核通过前不能开始运动打卡，本课程也不会产生有效学时。"].exists)
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["dashboard.join.scan"].exists)
+        XCTAssertFalse(app.buttons["dashboard.joinRequest.entry"].exists)
+
+        openTab(label: "课程", screenIdentifier: "screen.courses")
+        XCTAssertFalse(app.buttons["courses.join.entry"].exists)
+        XCTAssertFalse(app.buttons["courses.joinRequest.entry"].exists)
+        XCTAssertFalse(app.staticTexts["加入新课程"].exists)
     }
 
     func testLoginPrivacyAndEnduranceEntryFlow() throws {
@@ -821,7 +808,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["login.email"].exists)
         XCTAssertTrue(app.buttons["login.phone"].exists)
-        XCTAssertTrue(app.buttons["login.password.route"].exists)
+        XCTAssertFalse(app.buttons["login.password.route"].exists)
         XCTAssertTrue(app.buttons["login.recoveryRequest"].exists)
 
         app.buttons["login.email"].tap()

@@ -319,6 +319,13 @@ enum ExerciseSportType: String, CaseIterable, Identifiable, Hashable, Codable {
         case .other: return "其他"
         }
     }
+
+    /// A PE section is taught as one sport, and the Android baseline carries it
+    /// inside the course name (「大学体育（羽毛球）」). Until the course payload
+    /// names the sport outright, read it back out of the title.
+    static func inferred(fromCourseName name: String) -> ExerciseSportType? {
+        gridOptions.first { name.contains($0.title) }
+    }
 }
 
 enum ExerciseSessionStatus: String, Hashable, Codable {
@@ -822,6 +829,9 @@ struct Course: Identifiable, Hashable, Codable {
     var teacher: String
     let isCurrent: Bool
     var enrollmentStatus: CourseEnrollmentStatus
+    /// The sport this section is taught as. A course-related check-in must use
+    /// it rather than letting the student pick from the full grid.
+    var sportType: ExerciseSportType?
 
     /// Only an approved enrolment can back a check-in (rule 4.2).
     var allowsCheckIn: Bool { enrollmentStatus == .approved }
@@ -841,7 +851,8 @@ struct Course: Identifiable, Hashable, Codable {
         deadline: String,
         teacher: String,
         isCurrent: Bool = true,
-        enrollmentStatus: CourseEnrollmentStatus = .approved
+        enrollmentStatus: CourseEnrollmentStatus = .approved,
+        sportType: ExerciseSportType? = nil
     ) {
         self.id = id
         self.code = code
@@ -856,6 +867,7 @@ struct Course: Identifiable, Hashable, Codable {
         self.teacher = teacher
         self.isCurrent = isCurrent
         self.enrollmentStatus = enrollmentStatus
+        self.sportType = sportType ?? ExerciseSportType.inferred(fromCourseName: name)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -882,6 +894,8 @@ struct Course: Identifiable, Hashable, Codable {
         case enrollment_status
         case joinStatus
         case join_status
+        case sportType
+        case sport
     }
 
     init(from decoder: Decoder) throws {
@@ -925,6 +939,9 @@ struct Course: Identifiable, Hashable, Codable {
             decodedEnrollment = CourseEnrollmentStatus(serverValue: raw)
         }
         enrollmentStatus = decodedEnrollment ?? .backwardCompatibleDefault
+        let decodedSport = try container.decodeIfPresent(ExerciseSportType.self, forKey: .sportType)
+            ?? container.decodeIfPresent(ExerciseSportType.self, forKey: .sport)
+        sportType = decodedSport ?? ExerciseSportType.inferred(fromCourseName: name)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -942,6 +959,7 @@ struct Course: Identifiable, Hashable, Codable {
         try container.encode(teacher, forKey: .teacher)
         try container.encode(isCurrent, forKey: .isCurrent)
         try container.encode(enrollmentStatus.rawValue, forKey: .enrollmentStatus)
+        try container.encodeIfPresent(sportType, forKey: .sportType)
     }
 
     var displayTitle: String {

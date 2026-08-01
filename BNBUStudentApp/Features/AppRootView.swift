@@ -74,10 +74,7 @@ struct AppRootView: View {
     private func tabContent(for tab: AppTab) -> some View {
         switch tab {
         case .dashboard:
-            DashboardView(
-                openCheckIn: { selectedTab = .checkin },
-                openCourses: { selectedTab = .courses }
-            )
+            DashboardView(openCheckIn: { selectedTab = .checkin })
         case .courses:
             CoursesView()
         case .checkin:

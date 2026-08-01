@@ -2,14 +2,13 @@ import SwiftUI
 
 /// Block order, conditions and copy follow the Android baseline
 /// `feature/dashboard/DashboardScreen.kt`: greeting header, today's check-in,
-/// course-join or pending-application entry, exercise resume, then the two
-/// progress blocks. The daily decision stays above longer-term progress.
+/// exercise resume, then the two progress blocks. The daily decision stays
+/// above longer-term progress. Joining a course lives on the sign-in screen
+/// only, so no join or pending-application entry appears here.
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showNotifications = false
-    @State private var joinSheet: DashboardJoinEntry?
     var openCheckIn: () -> Void = {}
-    var openCourses: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -27,17 +26,6 @@ struct DashboardView: View {
 
                     if hasActiveEnrollment {
                         todayCheckInPanel
-                    }
-
-                    if let joinRequest = appState.workspace.courseJoinRequest,
-                       joinRequest.status != .active {
-                        JoinRequestEntryPanel(
-                            request: joinRequest,
-                            identifier: "dashboard.joinRequest.entry",
-                            onOpen: openCourses
-                        )
-                    } else if !hasActiveEnrollment {
-                        courseJoinEntryPanel
                     }
 
                     if let session = ongoingSession {
@@ -58,10 +46,6 @@ struct DashboardView: View {
         .accessibilityIdentifier("screen.dashboard")
         .sheet(isPresented: $showNotifications) {
             NotificationCenterSheet()
-                .environmentObject(appState)
-        }
-        .sheet(item: $joinSheet) { entry in
-            CourseJoinSheet(autoPresentsScanner: entry == .scan)
                 .environmentObject(appState)
         }
     }
@@ -145,48 +129,6 @@ struct DashboardView: View {
                 )
                 .padding(.top, BNBUSpacing.space20)
             }
-        }
-    }
-
-    private var courseJoinEntryPanel: some View {
-        HomeCard {
-            Text("加入体育课程")
-                .font(BNBUFont.titleLarge)
-                .foregroundStyle(BNBUTheme.onSurface)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text("扫码或输入邀请码加入本学期体育课")
-                .font(BNBUFont.bodyMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, BNBUSpacing.space8)
-
-            PrimaryActionButton(
-                title: "扫码加入课程",
-                systemImage: "qrcode.viewfinder",
-                accessibilityIdentifier: "dashboard.join.scan"
-            ) {
-                joinSheet = .scan
-            }
-            .padding(.top, BNBUSpacing.space20)
-
-            Button {
-                joinSheet = .code
-            } label: {
-                HStack(spacing: BNBUSpacing.space8) {
-                    // `textformat` renders as localized glyphs in zh/ja, so the
-                    // keyboard symbol keeps the icon identical in both languages.
-                    Image(systemName: "keyboard")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("输入邀请码")
-                        .font(BNBUFont.labelLarge)
-                }
-                .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
-                .foregroundStyle(BNBUTheme.primary)
-            }
-            .buttonStyle(BNBUPressStyle())
-            .accessibilityIdentifier("dashboard.join.code")
-            .padding(.top, BNBUSpacing.space4)
         }
     }
 
@@ -293,13 +235,6 @@ struct DashboardView: View {
             }
         }
     }
-}
-
-enum DashboardJoinEntry: String, Identifiable {
-    case scan
-    case code
-
-    var id: String { rawValue }
 }
 
 /// Android `HomeCard`: large-radius surface, no shadow, 18pt inset unless a

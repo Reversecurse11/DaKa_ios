@@ -3,7 +3,6 @@ import SwiftUI
 struct CoursesView: View {
     @EnvironmentObject private var appState: AppState
     @State private var historyExpanded = false
-    @State private var activeSheet: CoursesSheet?
 
     var body: some View {
         ZStack {
@@ -19,18 +18,6 @@ struct CoursesView: View {
                         Text("每学期仅可选择一门课程")
                             .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.muted)
-                    }
-
-                    joinEntry
-
-                    if let joinRequest = appState.workspace.courseJoinRequest,
-                       joinRequest.status != .active {
-                        JoinRequestEntryPanel(
-                            request: joinRequest,
-                            identifier: "courses.joinRequest.entry"
-                        ) {
-                            activeSheet = .joinRequestStatus
-                        }
                     }
 
                     if !pendingCourses.isEmpty {
@@ -101,60 +88,6 @@ struct CoursesView: View {
             }
         }
         .accessibilityIdentifier("screen.courses")
-        // One presentation binding: two `.sheet` modifiers on the same view let
-        // the later one win, which silently swallowed the join sheet.
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .join:
-                CourseJoinSheet()
-                    .environmentObject(appState)
-            case .joinRequestStatus:
-                JoinRequestStatusView(
-                    request: appState.workspace.courseJoinRequest,
-                    onBack: { activeSheet = nil },
-                    // Teacher contact details live on the profile tab, which is
-                    // where Android sends this action too.
-                    onContactTeacher: {
-                        activeSheet = nil
-                        NotificationCenter.default.post(
-                            name: .bnbuOpenDestination,
-                            object: AppTab.profile
-                        )
-                    },
-                    onEditAndResubmit: { _ in activeSheet = .join },
-                    onUseNewInvite: { activeSheet = .join },
-                    onApproved: { activeSheet = nil }
-                )
-            }
-        }
-    }
-
-    private enum CoursesSheet: String, Identifiable {
-        case join
-        case joinRequestStatus
-
-        var id: String { rawValue }
-    }
-
-    private var joinEntry: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("加入新课程")
-                    .font(BNBUFont.titleMedium)
-                Text("扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。")
-                    .font(BNBUFont.bodyMedium)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .lineSpacing(3)
-                PrimaryActionButton(
-                    title: "扫码 / 邀请码加入",
-                    systemImage: "qrcode.viewfinder",
-                    accessibilityIdentifier: "courses.join.entry"
-                ) {
-                    appState.errorMessage = nil
-                    activeSheet = .join
-                }
-            }
-        }
     }
 
     @ViewBuilder

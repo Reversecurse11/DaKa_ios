@@ -69,6 +69,9 @@ struct LoginView: View {
         } else if arguments.contains("-ui-testing-login-recovery") {
             _route = State(initialValue: .recovery)
         } else if arguments.contains("-ui-testing-login-password") {
+            // Students no longer see this route; it stays reachable only for the
+            // remote end-to-end harness, which has no other way to authenticate
+            // against a real server until the verification-code API ships.
             _route = State(initialValue: .accountPassword)
         } else {
             _route = State(initialValue: .chooser)
@@ -83,7 +86,6 @@ struct LoginView: View {
                     onEmail: { route = .emailVerification },
                     onPhone: { route = .phoneVerification },
                     onJoin: { showCourseJoin = true },
-                    onPassword: { route = .accountPassword },
                     onRecovery: { route = .recovery },
                     onMockLogin: { appState.demoLogin() }
                 )
@@ -116,7 +118,6 @@ private struct LoginMethodChooser: View {
     let onEmail: () -> Void
     let onPhone: () -> Void
     let onJoin: () -> Void
-    let onPassword: () -> Void
     let onRecovery: () -> Void
     let onMockLogin: () -> Void
 
@@ -193,14 +194,6 @@ private struct LoginMethodChooser: View {
                                 systemImage: "qrcode.viewfinder",
                                 action: onJoin
                             )
-
-                            LoginMethodRow(
-                                title: copy("使用账号密码登录", "Sign in with account and password"),
-                                subtitle: copy("保留现有校园账号登录接口", "Use the existing campus-account endpoint"),
-                                systemImage: "person.crop.circle.fill",
-                                action: onPassword
-                            )
-                            .accessibilityIdentifier("login.password.route")
 
                             LoginMethodRow(
                                 title: copy("使用 Mock 用户", "Use Mock user"),

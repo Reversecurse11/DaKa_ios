@@ -145,6 +145,7 @@ struct CheckInView: View {
             appState.reconcileExerciseSession()
             restoreDraftIfNeeded()
             rebuildProofAttachments()
+            syncSportTypeWithCategory()
             // Business rule 5.4: one-time health reminder per account.
             // Suppressed under UI testing so dialogs stay deterministic.
             if !ProcessInfo.processInfo.arguments.contains("-ui-testing-reset"),
@@ -160,6 +161,12 @@ struct CheckInView: View {
         .onChange(of: selectedSegment) { _, _ in
             focusedField = nil
             dismissBNBUKeyboard()
+        }
+        .onChange(of: selectedCategory) { _, _ in
+            syncSportTypeWithCategory()
+        }
+        .onChange(of: appState.currentExerciseCourse) { _, _ in
+            syncSportTypeWithCategory()
         }
         .onChange(of: selectedDraftIDs) { _, _ in
             rebuildProofAttachments()
@@ -310,6 +317,23 @@ struct CheckInView: View {
         }
     }
 
+    /// The sport the bound course is taught as, when the course names one.
+    private var boundCourseSport: ExerciseSportType? {
+        appState.currentExerciseCourse?.sportType
+    }
+
+    /// Keeps the submitted sport in step with the category: a course-related
+    /// session always reports the course's sport, and switching back to a
+    /// self-directed one hands the choice back to the student.
+    private func syncSportTypeWithCategory() {
+        if selectedCategory == .courseRelated, let sport = boundCourseSport {
+            selectedSportType = sport
+            customSportType = ""
+        } else if selectedSportType == boundCourseSport, boundCourseSport != nil {
+            selectedSportType = nil
+        }
+    }
+
     private func readinessRow<Content: View>(
         systemImage: String,
         iconSize: CGFloat = 16,
@@ -349,7 +373,14 @@ struct CheckInView: View {
                     Divider()
                         .overlay(BNBUTheme.outlineVariant)
 
-                    SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
+                    // A course section is taught as one sport, so a
+                    // course-related session states it instead of offering the
+                    // grid. Self-directed sessions still let the student pick.
+                    if selectedCategory == .courseRelated, let sport = boundCourseSport {
+                        CourseSportRow(sport: sport)
+                    } else {
+                        SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
+                    }
                 }
             }
 
@@ -1232,6 +1263,40 @@ private struct CheckInSessionDialogs: ViewModifier {
 
 /// Android picks the check-in category with two equal-width filled buttons
 /// rather than a sliding pill, so the selected side reads as a tinted block.
+/// The read-only counterpart to `SportTypeSelector`: a course-related session
+/// reports the sport its section is taught as, so there is nothing to choose.
+private struct CourseSportRow: View {
+    let sport: ExerciseSportType
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("运动项目")
+                .font(BNBUFont.titleMedium)
+
+            HStack(spacing: 12) {
+                Image(systemName: sport.systemImage)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(BNBUTheme.primary)
+                    .frame(width: 28)
+                Text(LocalizedStringKey(sport.title))
+                    .font(BNBUFont.titleSmall)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
+            .padding(.horizontal, 14)
+            .background(BNBUTheme.primaryContainer)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+
+            Text("课程相关运动由课程安排决定，不能自行更改。")
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("checkin.sport.courseBound")
+    }
+}
+
 private struct CheckInCategorySelector: View {
     @Binding var selection: ExerciseCategory
 
