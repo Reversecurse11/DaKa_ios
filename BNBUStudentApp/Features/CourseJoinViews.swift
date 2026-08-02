@@ -42,8 +42,28 @@ struct CourseJoinSheet: View {
                             appState.errorMessage = nil
                             step = .entry
                         },
-                        onSubmitted: { step = .submitted }
+                        onContinue: { name, studentNumber in
+                            appState.errorMessage = nil
+                            step = .contactBinding(
+                                invite,
+                                name: name,
+                                studentNumber: studentNumber
+                            )
+                        }
                     )
+                case let .contactBinding(invite, name, studentNumber):
+                    // Binding is not optional and has no way back: the student
+                    // has to be reachable before a teacher sees the request.
+                    ContactBindingView { phone, email in
+                        guard appState.submitCourseJoinRequest(
+                            invite: invite,
+                            name: name,
+                            studentNumber: studentNumber,
+                            phone: phone,
+                            email: email
+                        ) else { return }
+                        step = .submitted
+                    }
                 case .submitted:
                     JoinRequestStatusView(
                         request: appState.courseJoinRequest,
@@ -206,6 +226,7 @@ struct CourseJoinSheet: View {
 private enum CourseJoinStep: Hashable {
     case entry
     case confirm(CourseInvite)
+    case contactBinding(CourseInvite, name: String, studentNumber: String)
     case submitted
 }
 
@@ -215,17 +236,15 @@ struct CourseJoinConfirmView: View {
     @EnvironmentObject private var appState: AppState
     let invite: CourseInvite
     let onBack: () -> Void
-    let onSubmitted: () -> Void
+    let onContinue: (_ name: String, _ studentNumber: String) -> Void
 
     @State private var name = ""
     @State private var studentNumber = ""
-    @State private var email = ""
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
         case name
         case studentNumber
-        case email
     }
 
     var body: some View {
@@ -294,17 +313,9 @@ struct CourseJoinConfirmView: View {
                 )
                 .focused($focusedField, equals: .studentNumber)
 
-                CourseJoinField(
-                    label: "邮箱（选填）",
-                    text: $email,
-                    keyboardType: .emailAddress,
-                    identifier: "courseJoinConfirm.email"
-                )
-                .focused($focusedField, equals: .email)
-
                 PrimaryActionButton(
-                    title: "提交加入申请",
-                    systemImage: "paperplane.fill",
+                    title: "下一步：绑定联系方式",
+                    systemImage: "arrow.right",
                     accessibilityIdentifier: "courseJoinConfirm.submit"
                 ) {
                     submit()
@@ -316,13 +327,218 @@ struct CourseJoinConfirmView: View {
     private func submit() {
         focusedField = nil
         dismissBNBUKeyboard()
-        guard appState.submitCourseJoinRequest(
-            invite: invite,
+        if let validationMessage = CourseJoinRequestRule.validationMessage(
             name: name,
-            studentNumber: studentNumber,
-            email: email
-        ) else { return }
-        onSubmitted()
+            studentNumber: studentNumber
+        ) {
+            appState.errorMessage = validationMessage
+            return
+        }
+        onContinue(name, studentNumber)
+    }
+}
+
+/// Both contacts are bound before the application reaches the teacher: a
+/// student who reinstalls the app signs back in with a code sent to one of
+/// them, so registration is not complete until both are verified.
+struct ContactBindingView: View {
+    @EnvironmentObject private var appState: AppState
+    let onBound: (_ phone: String, _ email: String) -> Void
+
+    @State private var phone = ""
+    @State private var email = ""
+    @State private var verifiedPhone: String?
+    @State private var verifiedEmail: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                SectionTitle(eyebrow: "ACCOUNT", title: "绑定手机号和邮箱")
+                Text("退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。")
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .lineSpacing(3)
+
+                ContactChannelPanel(
+                    channel: .phone,
+                    value: $phone,
+                    verifiedValue: $verifiedPhone
+                )
+                ContactChannelPanel(
+                    channel: .email,
+                    value: $email,
+                    verifiedValue: $verifiedEmail
+                )
+
+                DisabledAwareButton(
+                    title: "提交加入申请",
+                    systemImage: "paperplane.fill",
+                    isDisabled: verifiedPhone == nil || verifiedEmail == nil,
+                    accessibilityIdentifier: "contactBinding.submit"
+                ) {
+                    guard let verifiedPhone, let verifiedEmail else { return }
+                    onBound(verifiedPhone, verifiedEmail)
+                }
+            }
+            .padding(BNBUSpacing.screen)
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .accessibilityIdentifier("screen.contactBinding")
+    }
+}
+
+/// One contact: enter it, request a code, then verify. The send button waits
+/// out the server's resend window before it can be used again.
+private struct ContactChannelPanel: View {
+    @EnvironmentObject private var appState: AppState
+    let channel: ContactChannel
+    @Binding var value: String
+    @Binding var verifiedValue: String?
+
+    @State private var code = ""
+    @State private var codeSent = false
+    @State private var resendSeconds = 0
+    @State private var notice: String?
+    @FocusState private var isFocused: Bool
+
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(LocalizedStringKey(channel.title))
+                    .font(BNBUFont.titleMedium)
+
+                if let verifiedValue {
+                    verifiedRow(verifiedValue)
+                } else {
+                    contactRow
+                    if codeSent { codeRow }
+                    if let notice {
+                        Text(verbatim: notice)
+                            .font(BNBUFont.labelMedium)
+                            .foregroundStyle(BNBUTheme.muted)
+                    }
+                }
+            }
+        }
+        .onReceive(ticker) { _ in
+            if resendSeconds > 0 { resendSeconds -= 1 }
+        }
+    }
+
+    private func verifiedRow(_ verified: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(BNBUTheme.primary)
+            Text(verbatim: BNBUL10n.formatted(
+                "%@已验证",
+                BNBUL10n.dynamicText(channel.title)
+            ))
+            .font(BNBUFont.titleSmall)
+            .foregroundStyle(BNBUTheme.onSurface)
+            Spacer(minLength: 0)
+            Text(verbatim: ContactBindingRule.masked(verified, for: channel))
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("contactBinding.\(channel.rawValue).verified")
+    }
+
+    private var contactRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: channel.systemImage)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            if channel == .phone {
+                Text(verbatim: "+86")
+                    .font(BNBUFont.titleSmall)
+                Divider().frame(height: 24)
+            }
+            TextField(placeholder, text: $value)
+                .bnbuInputText()
+                .keyboardType(channel == .phone ? .numberPad : .emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($isFocused)
+                .accessibilityLabel(Text(LocalizedStringKey(channel.title)))
+                .accessibilityIdentifier("contactBinding.\(channel.rawValue).value")
+
+            Button(sendTitle) { sendCode() }
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(canSend ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant.opacity(0.55))
+                .disabled(!canSend)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("contactBinding.\(channel.rawValue).sendCode")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: BNBUSpacing.touchTarget)
+        .background(BNBUTheme.surface)
+        .bnbuOutlinedSurface(lineWidth: 1)
+    }
+
+    private var codeRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.fill")
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            TextField(channel.codeTitle, text: $code)
+                .bnbuInputText()
+                .keyboardType(.numberPad)
+                .onChange(of: code) { _, entered in
+                    code = String(entered.filter(\.isNumber).prefix(ContactBindingRule.codeLength))
+                }
+                .accessibilityLabel(Text(LocalizedStringKey(channel.codeTitle)))
+                .accessibilityIdentifier("contactBinding.\(channel.rawValue).code")
+
+            Button("确认验证") { verify() }
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(
+                    ContactBindingRule.isValidCode(code)
+                        ? BNBUTheme.primary
+                        : BNBUTheme.onSurfaceVariant.opacity(0.55)
+                )
+                .disabled(!ContactBindingRule.isValidCode(code))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("contactBinding.\(channel.rawValue).verify")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: BNBUSpacing.touchTarget)
+        .background(BNBUTheme.surface)
+        .bnbuOutlinedSurface(lineWidth: 1)
+    }
+
+    private var placeholder: String {
+        channel == .phone ? BNBUL10n.text("请输入 11 位手机号") : "name@bnbu.edu.cn"
+    }
+
+    private var sendTitle: String {
+        resendSeconds > 0
+            ? BNBUL10n.formatted("%lld 秒后可重发", resendSeconds)
+            : BNBUL10n.text("获取验证码")
+    }
+
+    private var canSend: Bool {
+        resendSeconds == 0 && ContactBindingRule.isValid(value, for: channel)
+    }
+
+    private func sendCode() {
+        isFocused = false
+        guard appState.sendContactVerificationCode(to: value, channel: channel) else {
+            notice = appState.errorMessage
+            return
+        }
+        codeSent = true
+        resendSeconds = ContactBindingRule.resendInterval
+        notice = BNBUL10n.text("验证码已发送，10 分钟内有效。")
+    }
+
+    private func verify() {
+        guard appState.verifyContactCode(code, for: value, channel: channel) else {
+            notice = appState.errorMessage
+            return
+        }
+        verifiedValue = value
+        notice = nil
     }
 }
 

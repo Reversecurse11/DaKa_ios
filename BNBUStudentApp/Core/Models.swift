@@ -744,6 +744,8 @@ struct CourseJoinRequest: Identifiable, Hashable, Codable {
     let studentName: String
     let studentNumber: String
     let email: String
+    /// Optional so a request cached before contact binding still decodes.
+    var phone: String?
     var status: JoinRequestStatus
     var reviewComment: String
     let submittedAt: String
@@ -766,6 +768,90 @@ struct CourseInvite: Identifiable, Hashable, Codable {
     var displayTitle: String { "\(courseCode) / Section \(section)" }
 }
 
+/// A contact a student binds to their account. Both are verified during
+/// registration so that reinstalling the app, or moving to a new phone, can be
+/// recovered with a code instead of a password.
+enum ContactChannel: String, CaseIterable, Identifiable, Hashable, Codable {
+    case phone
+    case email
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .phone: return "手机号"
+        case .email: return "邮箱"
+        }
+    }
+
+    var codeTitle: String {
+        switch self {
+        case .phone: return "短信验证码"
+        case .email: return "邮箱验证码"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .phone: return "iphone"
+        case .email: return "envelope"
+        }
+    }
+}
+
+/// Client-side rules for binding a contact. The authoritative checks live on
+/// the server; these only reject input it could never accept.
+enum ContactBindingRule {
+    static let codeLength = 6
+    /// The server rate-limits one code per contact per minute, so the button
+    /// stays disabled for the same window.
+    static let resendInterval = 60
+
+    static func normalizedPhone(_ raw: String) -> String {
+        let digits = raw.filter(\.isNumber)
+        return digits.hasPrefix("86") && digits.count > 11 ? String(digits.dropFirst(2)) : digits
+    }
+
+    static func isValid(_ value: String, for channel: ContactChannel) -> Bool {
+        switch channel {
+        case .phone:
+            return normalizedPhone(value).range(of: "^1[3-9]\\d{9}$", options: .regularExpression) != nil
+        case .email:
+            return CourseJoinRequestRule.isValidEmail(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    static func validationMessage(_ value: String, for channel: ContactChannel) -> String? {
+        guard !isValid(value, for: channel) else { return nil }
+        switch channel {
+        case .phone: return BNBUL10n.text("请输入有效的手机号")
+        case .email: return BNBUL10n.text("请输入有效的邮箱")
+        }
+    }
+
+    static func isValidCode(_ code: String) -> Bool {
+        code.count == codeLength && code.allSatisfy(\.isNumber)
+    }
+
+    /// Contacts are shown back to the student masked, the way the server
+    /// returns them, so a shoulder-surfer cannot read the full value.
+    static func masked(_ value: String, for channel: ContactChannel) -> String {
+        switch channel {
+        case .phone:
+            let digits = normalizedPhone(value)
+            guard digits.count == 11 else { return value }
+            return "\(digits.prefix(3))****\(digits.suffix(4))"
+        case .email:
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let atIndex = trimmed.firstIndex(of: "@") else { return trimmed }
+            let name = String(trimmed[trimmed.startIndex..<atIndex])
+            let domain = String(trimmed[atIndex...])
+            guard name.count > 2 else { return trimmed }
+            return "\(name.prefix(2))***\(domain)"
+        }
+    }
+}
+
 /// Identity details a student supplies when applying to join a course. Joining
 /// happens before sign-in, so this is the only place the student types their
 /// own name and number; limits match the Android baseline.
@@ -773,14 +859,11 @@ enum CourseJoinRequestRule {
     static let maximumNameLength = 64
     static let maximumStudentNumberLength = 32
 
-    static func validationMessage(
-        name: String,
-        studentNumber: String,
-        email: String
-    ) -> String? {
+    /// The email is bound and verified in the step that follows, so the form
+    /// itself only asks who the student is.
+    static func validationMessage(name: String, studentNumber: String) -> String? {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNumber = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedName.isEmpty { return BNBUL10n.text("请填写姓名。") }
         if trimmedName.count > maximumNameLength {
@@ -789,11 +872,6 @@ enum CourseJoinRequestRule {
         if trimmedNumber.isEmpty { return BNBUL10n.text("请填写学号。") }
         if trimmedNumber.count > maximumStudentNumberLength {
             return BNBUL10n.formatted("学号不能超过 %lld 个字符。", maximumStudentNumberLength)
-        }
-        // The email is optional: a student without a school mailbox may leave
-        // it blank, but a typed address still has to be usable.
-        if !trimmedEmail.isEmpty, !isValidEmail(trimmedEmail) {
-            return BNBUL10n.text("请输入有效的邮箱地址。")
         }
         return nil
     }

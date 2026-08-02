@@ -306,6 +306,22 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
         focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
         app.buttons["courseJoinConfirm.submit"].tap()
+        XCTAssertTrue(screen("screen.contactBinding").waitForExistence(timeout: 5))
+        attachScreenshot(named: "05b-contact-binding-empty")
+
+        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
+        app.buttons["contactBinding.phone.sendCode"].tap()
+        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
+        app.buttons["contactBinding.phone.verify"].tap()
+        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 5))
+        focusAndType(app.textFields["contactBinding.email.value"], text: "lin@bnbu.edu.cn")
+        app.buttons["contactBinding.email.sendCode"].tap()
+        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
+        app.buttons["contactBinding.email.verify"].tap()
+        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 5))
+        attachScreenshot(named: "05c-contact-binding-verified")
+
+        app.buttons["contactBinding.submit"].tap()
         XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 5))
         attachScreenshot(named: "06-course-join-pending")
         app.buttons["nav.back"].tap()
@@ -816,10 +832,31 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         submit.tap()
         XCTAssertTrue(app.staticTexts["请填写学号。"].waitForExistence(timeout: 3))
 
-        // The email is optional, so name and student ID are enough to apply.
-        XCTAssertTrue(app.textFields["courseJoinConfirm.email"].exists)
         focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
         submit.tap()
+
+        // Binding both contacts is mandatory before a teacher sees the request,
+        // because a reinstalled app signs back in with a code sent to one.
+        XCTAssertTrue(screen("screen.contactBinding").waitForExistence(timeout: 3))
+        let apply = app.buttons["contactBinding.submit"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 3))
+        XCTAssertFalse(apply.isEnabled)
+
+        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
+        app.buttons["contactBinding.phone.sendCode"].tap()
+        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
+        app.buttons["contactBinding.phone.verify"].tap()
+        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 3))
+        XCTAssertFalse(apply.isEnabled)
+
+        focusAndType(app.textFields["contactBinding.email.value"], text: "lin@bnbu.edu.cn")
+        app.buttons["contactBinding.email.sendCode"].tap()
+        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
+        app.buttons["contactBinding.email.verify"].tap()
+        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 3))
+
+        XCTAssertTrue(apply.isEnabled)
+        apply.tap()
 
         // Submitting lands on the review status; only approval opens the app.
         XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 3))

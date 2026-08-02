@@ -214,6 +214,41 @@ final class AppState: ObservableObject {
         return invite
     }
 
+    /// Sends a verification code to a contact the student is binding. Both
+    /// contacts are bound during registration so a reinstall can be recovered
+    /// with a code rather than a password.
+    @discardableResult
+    func sendContactVerificationCode(to value: String, channel: ContactChannel) -> Bool {
+        if let validationMessage = ContactBindingRule.validationMessage(value, for: channel) {
+            errorMessage = validationMessage
+            return false
+        }
+        guard !isRemoteMode else {
+            errorMessage = BNBUL10n.text("验证码接口尚未发布，请等待服务端上线后重试。")
+            return false
+        }
+        errorMessage = nil
+        return true
+    }
+
+    @discardableResult
+    func verifyContactCode(_ code: String, for value: String, channel: ContactChannel) -> Bool {
+        guard ContactBindingRule.isValidCode(code) else {
+            errorMessage = BNBUL10n.text("请输入 6 位数字验证码")
+            return false
+        }
+        guard !isRemoteMode else {
+            errorMessage = BNBUL10n.text("验证码接口尚未发布，请等待服务端上线后重试。")
+            return false
+        }
+        guard repository.acceptsContactCode(code, channel: channel, value: value) else {
+            errorMessage = BNBUL10n.text("验证失败，请检查验证码后重试")
+            return false
+        }
+        errorMessage = nil
+        return true
+    }
+
     /// Submits a course join application (rule 4.2). The request endpoint ships
     /// with the pending OpenAPI update; until then remote mode reports that the
     /// server side is unavailable instead of faking an approval-pending course.
@@ -222,14 +257,21 @@ final class AppState: ObservableObject {
         invite: CourseInvite,
         name: String,
         studentNumber: String,
+        phone: String,
         email: String
     ) -> Bool {
         if let validationMessage = CourseJoinRequestRule.validationMessage(
             name: name,
-            studentNumber: studentNumber,
-            email: email
+            studentNumber: studentNumber
         ) {
             errorMessage = validationMessage
+            return false
+        }
+        // Registration is only complete once the student can be reached again,
+        // so an unbound contact must never reach the teacher's queue.
+        guard ContactBindingRule.isValid(phone, for: .phone),
+              ContactBindingRule.isValid(email, for: .email) else {
+            errorMessage = BNBUL10n.text("请先完成手机号和邮箱绑定。")
             return false
         }
 
@@ -249,6 +291,7 @@ final class AppState: ObservableObject {
             studentName: name.trimmingCharacters(in: .whitespacesAndNewlines),
             studentNumber: studentNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+            phone: ContactBindingRule.normalizedPhone(phone),
             status: .pending,
             reviewComment: "",
             submittedAt: Self.joinRequestTimestampFormatter.string(from: Date()),

@@ -164,6 +164,23 @@
         }
       }
     },
+    "%@已验证": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ verified"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@已验证"
+          }
+        }
+      }
+    },
     "%@：%@": {
       "localizations": {
         "en": {
@@ -290,6 +307,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 张图片"
+          }
+        }
+      }
+    },
+    "%lld 秒后可重发": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resend in %lld s"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒后可重发"
           }
         }
       }
@@ -705,6 +739,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "下一步"
+          }
+        }
+      }
+    },
+    "下一步：绑定联系方式": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next: bind your contacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一步：绑定联系方式"
           }
         }
       }
@@ -2470,6 +2521,7 @@
       }
     },
     "加入新课程": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2497,6 +2549,7 @@
       }
     },
     "加入申请已提交": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3280,7 +3333,6 @@
       }
     },
     "姓名不能超过 %lld 个字符。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3331,7 +3383,6 @@
       }
     },
     "学号不能超过 %lld 个字符。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5654,6 +5705,23 @@
         }
       }
     },
+    "手机号": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mobile number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机号"
+          }
+        }
+      }
+    },
     "打卡": {
       "extractionState": "stale",
       "localizations": {
@@ -5959,6 +6027,7 @@
       }
     },
     "扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5975,7 +6044,6 @@
       }
     },
     "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5992,6 +6060,7 @@
       }
     },
     "扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9048,6 +9117,23 @@
         }
       }
     },
+    "短信验证码": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SMS code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短信验证码"
+          }
+        }
+      }
+    },
     "确认删除 %@？删除后提交前需要重新补充凭证。": {
       "localizations": {
         "en": {
@@ -9197,6 +9283,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "确认课程信息"
+          }
+        }
+      }
+    },
+    "确认验证": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认验证"
           }
         }
       }
@@ -9487,6 +9590,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Link or change email and phone"
+          }
+        }
+      }
+    },
+    "绑定手机号和邮箱": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bind a mobile number and email"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绑定手机号和邮箱"
           }
         }
       }
@@ -9915,6 +10035,23 @@
         }
       }
     },
+    "获取验证码": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "获取验证码"
+          }
+        }
+      }
+    },
     "补充免测材料": {
       "extractionState": "stale",
       "localizations": {
@@ -10338,6 +10475,23 @@
         }
       }
     },
+    "请先完成手机号和邮箱绑定。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bind and verify your mobile number and email first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先完成手机号和邮箱绑定。"
+          }
+        }
+      }
+    },
     "请先完成运动后再提交。": {
       "localizations": {
         "en": {
@@ -10483,7 +10637,6 @@
       }
     },
     "请填写姓名。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10500,7 +10653,6 @@
       }
     },
     "请填写学号。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10597,7 +10749,6 @@
       }
     },
     "请确认以上课程信息无误后再提交申请": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10656,6 +10807,23 @@
         }
       }
     },
+    "请输入 6 位数字验证码": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the 6-digit code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 6 位数字验证码"
+          }
+        }
+      }
+    },
     "请输入学号或校园邮箱": {
       "localizations": {
         "en": {
@@ -10688,8 +10856,41 @@
         }
       }
     },
-    "请输入有效的邮箱地址。": {
+    "请输入有效的手机号": {
       "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid mobile number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的手机号"
+          }
+        }
+      }
+    },
+    "请输入有效的邮箱": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid email"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的邮箱"
+          }
+        }
+      }
+    },
+    "请输入有效的邮箱地址。": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11054,7 +11255,6 @@
       }
     },
     "课程相关运动由课程安排决定，不能自行更改。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11799,6 +11999,23 @@
         }
       }
     },
+    "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After signing out or switching devices, a code sent to the mobile number or email bound here restores this account. Both must be verified before you can submit the join request."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。"
+          }
+        }
+      }
+    },
     "退出登录？": {
       "localizations": {
         "en": {
@@ -11977,7 +12194,6 @@
       }
     },
     "邀请已过期或不存在，请向老师获取新的邀请。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -11994,6 +12210,7 @@
       }
     },
     "邀请码 %@ 的加入申请已提交，老师审核通过后即可开始打卡。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12037,6 +12254,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "邀请码长度应为 %lld–%lld 位。"
+          }
+        }
+      }
+    },
+    "邮箱": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱"
+          }
+        }
+      }
+    },
+    "邮箱验证码": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱验证码"
           }
         }
       }
@@ -12264,6 +12515,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "首页"
+          }
+        }
+      }
+    },
+    "验证失败，请检查验证码后重试": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verification failed. Check the code and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证失败，请检查验证码后重试"
+          }
+        }
+      }
+    },
+    "验证码已发送，10 分钟内有效。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code sent. It is valid for 10 minutes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证码已发送，10 分钟内有效。"
+          }
+        }
+      }
+    },
+    "验证码接口尚未发布，请等待服务端上线后重试。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The verification-code endpoint is not published yet. Try again once the server ships it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证码接口尚未发布，请等待服务端上线后重试。"
           }
         }
       }

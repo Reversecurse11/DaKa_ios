@@ -328,7 +328,18 @@ requireText(appState, "func submitCourseJoinRequest(", "Students can submit a co
 rejectText(appState, "请先登录后再提交课程加入申请。", "A join application is filed before the student has an account");
 requireText(courseJoinViews, "struct CourseJoinConfirmView", "The invite is confirmed on its own page before identity details are typed");
 requireText(courseJoinViews, "courseJoinConfirm.submit", "The confirmation page submits the application");
-requireText(models, "enum CourseJoinRequestRule", "Name, student number and email are validated client-side");
+requireText(models, "enum CourseJoinRequestRule", "Name and student number are validated client-side");
+// Registration binds both contacts: a reinstalled app signs back in with a
+// code, so an unreachable student must never reach the teacher's queue.
+requireText(models, "enum ContactBindingRule", "Contact binding has client-side rules");
+requireText(models, "enum ContactChannel", "Phone and email are bound as named channels");
+requireText(courseJoinViews, "struct ContactBindingView", "Contact binding is its own step in the join flow");
+requireText(courseJoinViews, ").sendCode\")", "Binding a contact sends a verification code");
+requireText(courseJoinViews, "ContactBindingRule.resendInterval", "The send button waits out the server's resend window");
+requireText(appState, "请先完成手机号和邮箱绑定。", "An application without both contacts bound is refused");
+requireText(modelTests, "testCourseJoinRequestRequiresBothContactsBound", "XCTest covers the contact-binding gate");
+requireText(modelTests, "testContactBindingChecksFormatAndCodeBeforeAccepting", "XCTest covers contact and code validation");
+requireText(modelTests, "testBoundContactsAreShownMasked", "XCTest covers masking bound contacts");
 requireText(models, "struct CourseInvite", "An invite lookup has its own model");
 requireText(loginView, "login.joinRequest.entry", "The sign-in screen reports an application under review");
 requireText(modelTests, "testCourseJoinRequestIsFiledBeforeSignIn", "XCTest covers filing an application without an account");

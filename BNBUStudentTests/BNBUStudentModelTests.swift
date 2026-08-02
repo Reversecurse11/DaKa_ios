@@ -486,7 +486,8 @@ final class BNBUStudentModelTests: XCTestCase {
             invite: invite,
             name: "演示学生",
             studentNumber: "2400123456",
-            email: ""
+            phone: "13800138000",
+            email: "demo@bnbu.edu.cn"
         ))
         XCTAssertEqual(appState.pendingEnrollmentCourses.map(\.code), ["BNBU2026"])
         let pendingCourse = try XCTUnwrap(appState.pendingEnrollmentCourses.first)
@@ -757,7 +758,8 @@ final class BNBUStudentModelTests: XCTestCase {
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
-            email: ""
+            phone: "13800138000",
+            email: "lin@bnbu.edu.cn"
         ))
         XCTAssertNil(state.errorMessage)
 
@@ -772,42 +774,93 @@ final class BNBUStudentModelTests: XCTestCase {
 
     func testCourseJoinRequestRequiresANameAndStudentNumber() {
         XCTAssertEqual(
-            CourseJoinRequestRule.validationMessage(name: "  ", studentNumber: "2400", email: ""),
+            CourseJoinRequestRule.validationMessage(name: "  ", studentNumber: "2400"),
             "请填写姓名。"
         )
         XCTAssertEqual(
-            CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "", email: ""),
+            CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: ""),
             "请填写学号。"
         )
         XCTAssertEqual(
             CourseJoinRequestRule.validationMessage(
                 name: String(repeating: "林", count: CourseJoinRequestRule.maximumNameLength + 1),
-                studentNumber: "2400",
-                email: ""
+                studentNumber: "2400"
             ),
             "姓名不能超过 64 个字符。"
         )
         XCTAssertEqual(
             CourseJoinRequestRule.validationMessage(
                 name: "林同学",
-                studentNumber: String(repeating: "9", count: CourseJoinRequestRule.maximumStudentNumberLength + 1),
-                email: ""
+                studentNumber: String(repeating: "9", count: CourseJoinRequestRule.maximumStudentNumberLength + 1)
             ),
             "学号不能超过 32 个字符。"
         )
-        // The email is optional, but a typed address still has to be usable.
-        XCTAssertNil(CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400", email: "  "))
-        XCTAssertEqual(
-            CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400", email: "not-an-email"),
-            "请输入有效的邮箱地址。"
+        XCTAssertNil(CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400"))
+    }
+
+    // A student who reinstalls signs back in with a code, so an application
+    // must not reach the teacher until both contacts are verified.
+    func testCourseJoinRequestRequiresBothContactsBound() throws {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        XCTAssertNil(
-            CourseJoinRequestRule.validationMessage(
-                name: "林同学",
-                studentNumber: "2400",
-                email: "lin@example.edu"
-            )
+        let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
+
+        XCTAssertFalse(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            phone: "",
+            email: "lin@bnbu.edu.cn"
+        ))
+        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
+
+        XCTAssertFalse(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            phone: "13800138000",
+            email: ""
+        ))
+        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
+        XCTAssertNil(state.courseJoinRequest)
+
+        XCTAssertTrue(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            phone: "138 0013 8000",
+            email: "lin@bnbu.edu.cn"
+        ))
+        XCTAssertEqual(state.courseJoinRequest?.phone, "13800138000")
+        XCTAssertEqual(state.courseJoinRequest?.email, "lin@bnbu.edu.cn")
+    }
+
+    func testContactBindingChecksFormatAndCodeBeforeAccepting() {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
         )
+
+        XCTAssertFalse(state.sendContactVerificationCode(to: "1380013800", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
+        XCTAssertFalse(state.sendContactVerificationCode(to: "lin@", channel: .email))
+        XCTAssertEqual(state.errorMessage, "请输入有效的邮箱")
+
+        XCTAssertTrue(state.sendContactVerificationCode(to: "13800138000", channel: .phone))
+        XCTAssertTrue(state.sendContactVerificationCode(to: "+86 138 0013 8000", channel: .phone))
+        XCTAssertTrue(state.sendContactVerificationCode(to: "lin@bnbu.edu.cn", channel: .email))
+
+        XCTAssertFalse(state.verifyContactCode("123", for: "13800138000", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
+        XCTAssertTrue(state.verifyContactCode("123456", for: "13800138000", channel: .phone))
+        XCTAssertNil(state.errorMessage)
+    }
+
+    func testBoundContactsAreShownMasked() {
+        XCTAssertEqual(ContactBindingRule.masked("13800138000", for: .phone), "138****8000")
+        XCTAssertEqual(ContactBindingRule.masked("lin@bnbu.edu.cn", for: .email), "li***@bnbu.edu.cn")
     }
 
     // The application is filed before sign-in, so it cannot ride in the
@@ -821,7 +874,8 @@ final class BNBUStudentModelTests: XCTestCase {
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
-            email: ""
+            phone: "13800138000",
+            email: "lin@bnbu.edu.cn"
         ))
 
         let relaunched = AppState(

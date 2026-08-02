@@ -5,6 +5,9 @@ protocol StudentRepository {
     /// Resolves a course invite code. Nil means the invite is unknown, expired
     /// or withdrawn, which the join flow reports before asking for details.
     func loadCourseInvite(code: String) -> CourseInvite?
+    /// Accepts a contact verification code. The real check is server-side; this
+    /// seam exists so the flow runs before the endpoint ships.
+    func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool
 }
 
 struct MockStudentRepository: StudentRepository {
@@ -264,6 +267,12 @@ struct MockStudentRepository: StudentRepository {
         )
     }
 
+    /// Demo data has no mailbox or handset to deliver to, so any well-formed
+    /// code is accepted until the contact endpoints ship.
+    func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
+        ContactBindingRule.isValidCode(code)
+    }
+
     /// Demo invites resolve to a course the demo student has not joined, so the
     /// confirmation page has something to show before the lookup endpoint ships.
     func loadCourseInvite(code: String) -> CourseInvite? {
@@ -281,6 +290,10 @@ struct MockStudentRepository: StudentRepository {
 
 struct EmptyStudentRepository: StudentRepository {
     func loadCourseInvite(code: String) -> CourseInvite? { nil }
+
+    func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
+        ContactBindingRule.isValidCode(code)
+    }
 
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(
