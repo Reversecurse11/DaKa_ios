@@ -291,6 +291,27 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
         attachScreenshot(named: "03-guide-step2")
 
+        // Joining a course: invite entry, course confirmation, review status.
+        relaunch(["-ui-testing-reset"])
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 8))
+        app.staticTexts["扫码加入课程"].firstMatch.tap()
+        XCTAssertTrue(screen("screen.courseJoin").waitForExistence(timeout: 5))
+        attachScreenshot(named: "04-course-join-entry")
+
+        focusAndType(app.textFields["course.join.code.field"], text: "BNBU2026")
+        app.buttons["course.join.submit"].tap()
+        XCTAssertTrue(screen("screen.courseJoinConfirm").waitForExistence(timeout: 5))
+        attachScreenshot(named: "05-course-join-confirm")
+
+        focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
+        focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
+        app.buttons["courseJoinConfirm.submit"].tap()
+        XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 5))
+        attachScreenshot(named: "06-course-join-pending")
+        app.buttons["nav.back"].tap()
+        XCTAssertTrue(app.buttons["login.joinRequest.entry"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "06b-login-with-pending-request")
+
         func openProfile() {
             relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
             XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
@@ -772,17 +793,42 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         let codeField = app.textFields["course.join.code.field"]
         XCTAssertTrue(codeField.waitForExistence(timeout: 3))
-        let submit = app.buttons["course.join.submit"]
-        XCTAssertFalse(submit.isEnabled)
+        let next = app.buttons["course.join.submit"]
+        XCTAssertFalse(next.isEnabled)
 
         codeField.tap()
         codeField.typeText("BNBU2026")
-        XCTAssertTrue(submit.isEnabled)
+        XCTAssertTrue(next.isEnabled)
+        next.tap()
+
+        // The invite resolves to a course the student confirms before typing
+        // any identity details.
+        XCTAssertTrue(screen("screen.courseJoinConfirm").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["确认课程信息"].exists)
+        XCTAssertTrue(app.staticTexts["PE1024 / Section S02"].exists)
+        XCTAssertTrue(app.staticTexts["陈老师"].exists)
+
+        let submit = app.buttons["courseJoinConfirm.submit"]
+        submit.tap()
+        XCTAssertTrue(app.staticTexts["请填写姓名。"].waitForExistence(timeout: 3))
+
+        focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
+        submit.tap()
+        XCTAssertTrue(app.staticTexts["请填写学号。"].waitForExistence(timeout: 3))
+
+        // The email is optional, so name and student ID are enough to apply.
+        XCTAssertTrue(app.textFields["courseJoinConfirm.email"].exists)
+        focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
         submit.tap()
 
-        // A join request belongs to an account, so an unauthenticated attempt
-        // is refused rather than queued.
-        XCTAssertTrue(app.staticTexts["请先登录后再提交课程加入申请。"].waitForExistence(timeout: 3))
+        // Submitting lands on the review status; only approval opens the app.
+        XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["申请状态：待教师审核"].exists)
+        app.buttons["nav.back"].tap()
+
+        // The sign-in screen reports the application until a teacher decides.
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["login.joinRequest.entry"].waitForExistence(timeout: 3))
 
         app.terminate()
         app = XCUIApplication()

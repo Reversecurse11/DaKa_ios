@@ -2,6 +2,9 @@ import Foundation
 
 protocol StudentRepository {
     func loadWorkspace() -> StudentWorkspace
+    /// Resolves a course invite code. Nil means the invite is unknown, expired
+    /// or withdrawn, which the join flow reports before asking for details.
+    func loadCourseInvite(code: String) -> CourseInvite?
 }
 
 struct MockStudentRepository: StudentRepository {
@@ -257,45 +260,28 @@ struct MockStudentRepository: StudentRepository {
             memberships: [teamCredit, clubPending],
             notices: notices,
             exemptions: exemptions,
-            syncOperations: syncOperations,
-            courseJoinRequest: Self.mockCourseJoinRequest(student: student)
+            syncOperations: syncOperations
         )
     }
 
-    /// The join-request status page has four server-driven states; demo data
-    /// shows the pending one and screenshot runs select the others.
-    static func mockCourseJoinRequest(student: StudentProfile) -> CourseJoinRequest {
-        let arguments = ProcessInfo.processInfo.arguments
-        let status: JoinRequestStatus
-        if arguments.contains("-ui-testing-join-request-rejected") {
-            status = .rejected
-        } else if arguments.contains("-ui-testing-join-request-correction") {
-            status = .needsCorrection
-        } else {
-            status = .pending
-        }
-        return CourseJoinRequest(
-            id: "join-request-demo-001",
-            inviteCode: "PE1024",
-            courseName: "体育与健康 2026A",
+    /// Demo invites resolve to a course the demo student has not joined, so the
+    /// confirmation page has something to show before the lookup endpoint ships.
+    func loadCourseInvite(code: String) -> CourseInvite? {
+        guard CourseJoinCodeRule.validationMessage(for: code) == nil else { return nil }
+        return CourseInvite(
+            code: CourseJoinCodeRule.normalized(code),
+            courseName: "大学体育（篮球）",
             courseCode: "PE1024",
             section: "S02",
             teacherName: "陈老师",
-            semester: "2026-2027 学年第一学期",
-            studentName: student.name,
-            studentNumber: student.displayStudentNumber,
-            email: student.email,
-            status: status,
-            reviewComment: status == .pending
-                ? ""
-                : "请补充班级信息后重新提交。",
-            submittedAt: "2026-07-28 15:20",
-            reviewedAt: status == .pending ? nil : "2026-07-29 09:10"
+            semester: "2026-2027 学年第一学期"
         )
     }
 }
 
 struct EmptyStudentRepository: StudentRepository {
+    func loadCourseInvite(code: String) -> CourseInvite? { nil }
+
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(
             id: "demo-student-001",

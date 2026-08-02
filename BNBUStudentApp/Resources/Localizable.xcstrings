@@ -3026,6 +3026,23 @@
         }
       }
     },
+    "填写身份资料": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter identity details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写身份资料"
+          }
+        }
+      }
+    },
     "备注：%@": {
       "extractionState": "stale",
       "localizations": {
@@ -3262,6 +3279,40 @@
         }
       }
     },
+    "姓名不能超过 %lld 个字符。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name cannot exceed %lld characters."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "姓名不能超过 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "姓名（必填）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name (required)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "姓名（必填）"
+          }
+        }
+      }
+    },
     "学号": {
       "extractionState": "stale",
       "localizations": {
@@ -3279,6 +3330,23 @@
         }
       }
     },
+    "学号不能超过 %lld 个字符。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Student ID cannot exceed %lld characters."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学号不能超过 %lld 个字符。"
+          }
+        }
+      }
+    },
     "学号或邮箱": {
       "localizations": {
         "en": {
@@ -3291,6 +3359,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "学号或邮箱"
+          }
+        }
+      }
+    },
+    "学号（必填）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Student ID (required)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学号（必填）"
           }
         }
       }
@@ -5889,6 +5974,23 @@
         }
       }
     },
+    "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the course QR code from your instructor, check the course details, then submit your name and student ID. You can enter once the instructor approves."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。"
+          }
+        }
+      }
+    },
     "扫描老师提供的课程二维码或输入邀请码提交申请，老师审核通过后才会建立正式课程关系。": {
       "localizations": {
         "en": {
@@ -6088,6 +6190,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "换算结果"
+          }
+        }
+      }
+    },
+    "授课老师": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructor"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授课老师"
           }
         }
       }
@@ -9065,6 +9184,23 @@
         }
       }
     },
+    "确认课程信息": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm course information"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认课程信息"
+          }
+        }
+      }
+    },
     "离线说明": {
       "extractionState": "stale",
       "localizations": {
@@ -10346,6 +10482,40 @@
         }
       }
     },
+    "请填写姓名。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your name."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请填写姓名。"
+          }
+        }
+      }
+    },
+    "请填写学号。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your student ID."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请填写学号。"
+          }
+        }
+      }
+    },
     "请填写运动说明。": {
       "localizations": {
         "en": {
@@ -10426,6 +10596,23 @@
         }
       }
     },
+    "请确认以上课程信息无误后再提交申请": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm that these course details are correct before submitting your request."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请确认以上课程信息无误后再提交申请"
+          }
+        }
+      }
+    },
     "请等待教师发布成绩规则。": {
       "extractionState": "stale",
       "localizations": {
@@ -10497,6 +10684,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入密码"
+          }
+        }
+      }
+    },
+    "请输入有效的邮箱地址。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid email address."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的邮箱地址。"
           }
         }
       }
@@ -10896,6 +11100,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "课程相关还差 %@，其他运动还差 %@。请优先关注课程任务和可计入的自主运动。"
+          }
+        }
+      }
+    },
+    "课程编号 / Section": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Course number / Section"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程编号 / Section"
           }
         }
       }
@@ -11755,6 +11976,23 @@
         }
       }
     },
+    "邀请已过期或不存在，请向老师获取新的邀请。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The invitation has expired or does not exist. Ask the teacher for a new invitation."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请已过期或不存在，请向老师获取新的邀请。"
+          }
+        }
+      }
+    },
     "邀请码 %@ 的加入申请已提交，老师审核通过后即可开始打卡。": {
       "localizations": {
         "en": {
@@ -11799,6 +12037,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "邀请码长度应为 %lld–%lld 位。"
+          }
+        }
+      }
+    },
+    "邮箱（选填）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email (optional)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱（选填）"
           }
         }
       }

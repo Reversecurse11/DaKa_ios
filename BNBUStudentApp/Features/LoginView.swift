@@ -83,6 +83,11 @@ struct LoginView: View {
             switch route {
             case .chooser:
                 LoginMethodChooser(
+                    // An application under review is the student's only way in,
+                    // so the sign-in screen reports it until a teacher decides.
+                    joinRequest: appState.courseJoinRequest.flatMap {
+                        $0.status == .active ? nil : $0
+                    },
                     onEmail: { route = .emailVerification },
                     onPhone: { route = .phoneVerification },
                     onJoin: { showCourseJoin = true },
@@ -115,6 +120,7 @@ struct LoginView: View {
 private struct LoginMethodChooser: View {
     @Environment(\.locale) private var locale
 
+    var joinRequest: CourseJoinRequest?
     let onEmail: () -> Void
     let onPhone: () -> Void
     let onJoin: () -> Void
@@ -157,6 +163,14 @@ private struct LoginMethodChooser: View {
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
 
+                    if let joinRequest {
+                        JoinRequestEntryPanel(
+                            request: joinRequest,
+                            identifier: "login.joinRequest.entry",
+                            onOpen: onJoin
+                        )
+                    }
+
                     SwissPanel {
                         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
                             Text(copy("选择登录方式", "Choose a sign-in method"))
@@ -194,6 +208,7 @@ private struct LoginMethodChooser: View {
                                 systemImage: "qrcode.viewfinder",
                                 action: onJoin
                             )
+                            .accessibilityIdentifier("login.courseJoin")
 
                             LoginMethodRow(
                                 title: copy("使用 Mock 用户", "Use Mock user"),

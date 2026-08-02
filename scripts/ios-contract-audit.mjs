@@ -321,7 +321,19 @@ requireText(models, "static let backwardCompatibleDefault = CourseEnrollmentStat
 requireText(models, "var allowsCheckIn: Bool { enrollmentStatus == .approved }", "Only an approved enrolment can back a check-in");
 requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side rule");
 requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
-requireText(appState, "func submitCourseJoinRequest(rawCode: String)", "Students can submit a course join application");
+requireText(appState, "func lookupCourseInvite(rawCode: String)", "An invite code resolves to a course before the student applies");
+requireText(appState, "func submitCourseJoinRequest(", "Students can submit a course join application");
+// Joining precedes sign-in: the application is what creates the relationship,
+// so it must not be gated on an account.
+rejectText(appState, "请先登录后再提交课程加入申请。", "A join application is filed before the student has an account");
+requireText(courseJoinViews, "struct CourseJoinConfirmView", "The invite is confirmed on its own page before identity details are typed");
+requireText(courseJoinViews, "courseJoinConfirm.submit", "The confirmation page submits the application");
+requireText(models, "enum CourseJoinRequestRule", "Name, student number and email are validated client-side");
+requireText(models, "struct CourseInvite", "An invite lookup has its own model");
+requireText(loginView, "login.joinRequest.entry", "The sign-in screen reports an application under review");
+requireText(modelTests, "testCourseJoinRequestIsFiledBeforeSignIn", "XCTest covers filing an application without an account");
+requireText(modelTests, "testCourseJoinRequestRequiresANameAndStudentNumber", "XCTest covers the identity form rules");
+requireText(modelTests, "testCourseJoinRequestSurvivesRelaunchBeforeSignIn", "XCTest covers the pre-sign-in application cache");
 requireText(appState, "$0.isCurrent && $0.allowsCheckIn", "A pending course is never selected as the exercise course");
 requireText(appState, "workspace.courses.contains(where: { $0.id == courseId && $0.allowsCheckIn })", "Course-related submissions revalidate the approved enrolment");
 requireText(courseJoinViews, "CourseQRScannerView", "Course joining offers a QR scanning entry");
@@ -694,8 +706,8 @@ rejectText(appShellViews, "Firebase", "The iOS consent summary does not claim Fi
 requireText(appShellViews, "麦克风记录声音", "The iOS consent summary discloses microphone use during video capture");
 requireText(
   appState,
-  "guard isAuthenticated else",
-  "A course join request cannot be submitted before sign-in"
+  "localStore.saveCourseJoinRequest(request)",
+  "A join application filed before sign-in survives a relaunch"
 );
 
 // Settings, account details, about, and the changelog are separate pages.
@@ -717,7 +729,6 @@ requireText(joinRequestStatusView, "case .active:", "An approved request leaves 
 requireText(joinRequestStatusView, "onApproved()", "An approved request reports back instead of rendering a fifth state");
 requireText(modelTests, "testJoinRequestStatusKeepsCorrectionApartFromRejection", "XCTest covers join-request status decoding");
 requireText(modelTests, "testDevicePrivacyConsentIsVersionedAndSatisfiesTheLoginForm", "XCTest covers device-level consent versioning");
-requireText(modelTests, "testCourseJoinRequestNeedsAnAccountBeforeSubmission", "XCTest covers the pre-login join-request guard");
 requireText(modelTests, "testWorkspaceCacheKeepsJoinRequestAndToleratesOlderCaches", "XCTest covers join-request cache compatibility");
 
 // Opening a notice marks it read, which removes it from the unread filter; the

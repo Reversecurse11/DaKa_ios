@@ -3,21 +3,22 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Course join application entry (business rule 4.2). Students scan the course
-/// QR code or type the invite code; the teacher approves before the enrolment
-/// becomes real, so this screen only submits an application.
+/// Course join application entry (business rule 4.2). A student joins before
+/// signing in: scan the course QR code or type the invite code, confirm the
+/// course the invite resolves to, then supply identity details for the teacher
+/// to review. Only an approved application opens the main app.
 struct CourseJoinSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    /// Set by the dashboard scan entry so tapping it goes straight to the
-    /// camera instead of asking the student to pick an entry point twice.
+    /// Set by a scan entry so tapping it goes straight to the camera instead of
+    /// asking the student to pick an entry point twice.
     var autoPresentsScanner = false
 
+    @State private var step: CourseJoinStep = .entry
     @State private var code = ""
     @State private var isScannerPresented = false
     @State private var activeAlert: CourseJoinScannerAlert?
-    @State private var submittedCode: String?
     @FocusState private var isCodeFocused: Bool
 
     var body: some View {
@@ -25,16 +26,33 @@ struct CourseJoinSheet: View {
             ZStack {
                 BNBUPageBackground()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if let submittedCode {
-                            submittedPanel(code: submittedCode)
-                        } else {
+                switch step {
+                case .entry:
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
                             scanPanel
                             codePanel
                         }
+                        .padding(BNBUSpacing.screen)
                     }
-                    .padding(BNBUSpacing.screen)
+                case let .confirm(invite):
+                    CourseJoinConfirmView(
+                        invite: invite,
+                        onBack: {
+                            appState.errorMessage = nil
+                            step = .entry
+                        },
+                        onSubmitted: { step = .submitted }
+                    )
+                case .submitted:
+                    JoinRequestStatusView(
+                        request: appState.courseJoinRequest,
+                        onBack: { dismiss() },
+                        onContactTeacher: { dismiss() },
+                        onEditAndResubmit: { _ in restartWithNewInvite() },
+                        onUseNewInvite: { restartWithNewInvite() },
+                        onApproved: { dismiss() }
+                    )
                 }
             }
             .navigationTitle("加入课程")
@@ -48,7 +66,11 @@ struct CourseJoinSheet: View {
         }
         .accessibilityIdentifier("screen.courseJoin")
         .onAppear {
-            if autoPresentsScanner, submittedCode == nil {
+            // A student who already filed an application lands on its status
+            // rather than being invited to file a second one.
+            if let request = appState.courseJoinRequest, request.status != .active {
+                step = .submitted
+            } else if autoPresentsScanner {
                 isScannerPresented = true
             }
         }
@@ -71,7 +93,7 @@ struct CourseJoinSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("扫描课程二维码")
                     .font(BNBUFont.titleMedium)
-                Text("扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。")
+                Text("扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
@@ -102,7 +124,7 @@ struct CourseJoinSheet: View {
                     .bnbuOutlinedSurface(lineWidth: 1.5)
                     .focused($isCodeFocused)
                     .submitLabel(.done)
-                    .onSubmit { submit() }
+                    .onSubmit { lookUpInvite() }
                     .accessibilityIdentifier("course.join.code.field")
 
                 if let message = appState.errorMessage {
@@ -113,45 +135,29 @@ struct CourseJoinSheet: View {
                 }
 
                 DisabledAwareButton(
-                    title: "提交加入申请",
-                    systemImage: "paperplane.fill",
+                    title: "下一步",
+                    systemImage: "arrow.right",
                     isDisabled: CourseJoinCodeRule.validationMessage(for: code) != nil,
                     accessibilityIdentifier: "course.join.submit"
                 ) {
-                    submit()
+                    lookUpInvite()
                 }
             }
         }
     }
 
-    private func submittedPanel(code: String) -> some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("加入申请已提交", systemImage: "checkmark.seal")
-                    .font(BNBUFont.titleMedium)
-                    .foregroundStyle(BNBUTheme.primary)
-                Text(verbatim: BNBUL10n.formatted("邀请码 %@ 的加入申请已提交，老师审核通过后即可开始打卡。", code))
-                    .font(BNBUFont.bodyMedium)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .lineSpacing(3)
-                PrimaryActionButton(
-                    title: "完成",
-                    systemImage: "checkmark",
-                    accessibilityIdentifier: "course.join.done"
-                ) {
-                    dismiss()
-                }
-            }
-        }
-    }
-
-    private func submit() {
+    private func lookUpInvite() {
         isCodeFocused = false
         appState.errorMessage = nil
-        let normalized = CourseJoinCodeRule.normalized(code)
-        guard appState.submitCourseJoinRequest(rawCode: code) else { return }
-        submittedCode = normalized
+        guard let invite = appState.lookupCourseInvite(rawCode: code) else { return }
+        step = .confirm(invite)
         code = ""
+    }
+
+    private func restartWithNewInvite() {
+        appState.clearCourseJoinRequest()
+        appState.errorMessage = nil
+        step = .entry
     }
 
     private func startScan() {
@@ -188,12 +194,190 @@ struct CourseJoinSheet: View {
             return
         }
         code = scanned
-        submit()
+        lookUpInvite()
     }
 
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+private enum CourseJoinStep: Hashable {
+    case entry
+    case confirm(CourseInvite)
+    case submitted
+}
+
+/// Android's `CourseJoinConfirmScreen`: the invite's course is shown for
+/// confirmation, then the student supplies the identity the teacher reviews.
+struct CourseJoinConfirmView: View {
+    @EnvironmentObject private var appState: AppState
+    let invite: CourseInvite
+    let onBack: () -> Void
+    let onSubmitted: () -> Void
+
+    @State private var name = ""
+    @State private var studentNumber = ""
+    @State private var email = ""
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case name
+        case studentNumber
+        case email
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                BNBUBackRow(action: onBack)
+                SectionTitle(eyebrow: "COURSE", title: "确认课程信息")
+                coursePanel
+                SectionTitle(eyebrow: "IDENTITY", title: "填写身份资料")
+                identityPanel
+            }
+            .padding(BNBUSpacing.screen)
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .accessibilityIdentifier("screen.courseJoinConfirm")
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    focusedField = nil
+                    dismissBNBUKeyboard()
+                }
+                .font(BNBUFont.titleSmall)
+            }
+        }
+    }
+
+    private var coursePanel: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                CourseJoinFact(label: "课程名称", value: invite.courseName)
+                CourseJoinFact(
+                    label: "课程编号 / Section",
+                    value: "\(invite.courseCode) / Section \(invite.section)"
+                )
+                CourseJoinFact(label: "授课老师", value: invite.teacherName)
+                CourseJoinFact(label: "学期", value: invite.semester)
+                Text("请确认以上课程信息无误后再提交申请")
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            }
+        }
+    }
+
+    private var identityPanel: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: 14) {
+                if let message = appState.errorMessage {
+                    BNBUErrorPanel(message: message)
+                        .accessibilityIdentifier("courseJoinConfirm.error")
+                }
+
+                CourseJoinField(
+                    label: "姓名（必填）",
+                    text: $name,
+                    limit: CourseJoinRequestRule.maximumNameLength,
+                    identifier: "courseJoinConfirm.name"
+                )
+                .focused($focusedField, equals: .name)
+
+                CourseJoinField(
+                    label: "学号（必填）",
+                    text: $studentNumber,
+                    limit: CourseJoinRequestRule.maximumStudentNumberLength,
+                    identifier: "courseJoinConfirm.studentNumber"
+                )
+                .focused($focusedField, equals: .studentNumber)
+
+                CourseJoinField(
+                    label: "邮箱（选填）",
+                    text: $email,
+                    keyboardType: .emailAddress,
+                    identifier: "courseJoinConfirm.email"
+                )
+                .focused($focusedField, equals: .email)
+
+                PrimaryActionButton(
+                    title: "提交加入申请",
+                    systemImage: "paperplane.fill",
+                    accessibilityIdentifier: "courseJoinConfirm.submit"
+                ) {
+                    submit()
+                }
+            }
+        }
+    }
+
+    private func submit() {
+        focusedField = nil
+        dismissBNBUKeyboard()
+        guard appState.submitCourseJoinRequest(
+            invite: invite,
+            name: name,
+            studentNumber: studentNumber,
+            email: email
+        ) else { return }
+        onSubmitted()
+    }
+}
+
+private struct CourseJoinFact: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(LocalizedStringKey(label))
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            Text(verbatim: BNBUL10n.dynamicText(value))
+                .font(BNBUFont.bodyLarge)
+                .foregroundStyle(BNBUTheme.onSurface)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct CourseJoinField: View {
+    let label: String
+    @Binding var text: String
+    var limit: Int?
+    var keyboardType: UIKeyboardType = .default
+    let identifier: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(LocalizedStringKey(label))
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+            TextField("", text: $text)
+                .bnbuInputText()
+                .keyboardType(keyboardType)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(BNBUTheme.surface)
+                .bnbuOutlinedSurface(lineWidth: 1)
+                .accessibilityLabel(Text(LocalizedStringKey(label)))
+                .accessibilityIdentifier(identifier)
+                .onChange(of: text) { _, value in
+                    guard let limit, value.count > limit else { return }
+                    text = String(value.prefix(limit))
+                }
+
+            if let limit {
+                Text(verbatim: "\(text.count) / \(limit)")
+                    .font(BNBUFont.labelSmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
     }
 }
 

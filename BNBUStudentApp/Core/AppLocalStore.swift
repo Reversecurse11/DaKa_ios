@@ -47,6 +47,9 @@ struct AppLocalStore {
     static let exerciseSubmissionDatesStorageKey = "bnbu.student.exercise.submission-dates.v1"
     static let exerciseMediaDraftsStorageKey = "bnbu.student.exercise.media-drafts.v1"
     static let pendingMutationStorageKey = "bnbu.student.remote.mutations.v1"
+    /// A join application is made before sign-in, so it cannot live in the
+    /// workspace cache and needs a key of its own.
+    static let courseJoinRequestStorageKey = "bnbu.student.course-join-request.v1"
     static let remoteWorkspaceStorageKeyPrefix = "bnbu.student.remote.workspace.v1"
     private static let exerciseMediaDirectoryName = "exercise-media"
 
@@ -56,6 +59,7 @@ struct AppLocalStore {
     private let exerciseSubmissionDatesKey = Self.exerciseSubmissionDatesStorageKey
     private let exerciseMediaDraftsKey = Self.exerciseMediaDraftsStorageKey
     private let pendingMutationKey = Self.pendingMutationStorageKey
+    private let courseJoinRequestKey = Self.courseJoinRequestStorageKey
     private let defaults: UserDefaults?
     private let legacyDefaults: UserDefaults
     private let fileManager: FileManager
@@ -109,6 +113,19 @@ struct AppLocalStore {
     @discardableResult
     func saveWorkspace(_ workspace: StudentWorkspace) -> Bool {
         save(workspace, forKey: workspaceKey)
+    }
+
+    func loadCourseJoinRequest() -> CourseJoinRequest? {
+        read(CourseJoinRequest.self, forKey: courseJoinRequestKey).value
+    }
+
+    @discardableResult
+    func saveCourseJoinRequest(_ request: CourseJoinRequest) -> Bool {
+        save(request, forKey: courseJoinRequestKey)
+    }
+
+    func clearCourseJoinRequest() {
+        _ = removeValue(forKey: courseJoinRequestKey)
     }
 
     func loadDraft() -> CheckInDraft? {
@@ -273,6 +290,7 @@ struct AppLocalStore {
             defaults.removeObject(forKey: exerciseSubmissionDatesKey)
             defaults.removeObject(forKey: exerciseMediaDraftsKey)
             defaults.removeObject(forKey: pendingMutationKey)
+            defaults.removeObject(forKey: courseJoinRequestKey)
             for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(Self.remoteWorkspaceStorageKeyPrefix) {
                 defaults.removeObject(forKey: key)
             }

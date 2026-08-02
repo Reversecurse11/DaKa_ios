@@ -58,6 +58,9 @@ final class AppState: ObservableObject {
     @Published private(set) var isSubmittingExemption = false
     @Published private(set) var isLoadingExemptions = false
     @Published private(set) var pendingRemoteMutationSummaries: [PendingRemoteMutationSummary] = []
+    /// The student's own join application. It is filed before sign-in, so it
+    /// lives outside the workspace and survives until the teacher decides.
+    @Published var courseJoinRequest: CourseJoinRequest?
 
     private let repository: StudentRepository
     private let localStore: AppLocalStore
@@ -124,6 +127,7 @@ final class AppState: ObservableObject {
             lastEvent: bootEvent
         )
         self.pendingRemoteMutationSummaries = Self.pendingMutationSummaries(from: restoredMutations)
+        self.courseJoinRequest = localStore.loadCourseJoinRequest()
     }
 
     var courseRemaining: Double {
@@ -180,20 +184,13 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Submits a course join application (rule 4.2). The request endpoint ships
-    /// with the pending OpenAPI update; until then remote mode reports that the
-    /// server side is unavailable instead of faking an approval-pending course.
-    @discardableResult
-    func submitCourseJoinRequest(rawCode: String) -> Bool {
-        // The pre-login guide can open the scan entry before sign-in (Android
-        // does the same), but a join request has to belong to an account.
-        guard isAuthenticated else {
-            errorMessage = BNBUL10n.text("请先登录后再提交课程加入申请。")
-            return false
-        }
+    /// Resolves an invite code to the course it belongs to (rule 4.2). Joining
+    /// happens before sign-in, so the student confirms these facts and supplies
+    /// identity details in place of an account.
+    func lookupCourseInvite(rawCode: String) -> CourseInvite? {
         if let validationMessage = CourseJoinCodeRule.validationMessage(for: rawCode) {
             errorMessage = validationMessage
-            return false
+            return nil
         }
         let code = CourseJoinCodeRule.normalized(rawCode)
 
@@ -206,6 +203,33 @@ final class AppState: ObservableObject {
             case .rejected:
                 errorMessage = BNBUL10n.text("该课程的加入申请未通过，请联系任课老师。")
             }
+            return nil
+        }
+
+        guard let invite = repository.loadCourseInvite(code: code) else {
+            errorMessage = BNBUL10n.text("邀请已过期或不存在，请向老师获取新的邀请。")
+            return nil
+        }
+        errorMessage = nil
+        return invite
+    }
+
+    /// Submits a course join application (rule 4.2). The request endpoint ships
+    /// with the pending OpenAPI update; until then remote mode reports that the
+    /// server side is unavailable instead of faking an approval-pending course.
+    @discardableResult
+    func submitCourseJoinRequest(
+        invite: CourseInvite,
+        name: String,
+        studentNumber: String,
+        email: String
+    ) -> Bool {
+        if let validationMessage = CourseJoinRequestRule.validationMessage(
+            name: name,
+            studentNumber: studentNumber,
+            email: email
+        ) {
+            errorMessage = validationMessage
             return false
         }
 
@@ -214,10 +238,48 @@ final class AppState: ObservableObject {
             return false
         }
 
-        workspace.courses.append(pendingCourse(forJoinCode: code))
-        saveWorkspace(event: "课程加入申请已提交，等待老师审核")
+        let request = CourseJoinRequest(
+            id: "join-\(invite.code)",
+            inviteCode: invite.code,
+            courseName: invite.courseName,
+            courseCode: invite.courseCode,
+            section: invite.section,
+            teacherName: invite.teacherName,
+            semester: invite.semester,
+            studentName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            studentNumber: studentNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: .pending,
+            reviewComment: "",
+            submittedAt: Self.joinRequestTimestampFormatter.string(from: Date()),
+            reviewedAt: nil
+        )
+        courseJoinRequest = request
+        localStore.saveCourseJoinRequest(request)
+        errorMessage = nil
+
+        // A signed-in student also sees the course itself turn pending, so the
+        // courses tab reports the application without a second entry point.
+        if isAuthenticated {
+            workspace.courses.append(pendingCourse(forJoinCode: invite.code))
+            saveWorkspace(event: "课程加入申请已提交，等待老师审核")
+        }
         return true
     }
+
+    /// Discards a finished application so the student can apply with a new
+    /// invite. The teacher's decision itself is server-owned.
+    func clearCourseJoinRequest() {
+        courseJoinRequest = nil
+        localStore.clearCourseJoinRequest()
+    }
+
+    private static let joinRequestTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy.MM.dd HH:mm"
+        return formatter
+    }()
 
     private func matchesJoinCode(_ course: Course, code: String) -> Bool {
         let normalizedCode = CourseJoinCodeRule.normalized(course.code)

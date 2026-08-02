@@ -476,14 +476,18 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         appState.enforcesCheckInTimeWindow = false
-        // A join request belongs to an account, so this covers the signed-in
-        // student; the pre-login guard has its own test.
         appState.demoLogin()
 
         let approvedCourse = try XCTUnwrap(appState.currentExerciseCourse)
         XCTAssertTrue(appState.pendingEnrollmentCourses.isEmpty)
 
-        XCTAssertTrue(appState.submitCourseJoinRequest(rawCode: "bnbu-2026"))
+        let invite = try XCTUnwrap(appState.lookupCourseInvite(rawCode: "bnbu-2026"))
+        XCTAssertTrue(appState.submitCourseJoinRequest(
+            invite: invite,
+            name: "演示学生",
+            studentNumber: "2400123456",
+            email: ""
+        ))
         XCTAssertEqual(appState.pendingEnrollmentCourses.map(\.code), ["BNBU2026"])
         let pendingCourse = try XCTUnwrap(appState.pendingEnrollmentCourses.first)
 
@@ -501,10 +505,11 @@ final class BNBUStudentModelTests: XCTestCase {
             hours: 1
         ))
 
-        // Duplicate applications are rejected client-side.
-        XCTAssertFalse(appState.submitCourseJoinRequest(rawCode: "BNBU2026"))
+        // Duplicate applications are refused at the invite lookup, before the
+        // student is asked for details a second time.
+        XCTAssertNil(appState.lookupCourseInvite(rawCode: "BNBU2026"))
         XCTAssertEqual(appState.errorMessage, "该课程的加入申请正在审核中，请等待老师处理。")
-        XCTAssertFalse(appState.submitCourseJoinRequest(rawCode: approvedCourse.code))
+        XCTAssertNil(appState.lookupCourseInvite(rawCode: approvedCourse.code))
         XCTAssertEqual(appState.errorMessage, "你已加入该课程，无需重复申请。")
     }
 
@@ -737,17 +742,102 @@ final class BNBUStudentModelTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
-    func testCourseJoinRequestNeedsAnAccountBeforeSubmission() {
-        let state = AppState(repository: MockStudentRepository())
+    // A student joins before they have an account: the application itself is
+    // what the teacher reviews, so it must go through unauthenticated.
+    func testCourseJoinRequestIsFiledBeforeSignIn() throws {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
         XCTAssertFalse(state.isAuthenticated)
+        XCTAssertNil(state.courseJoinRequest)
 
-        XCTAssertFalse(state.submitCourseJoinRequest(rawCode: "PE9999"))
-        XCTAssertEqual(state.errorMessage, "请先登录后再提交课程加入申请。")
-
-        state.demoLogin()
-        state.errorMessage = nil
-        XCTAssertTrue(state.submitCourseJoinRequest(rawCode: "PE9999"))
+        let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
+        XCTAssertTrue(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            email: ""
+        ))
         XCTAssertNil(state.errorMessage)
+
+        let filed = try XCTUnwrap(state.courseJoinRequest)
+        XCTAssertEqual(filed.status, .pending)
+        XCTAssertEqual(filed.studentName, "林同学")
+        XCTAssertEqual(filed.studentNumber, "2400987654")
+        XCTAssertEqual(filed.courseCode, invite.courseCode)
+        // Nothing was written into a workspace the student does not yet own.
+        XCTAssertTrue(state.pendingEnrollmentCourses.isEmpty)
+    }
+
+    func testCourseJoinRequestRequiresANameAndStudentNumber() {
+        XCTAssertEqual(
+            CourseJoinRequestRule.validationMessage(name: "  ", studentNumber: "2400", email: ""),
+            "请填写姓名。"
+        )
+        XCTAssertEqual(
+            CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "", email: ""),
+            "请填写学号。"
+        )
+        XCTAssertEqual(
+            CourseJoinRequestRule.validationMessage(
+                name: String(repeating: "林", count: CourseJoinRequestRule.maximumNameLength + 1),
+                studentNumber: "2400",
+                email: ""
+            ),
+            "姓名不能超过 64 个字符。"
+        )
+        XCTAssertEqual(
+            CourseJoinRequestRule.validationMessage(
+                name: "林同学",
+                studentNumber: String(repeating: "9", count: CourseJoinRequestRule.maximumStudentNumberLength + 1),
+                email: ""
+            ),
+            "学号不能超过 32 个字符。"
+        )
+        // The email is optional, but a typed address still has to be usable.
+        XCTAssertNil(CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400", email: "  "))
+        XCTAssertEqual(
+            CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400", email: "not-an-email"),
+            "请输入有效的邮箱地址。"
+        )
+        XCTAssertNil(
+            CourseJoinRequestRule.validationMessage(
+                name: "林同学",
+                studentNumber: "2400",
+                email: "lin@example.edu"
+            )
+        )
+    }
+
+    // The application is filed before sign-in, so it cannot ride in the
+    // workspace cache and needs to survive a relaunch on its own.
+    func testCourseJoinRequestSurvivesRelaunchBeforeSignIn() throws {
+        let defaults = isolatedDefaults()
+        let store = AppLocalStore(defaults: defaults)
+        let state = AppState(repository: MockStudentRepository(), localStore: store)
+        let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
+        XCTAssertTrue(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            email: ""
+        ))
+
+        let relaunched = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults)
+        )
+        XCTAssertEqual(relaunched.courseJoinRequest?.studentNumber, "2400987654")
+        XCTAssertEqual(relaunched.courseJoinRequest?.status, .pending)
+
+        relaunched.clearCourseJoinRequest()
+        XCTAssertNil(
+            AppState(
+                repository: MockStudentRepository(),
+                localStore: AppLocalStore(defaults: defaults)
+            ).courseJoinRequest
+        )
     }
 
     func testEnduranceRunStatusSeparatesExemptionAbsenceAndNoEntry() throws {

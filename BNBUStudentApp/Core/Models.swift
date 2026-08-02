@@ -750,6 +750,59 @@ struct CourseJoinRequest: Identifiable, Hashable, Codable {
     var reviewedAt: String?
 }
 
+/// The course an invite code resolves to. The student confirms these facts
+/// before sending identity details, so the lookup is a separate step from the
+/// application itself (`GET /course-invites/{code}`).
+struct CourseInvite: Identifiable, Hashable, Codable {
+    let code: String
+    let courseName: String
+    let courseCode: String
+    let section: String
+    let teacherName: String
+    let semester: String
+
+    var id: String { code }
+
+    var displayTitle: String { "\(courseCode) / Section \(section)" }
+}
+
+/// Identity details a student supplies when applying to join a course. Joining
+/// happens before sign-in, so this is the only place the student types their
+/// own name and number; limits match the Android baseline.
+enum CourseJoinRequestRule {
+    static let maximumNameLength = 64
+    static let maximumStudentNumberLength = 32
+
+    static func validationMessage(
+        name: String,
+        studentNumber: String,
+        email: String
+    ) -> String? {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNumber = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmedName.isEmpty { return BNBUL10n.text("请填写姓名。") }
+        if trimmedName.count > maximumNameLength {
+            return BNBUL10n.formatted("姓名不能超过 %lld 个字符。", maximumNameLength)
+        }
+        if trimmedNumber.isEmpty { return BNBUL10n.text("请填写学号。") }
+        if trimmedNumber.count > maximumStudentNumberLength {
+            return BNBUL10n.formatted("学号不能超过 %lld 个字符。", maximumStudentNumberLength)
+        }
+        // The email is optional: a student without a school mailbox may leave
+        // it blank, but a typed address still has to be usable.
+        if !trimmedEmail.isEmpty, !isValidEmail(trimmedEmail) {
+            return BNBUL10n.text("请输入有效的邮箱地址。")
+        }
+        return nil
+    }
+
+    static func isValidEmail(_ email: String) -> Bool {
+        email.range(of: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", options: .regularExpression) != nil
+    }
+}
+
 enum JoinRequestStatus: String, Codable, Hashable, CaseIterable {
     case pending
     case active
