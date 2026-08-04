@@ -3504,3 +3504,172 @@ struct SportHourRule: Hashable, Codable {
         return value
     }
 }
+
+/// A help article published by an administrator. The app bundles no article
+/// text of its own beyond the offline basics, mirroring Android's help centre.
+struct HelpArticle: Identifiable, Equatable, Codable {
+    let id: String
+    let title: String
+    let category: String
+    let content: String
+    let sortOrder: Int
+    let updatedAt: String?
+
+    init(
+        id: String,
+        title: String,
+        category: String = "",
+        content: String,
+        sortOrder: Int = 0,
+        updatedAt: String? = nil
+    ) {
+        self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.category = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.content = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.sortOrder = sortOrder
+        self.updatedAt = updatedAt
+    }
+
+    /// An article without an id, a title or a body cannot be shown, so it is
+    /// dropped instead of rendering an empty card.
+    var isDisplayable: Bool {
+        !id.isEmpty && !title.isEmpty && !content.isEmpty
+    }
+
+    func matches(_ query: String) -> Bool {
+        title.localizedCaseInsensitiveContains(query)
+            || content.localizedCaseInsensitiveContains(query)
+            || category.localizedCaseInsensitiveContains(query)
+    }
+
+    /// Administrator order first, then title, so two articles sharing a sort
+    /// order keep a stable position between loads.
+    static func displayOrdered(_ articles: [HelpArticle]) -> [HelpArticle] {
+        articles
+            .filter(\.isDisplayable)
+            .sorted { lhs, rhs in
+                lhs.sortOrder == rhs.sortOrder
+                    ? lhs.title.localizedCompare(rhs.title) == .orderedAscending
+                    : lhs.sortOrder < rhs.sortOrder
+            }
+    }
+}
+
+/// Server-controlled availability policy, mirroring Android `SystemMode`. The
+/// health endpoint may omit the field while the backend rollout is incomplete,
+/// which keeps the app in `normal`.
+enum SystemMode: String, Codable, CaseIterable {
+    case normal
+    case readOnly
+    case maintenance
+
+    var blocksWrites: Bool {
+        self != .normal
+    }
+
+    static func parse(_ value: String?) -> SystemMode {
+        switch value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "READ_ONLY", "READONLY": return .readOnly
+        case "MAINTENANCE": return .maintenance
+        default: return .normal
+        }
+    }
+}
+
+struct SystemModeStatus: Equatable {
+    var mode: SystemMode = .normal
+    /// Server copy is shown verbatim; the app only supplies a fallback.
+    var message: String = ""
+    var estimatedRecoveryTime: String?
+    /// A planned-maintenance notice is supplied by the backend at least 48 hours ahead.
+    var plannedMaintenanceAt: String?
+
+    init(
+        mode: SystemMode = .normal,
+        message: String = "",
+        estimatedRecoveryTime: String? = nil,
+        plannedMaintenanceAt: String? = nil
+    ) {
+        self.mode = mode
+        self.message = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.estimatedRecoveryTime = Self.cleaned(estimatedRecoveryTime)
+        self.plannedMaintenanceAt = Self.cleaned(plannedMaintenanceAt)
+    }
+
+    private static func cleaned(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+}
+
+/// A minimum-version requirement the app cannot run below, mirroring Android's
+/// `UpdateRequirement`.
+struct AppUpdateRequirement: Equatable {
+    let minimumVersion: String
+    let downloadURL: String
+    let updateMessage: String
+
+    init(minimumVersion: String, downloadURL: String = "", updateMessage: String = "") {
+        self.minimumVersion = minimumVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.downloadURL = downloadURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.updateMessage = updateMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+enum BNBUAppVersion {
+    static var current: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    /// Marketing version with the build number, for the settings and changelog pages.
+    static var displayName: String {
+        let info = Bundle.main.infoDictionary
+        let short = current
+        let build = info?["CFBundleVersion"] as? String
+        guard let build, !build.isEmpty, build != short else { return short }
+        return "\(short) (\(build))"
+    }
+
+    /// Compares dot-separated numeric components and ignores build suffixes such
+    /// as `-debug`, matching Android's `compareVersions`.
+    static func compare(_ current: String, _ minimum: String) -> Int {
+        let left = components(current)
+        let right = components(minimum)
+        for index in 0..<max(left.count, right.count) {
+            let lhs = index < left.count ? left[index] : 0
+            let rhs = index < right.count ? right[index] : 0
+            if lhs != rhs { return lhs < rhs ? -1 : 1 }
+        }
+        return 0
+    }
+
+    /// Nil when the installed build already satisfies the requirement, or when
+    /// the server sent no minimum at all.
+    static func requirement(
+        minimumVersion: String,
+        downloadURL: String,
+        updateMessage: String,
+        currentVersion: String = BNBUAppVersion.current
+    ) -> AppUpdateRequirement? {
+        let minimum = minimumVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !minimum.isEmpty, compare(currentVersion, minimum) < 0 else { return nil }
+        return AppUpdateRequirement(
+            minimumVersion: minimum,
+            downloadURL: downloadURL,
+            updateMessage: updateMessage
+        )
+    }
+
+    private static func components(_ version: String) -> [Int] {
+        version
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "v", with: "", options: [.anchored, .caseInsensitive])
+            .split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .split(separator: ".", omittingEmptySubsequences: false)
+            .map { component in
+                Int(component.prefix(while: \.isNumber)) ?? 0
+            }
+    }
+}

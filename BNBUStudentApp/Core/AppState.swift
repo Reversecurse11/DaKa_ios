@@ -71,6 +71,18 @@ final class AppState: ObservableObject {
     @Published var feedbackTickets: [FeedbackTicket] = []
     /// Why the ticket list is empty, when the reason is not "no tickets yet".
     @Published var feedbackNotice: String?
+    /// Server-controlled availability policy. Read-only and maintenance modes are
+    /// announced by the health endpoint and block every write.
+    @Published private(set) var systemModeStatus = SystemModeStatus()
+    /// Set when the installed build is below the published minimum, which blocks
+    /// the app until the student updates.
+    @Published private(set) var updateRequirement: AppUpdateRequirement?
+    /// Administrator-published help articles, with the load state the help centre
+    /// shows: a spinner, a cached-copy notice, or a failure it can retry.
+    @Published private(set) var helpArticles: [HelpArticle] = []
+    @Published private(set) var isLoadingHelpArticles = false
+    @Published private(set) var helpArticlesError: String?
+    @Published private(set) var isShowingCachedHelpArticles = false
 
     private let repository: StudentRepository
     private let localStore: AppLocalStore
@@ -270,6 +282,7 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("请输入 6 位数字验证码")
             return false
         }
+        guard allowWrite() else { return false }
         guard ContactBindingRule.isValid(contact, for: channel) else {
             errorMessage = ContactBindingRule.validationMessage(contact, for: channel)
             return false
@@ -318,6 +331,76 @@ final class AppState: ObservableObject {
         return false
     }
 
+    var systemMode: SystemMode { systemModeStatus.mode }
+
+    var isWriteAllowed: Bool { !systemMode.blocksWrites }
+
+    /// Startup availability check. A failure or a missing field leaves the app in
+    /// `normal`, so a staged backend never blocks the student.
+    func refreshSystemStatus() async {
+        if isRemoteMode {
+            systemModeStatus = await remoteRepo.loadSystemMode()
+            updateRequirement = await remoteRepo.loadUpdateRequirement()
+        } else {
+            systemModeStatus = repository.loadSystemMode()
+            updateRequirement = repository.loadUpdateRequirement()
+        }
+    }
+
+    /// Loads help articles, mirroring Android's help centre: the cached copy is
+    /// shown first so the page is never blank, then the server result replaces it
+    /// and is cached. A failure keeps the cached copy under a notice, or reports
+    /// an error the page can retry.
+    func refreshHelpArticles() async {
+        isLoadingHelpArticles = helpArticles.isEmpty
+        helpArticlesError = nil
+        isShowingCachedHelpArticles = false
+
+        let cached = HelpArticle.displayOrdered(localStore.loadHelpArticles())
+        if helpArticles.isEmpty, !cached.isEmpty {
+            helpArticles = cached
+            isLoadingHelpArticles = false
+        }
+
+        do {
+            let fetched: [HelpArticle]
+            if isRemoteMode {
+                fetched = try await remoteRepo.loadHelpArticles()
+            } else {
+                fetched = HelpArticle.displayOrdered(try repository.loadHelpArticles())
+            }
+            helpArticles = fetched
+            localStore.saveHelpArticles(fetched)
+        } catch is CancellationError {
+            isLoadingHelpArticles = false
+            return
+        } catch {
+            if isRemoteMode, isUnauthorized(error) {
+                await handleRemoteError(error)
+            }
+            let fallback = cached.isEmpty ? helpArticles : cached
+            if fallback.isEmpty {
+                helpArticlesError = BNBUL10n.text("帮助内容暂时无法加载，请稍后重试。")
+            } else {
+                helpArticles = fallback
+                isShowingCachedHelpArticles = true
+            }
+        }
+
+        isLoadingHelpArticles = false
+    }
+
+    /// Refuses a write while the server is read-only or under maintenance, and
+    /// reports why, mirroring Android's `allowWrite`.
+    @discardableResult
+    func allowWrite() -> Bool {
+        guard !isWriteAllowed else { return true }
+        errorMessage = systemMode == .maintenance
+            ? BNBUL10n.text("系统当前处于维护模式，暂不能提交或修改内容。")
+            : BNBUL10n.text("系统当前处于只读模式，暂不能提交或修改内容。")
+        return false
+    }
+
     /// Problem reports the student has filed. Loaded lazily the first time the
     /// feedback page opens its list tab.
     func refreshFeedbackTickets() {
@@ -351,6 +434,7 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.formatted("截图最多 %lld 张。", FeedbackRule.maximumScreenshots)
             return nil
         }
+        guard allowWrite() else { return nil }
         guard !isRemoteMode else {
             errorMessage = BNBUL10n.text("反馈工单接口尚未发布，请等待服务端上线后重试。")
             return nil
@@ -380,6 +464,7 @@ final class AppState: ObservableObject {
             errorMessage = validationMessage
             return false
         }
+        guard allowWrite() else { return false }
         guard !isRemoteMode else {
             errorMessage = BNBUL10n.text("验证码接口尚未发布，请等待服务端上线后重试。")
             return false
@@ -431,6 +516,7 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("请先完成手机号和邮箱绑定。")
             return false
         }
+        guard allowWrite() else { return false }
 
         guard !isRemoteMode else {
             errorMessage = BNBUL10n.text("课程加入申请接口尚未发布，请等待服务端上线后重试。")
@@ -1325,6 +1411,7 @@ final class AppState: ObservableObject {
         exerciseSession: ExerciseSession? = nil
     ) async -> Bool {
         guard !isSubmittingCheckIn else { return false }
+        guard allowWrite() else { return false }
         canSafelyRetryCheckIn = false
         checkInSubmissionPhase = .submitting
         defer { checkInSubmissionPhase = .idle }
@@ -1411,6 +1498,7 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("免测申请正在提交，请勿重复操作。")
             return false
         }
+        guard allowWrite() else { return false }
         isSubmittingExemption = true
         defer { isSubmittingExemption = false }
 
@@ -1472,6 +1560,7 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("免测补充材料正在提交，请勿重复操作。")
             return false
         }
+        guard allowWrite() else { return false }
         isSubmittingExemption = true
         defer { isSubmittingExemption = false }
 

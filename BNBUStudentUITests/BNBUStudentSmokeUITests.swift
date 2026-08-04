@@ -320,6 +320,173 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         attachScreenshot(named: "E3-exemption-team-organization")
     }
 
+    func testTempShotsPrivacyPolicyFullText() {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 8))
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["settings.privacy"])
+        XCTAssertTrue(screen("screen.privacyPolicy").waitForExistence(timeout: 5))
+        attachScreenshot(named: "P1-privacy-top")
+        // The bundled text is the full policy, so its later articles exist too.
+        XCTAssertTrue(app.staticTexts["第十四条　联系我们"].waitForExistence(timeout: 3)
+                      || app.descendants(matching: .any)["第十四条　联系我们"].waitForExistence(timeout: 3))
+        for _ in 0..<6 { app.swipeUp() }
+        attachScreenshot(named: "P2-privacy-scrolled")
+    }
+
+    /// The help centre now shows server-published articles, so its failure and
+    /// empty states need capturing next to the loaded one.
+    func testTempShotsHelpCenterStates() {
+        openHelpCenter(extraArguments: [])
+        // Published articles are grouped by category and open on tap.
+        let firstArticle = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "help.article.")
+        ).firstMatch
+        XCTAssertTrue(firstArticle.waitForExistence(timeout: 6))
+        attachScreenshot(named: "H1-help-articles")
+        tapCenter(of: firstArticle)
+        attachScreenshot(named: "H2-help-article-expanded")
+
+        // The bundled basics stay reachable below the published content.
+        XCTAssertTrue(screen("help.bundled-title").waitForExistence(timeout: 3))
+        for _ in 0..<4 { app.swipeUp() }
+        attachScreenshot(named: "H3-help-bundled")
+
+        app.terminate()
+        openHelpCenter(extraArguments: ["-ui-testing-help-error"])
+        XCTAssertTrue(screen("help.load-failed").waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["帮助内容暂时无法加载，请稍后重试。"].exists)
+        attachScreenshot(named: "H4-help-load-failed")
+        // The retry is the only way forward, so it must be reachable and live.
+        scrollToAndTap(app.buttons["help.retry"])
+        XCTAssertTrue(screen("help.load-failed").waitForExistence(timeout: 8))
+
+        app.terminate()
+        openHelpCenter(extraArguments: ["-ui-testing-help-empty"])
+        XCTAssertTrue(screen("help.articles-empty").waitForExistence(timeout: 8))
+        attachScreenshot(named: "H5-help-empty")
+    }
+
+    private func openHelpCenter(extraArguments: [String]) {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ] + extraArguments
+        app.launch()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 8))
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["settings.helpCenter"])
+        XCTAssertTrue(screen("screen.help").waitForExistence(timeout: 5))
+    }
+
+    func testTempShotsAvailabilityPolicy() {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-maintenance",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        XCTAssertTrue(screen("screen.maintenance").waitForExistence(timeout: 8))
+        attachScreenshot(named: "M1-maintenance")
+        // Maintenance replaces the shell, so no tab can be reached.
+        XCTAssertFalse(app.buttons["tab.dashboard"].exists)
+
+        app.terminate()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-read-only",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        XCTAssertTrue(screen("banner.readOnly").waitForExistence(timeout: 8))
+        attachScreenshot(named: "M2-read-only-dashboard")
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 6))
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["settings.feedback"])
+        XCTAssertTrue(screen("screen.feedback").waitForExistence(timeout: 5))
+        XCTAssertTrue(screen("feedback.readOnlyNotice").waitForExistence(timeout: 3))
+        attachScreenshot(named: "M3-read-only-feedback")
+
+        app.terminate()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-planned-maintenance",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        XCTAssertTrue(screen("banner.plannedMaintenance").waitForExistence(timeout: 8))
+        attachScreenshot(named: "M4-planned-maintenance")
+
+        app.terminate()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-update-required",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        XCTAssertTrue(screen("screen.updateRequired").waitForExistence(timeout: 8))
+        attachScreenshot(named: "M5-update-required")
+    }
+
+    func testTempShotsExerciseGuide() {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 8))
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["settings.helpCenter"])
+        XCTAssertTrue(screen("screen.help").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["help.replay-onboarding"])
+
+        XCTAssertTrue(screen("screen.onboarding").waitForExistence(timeout: 6))
+        attachScreenshot(named: "G1-guide-start")
+        XCTAssertFalse(app.buttons["onboarding.back"].exists)
+
+        app.buttons["onboarding.next"].tap()
+        attachScreenshot(named: "G2-guide-record")
+        XCTAssertTrue(app.buttons["onboarding.back"].waitForExistence(timeout: 3))
+
+        app.buttons["onboarding.next"].tap()
+        attachScreenshot(named: "G3-guide-submit")
+
+        app.buttons["onboarding.next"].tap()
+        XCTAssertTrue(app.buttons["onboarding.finish"].waitForExistence(timeout: 3))
+        attachScreenshot(named: "G4-guide-applications")
+
+        app.buttons["onboarding.back"].tap()
+        XCTAssertTrue(app.buttons["onboarding.next"].waitForExistence(timeout: 3))
+        app.buttons["onboarding.skip"].tap()
+        XCTAssertTrue(screen("screen.help").waitForExistence(timeout: 6))
+    }
+
     func testTempShotsSupportPages() {
         app.launchArguments = [
             "-ui-testing-reset",
@@ -661,6 +828,16 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
         assertProfileNavigationCardsAligned()
         attachScreenshot(named: "english-profile")
+
+        // The help centre's own chrome follows the app language; the articles
+        // themselves stay in whatever language the administrator published.
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 3))
+        scrollToAndTap(app.buttons["settings.helpCenter"])
+        XCTAssertTrue(screen("screen.help").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Built-in offline help"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["内置离线帮助"].exists)
+        attachScreenshot(named: "english-help-center")
     }
 
     func testUnsupportedSystemLanguageFallsBackToEnglishNavigation() throws {

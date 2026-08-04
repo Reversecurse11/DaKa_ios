@@ -757,7 +757,65 @@ requireOrder(
   ["accountSecurityPanel", "preferencesPanel", "helpAndSupportPanel", "logoutCard"],
   "The settings page keeps Android's group order"
 );
-requireText(profileDetailViews, 'Bundle.main.infoDictionary', "The about page reads the real bundle version");
+requireText(models, "Bundle.main.infoDictionary", "The about page reads the real bundle version");
+requireText(profileDetailViews, "BNBUAppVersion.displayName", "The about page shows the resolved bundle version");
+
+// Post-enrolment walkthrough (Android `PostEnrollmentGuideScreen`): four pages
+// about running one exercise session, not a feature tour.
+const studentExperienceViews = read("BNBUStudentApp/Features/StudentExperienceViews.swift");
+requireText(studentExperienceViews, 'Text("运动指引")', "The walkthrough keeps Android's title");
+requireCount(studentExperienceViews, "OnboardingPage(", 4, "The walkthrough has Android's four pages");
+requireOrder(
+  studentExperienceViews,
+  ["开始一次运动", "记录运动过程", "提交并查看记录", "需要时提交申请"],
+  "The walkthrough keeps Android's page order"
+);
+requireText(studentExperienceViews, "onboarding.skip", "The walkthrough can be skipped from any page");
+requireText(studentExperienceViews, "onboarding.finish", "The last page enters the workspace");
+requireText(studentExperienceViews, "onboarding.back", "Pages past the first can step back");
+
+// Help centre (Android `HelpCenterScreen`): articles come from the administrator
+// endpoint, the last result is cached, and a failure is retryable rather than
+// silently empty.
+requireText(remote, '"common/help-articles"', "Help articles are read from the published help endpoint");
+requireText(models, "struct HelpArticle", "A published help article has its own type");
+requireText(models, "static func displayOrdered(", "Articles follow the administrator's sort order");
+requireText(models, "var isDisplayable: Bool", "An article without a title or body is dropped instead of rendered empty");
+requireText(appState, "func refreshHelpArticles() async", "The help centre loads its content from the repository");
+requireText(appState, "localStore.saveHelpArticles(fetched)", "The last successful help payload is cached for offline use");
+requireText(appState, "帮助内容暂时无法加载，请稍后重试。", "A help failure without a cache says so instead of showing an empty page");
+requireText(studentExperienceViews, '.task { await appState.refreshHelpArticles() }', "Opening the help centre asks for the latest articles");
+requireText(studentExperienceViews, '"help.retry"', "A failed help load can be retried from the page");
+requireText(studentExperienceViews, '"help.cached-notice"', "A cached help copy is labelled as such");
+requireText(studentExperienceViews, '"help.articles-empty"', "Published-but-empty help content has its own state");
+requireText(studentExperienceViews, '"help.loading"', "The help centre shows progress while loading");
+requireText(modelTests, "testHelpArticlesArriveInAdministratorOrderAndAreCachedForNextTime", "XCTest covers help ordering and caching");
+requireText(modelTests, "testHelpArticleFailureFallsBackToTheCachedCopyAndSaysSo", "XCTest covers the cached help fallback");
+requireText(modelTests, "testHelpArticleFailureWithoutACacheReportsARetryableError", "XCTest covers the retryable help failure");
+
+// Availability policy (Android `SystemMode`, `MaintenancePage`, banners) and the
+// minimum-version gate. The health fields stay optional during the backend
+// rollout, so a missing field must leave the app usable.
+requireText(models, "enum SystemMode", "The server's availability policy has its own type");
+requireText(models, 'case "READ_ONLY", "READONLY": return .readOnly', "Both server spellings of read-only are accepted");
+requireText(models, "var blocksWrites: Bool", "Read-only and maintenance are known to block writes");
+requireText(appState, "func refreshSystemStatus() async", "The shell asks for the availability policy at startup");
+requireText(appState, "系统当前处于维护模式，暂不能提交或修改内容。", "A blocked write says the system is under maintenance");
+requireText(appState, "系统当前处于只读模式，暂不能提交或修改内容。", "A blocked write says the system is read-only");
+requireCount(appState, "guard allowWrite()", 7, "Every write path passes the availability gate");
+requireText(appShellViews, "screen.maintenance", "Maintenance replaces the shell instead of dimming it");
+requireText(appShellViews, "banner.readOnly", "Read-only mode is announced above the shell");
+requireText(appShellViews, "banner.plannedMaintenance", "A planned maintenance window is announced ahead of time");
+requireText(appShellViews, "screen.updateRequired", "A build below the minimum is blocked by an update page");
+requireText(models, "static func requirement(", "The minimum-version comparison lives with the rules");
+requireText(remote, '"config/minimum-app-version"', "The minimum version is read from the published configuration");
+requireText(remote, 'get("health")', "The availability policy is read from the health endpoint");
+requireText(checkinView, "guard appState.isWriteAllowed", "A read-only server disables check-in submission");
+requireText(feedbackViews, "feedback.readOnlyNotice", "The feedback form says why it cannot be submitted");
+requireText(gradesView, "appState.isWriteAllowed", "A read-only server disables exemption submission");
+requireText(modelTests, "testSystemModeParsesEveryServerSpellingAndBlocksWrites", "XCTest covers availability parsing");
+requireText(modelTests, "testReadOnlyModeRefusesEveryWriteAndSaysWhy", "XCTest covers the read-only write gate");
+requireText(modelTests, "testMinimumVersionOnlyBlocksBuildsBelowTheRequirement", "XCTest covers the version gate");
 rejectText(profileDetailViews, "BNBU Student MVP 1.0", "No hard-coded version string reaches the about page");
 
 // Join-request status: four server states, with correction kept apart from

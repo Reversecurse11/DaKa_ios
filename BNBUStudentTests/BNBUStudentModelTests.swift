@@ -883,6 +883,197 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(state.newSemesterWelcomeAcademicYear)
     }
 
+    func testSystemModeParsesEveryServerSpellingAndBlocksWrites() {
+        XCTAssertEqual(SystemMode.parse(nil), .normal)
+        XCTAssertEqual(SystemMode.parse(""), .normal)
+        XCTAssertEqual(SystemMode.parse("normal"), .normal)
+        XCTAssertEqual(SystemMode.parse(" read_only "), .readOnly)
+        XCTAssertEqual(SystemMode.parse("READONLY"), .readOnly)
+        XCTAssertEqual(SystemMode.parse("maintenance"), .maintenance)
+        XCTAssertFalse(SystemMode.normal.blocksWrites)
+        XCTAssertTrue(SystemMode.readOnly.blocksWrites)
+        XCTAssertTrue(SystemMode.maintenance.blocksWrites)
+    }
+
+    @MainActor
+    func testReadOnlyModeRefusesEveryWriteAndSaysWhy() async {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let state = AppState(
+            repository: SystemModeRepositoryStub(status: SystemModeStatus(mode: .readOnly)),
+            localStore: store
+        )
+        await state.refreshSystemStatus()
+
+        XCTAssertEqual(state.systemMode, .readOnly)
+        XCTAssertFalse(state.isWriteAllowed)
+        XCTAssertFalse(state.allowWrite())
+        XCTAssertEqual(state.errorMessage, "系统当前处于只读模式，暂不能提交或修改内容。")
+
+        state.errorMessage = nil
+        XCTAssertNil(
+            state.submitFeedback(
+                category: .functionality,
+                description: "打卡提交后一直卡在上传。",
+                email: "student@example.invalid",
+                phone: "13800138000",
+                screenshots: []
+            )
+        )
+        XCTAssertEqual(state.errorMessage, "系统当前处于只读模式，暂不能提交或修改内容。")
+        XCTAssertTrue(state.feedbackTickets.isEmpty)
+
+        state.errorMessage = nil
+        XCTAssertFalse(state.sendContactVerificationCode(to: "13800138000", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "系统当前处于只读模式，暂不能提交或修改内容。")
+    }
+
+    @MainActor
+    func testMaintenanceModeKeepsItsServerCopyAndBlocksSubmissions() async {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let state = AppState(
+            repository: SystemModeRepositoryStub(
+                status: SystemModeStatus(
+                    mode: .maintenance,
+                    message: "  正在迁移成绩库  ",
+                    estimatedRecoveryTime: " 2026-08-04 22:00 ",
+                    plannedMaintenanceAt: "   "
+                )
+            ),
+            localStore: store
+        )
+        await state.refreshSystemStatus()
+
+        XCTAssertEqual(state.systemMode, .maintenance)
+        XCTAssertEqual(state.systemModeStatus.message, "正在迁移成绩库")
+        XCTAssertEqual(state.systemModeStatus.estimatedRecoveryTime, "2026-08-04 22:00")
+        // A blank planned-maintenance field must not raise the banner.
+        XCTAssertNil(state.systemModeStatus.plannedMaintenanceAt)
+
+        let submitted = await state.submitExemption(
+            item: .run800m,
+            reason: "医院证明",
+            detail: "医生建议免测",
+            proofAttachments: []
+        )
+        XCTAssertFalse(submitted)
+        XCTAssertEqual(state.errorMessage, "系统当前处于维护模式，暂不能提交或修改内容。")
+    }
+
+    func testHelpArticlesArriveInAdministratorOrderAndAreCachedForNextTime() async {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let published = [
+            HelpArticle(id: "b", title: "如何提交免测申请？", category: "申请", content: "从申请中心提交。", sortOrder: 20),
+            HelpArticle(id: "a", title: "如何打卡？", category: "打卡", content: "选择项目后开始计时。", sortOrder: 10),
+            HelpArticle(id: "", title: "缺少编号", category: "打卡", content: "不应展示。", sortOrder: 1),
+            HelpArticle(id: "c", title: "空正文", category: "打卡", content: "   ", sortOrder: 2)
+        ]
+        let state = AppState(
+            repository: HelpArticleRepositoryStub(result: .success(published)),
+            localStore: store
+        )
+
+        await state.refreshHelpArticles()
+
+        // Sort order decides, and articles missing an id or a body are dropped.
+        XCTAssertEqual(state.helpArticles.map(\.id), ["a", "b"])
+        XCTAssertFalse(state.isLoadingHelpArticles)
+        XCTAssertNil(state.helpArticlesError)
+        XCTAssertFalse(state.isShowingCachedHelpArticles)
+        XCTAssertEqual(store.loadHelpArticles().map(\.id), ["a", "b"])
+    }
+
+    func testHelpArticleFailureFallsBackToTheCachedCopyAndSaysSo() async {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        store.saveHelpArticles([
+            HelpArticle(id: "cached", title: "维护期间可以做什么？", category: "系统", content: "恢复后重试。", sortOrder: 5)
+        ])
+        let state = AppState(
+            repository: HelpArticleRepositoryStub(result: .failure(RepositoryError.networkError("超时"))),
+            localStore: store
+        )
+
+        await state.refreshHelpArticles()
+
+        XCTAssertEqual(state.helpArticles.map(\.id), ["cached"])
+        XCTAssertTrue(state.isShowingCachedHelpArticles)
+        XCTAssertNil(state.helpArticlesError)
+        XCTAssertFalse(state.isLoadingHelpArticles)
+    }
+
+    func testHelpArticleFailureWithoutACacheReportsARetryableError() async {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let state = AppState(
+            repository: HelpArticleRepositoryStub(result: .failure(RepositoryError.networkError("超时"))),
+            localStore: store
+        )
+
+        await state.refreshHelpArticles()
+
+        XCTAssertTrue(state.helpArticles.isEmpty)
+        XCTAssertFalse(state.isShowingCachedHelpArticles)
+        XCTAssertEqual(state.helpArticlesError, "帮助内容暂时无法加载，请稍后重试。")
+        XCTAssertFalse(state.isLoadingHelpArticles)
+
+        // A retry that succeeds clears the failure instead of stacking notices.
+        let recovered = AppState(
+            repository: HelpArticleRepositoryStub(
+                result: .success([
+                    HelpArticle(id: "a", title: "如何打卡？", content: "选择项目后开始计时。")
+                ])
+            ),
+            localStore: store
+        )
+        await recovered.refreshHelpArticles()
+        XCTAssertNil(recovered.helpArticlesError)
+        XCTAssertEqual(recovered.helpArticles.map(\.id), ["a"])
+    }
+
+    func testHelpArticleSearchMatchesTitleBodyAndCategory() {
+        let article = HelpArticle(
+            id: "a",
+            title: "如何提交体测免测申请？",
+            category: "申请与审核",
+            content: "上传证明材料后提交，由任课教师审核。"
+        )
+
+        XCTAssertTrue(article.matches("免测"))
+        XCTAssertTrue(article.matches("证明材料"))
+        XCTAssertTrue(article.matches("审核"))
+        XCTAssertFalse(article.matches("成绩公示"))
+    }
+
+    func testMinimumVersionOnlyBlocksBuildsBelowTheRequirement() {
+        XCTAssertEqual(BNBUAppVersion.compare("1.0", "1.0.0"), 0)
+        XCTAssertEqual(BNBUAppVersion.compare("1.2", "1.10"), -1)
+        XCTAssertEqual(BNBUAppVersion.compare("v2.0-debug", "1.9.9"), 1)
+
+        XCTAssertNil(
+            BNBUAppVersion.requirement(
+                minimumVersion: "",
+                downloadURL: "https://example.invalid",
+                updateMessage: "",
+                currentVersion: "1.0"
+            )
+        )
+        XCTAssertNil(
+            BNBUAppVersion.requirement(
+                minimumVersion: "1.0",
+                downloadURL: "https://example.invalid",
+                updateMessage: "",
+                currentVersion: "1.0.1"
+            )
+        )
+        let requirement = BNBUAppVersion.requirement(
+            minimumVersion: " 2.1 ",
+            downloadURL: " https://example.invalid/app ",
+            updateMessage: " 修复上传失败 ",
+            currentVersion: "1.9-debug"
+        )
+        XCTAssertEqual(requirement?.minimumVersion, "2.1")
+        XCTAssertEqual(requirement?.downloadURL, "https://example.invalid/app")
+        XCTAssertEqual(requirement?.updateMessage, "修复上传失败")
+    }
+
     func testExemptionOffersTheGenderMatchedRunPlusTeamAndClub() {
         XCTAssertEqual(
             ExemptionItem.selectableItems(gender: .male),
@@ -4625,4 +4816,54 @@ private final class IdempotencyConflictURLProtocol: URLProtocol, @unchecked Send
     }
 
     override func stopLoading() {}
+}
+
+
+/// Serves a fixed availability policy so the write gate can be tested without a
+/// server or launch arguments.
+private struct SystemModeRepositoryStub: StudentRepository {
+    let status: SystemModeStatus
+    var requirement: AppUpdateRequirement?
+
+    private let base = MockStudentRepository()
+
+    func loadWorkspace() -> StudentWorkspace { base.loadWorkspace() }
+
+    func loadCourseInvite(code: String) -> CourseInvite? { base.loadCourseInvite(code: code) }
+
+    func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
+        base.acceptsContactCode(code, channel: channel, value: value)
+    }
+
+    func loadFeedbackTickets() -> [FeedbackTicket] { base.loadFeedbackTickets() }
+
+    func loadSystemMode() -> SystemModeStatus { status }
+
+    func loadUpdateRequirement() -> AppUpdateRequirement? { requirement }
+
+    func loadHelpArticles() throws -> [HelpArticle] { try base.loadHelpArticles() }
+}
+
+/// Serves one help-article outcome, so the help centre's cached, failed and
+/// published states can each be driven from a test.
+private struct HelpArticleRepositoryStub: StudentRepository {
+    let result: Result<[HelpArticle], Error>
+
+    private let base = MockStudentRepository()
+
+    func loadWorkspace() -> StudentWorkspace { base.loadWorkspace() }
+
+    func loadCourseInvite(code: String) -> CourseInvite? { base.loadCourseInvite(code: code) }
+
+    func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
+        base.acceptsContactCode(code, channel: channel, value: value)
+    }
+
+    func loadFeedbackTickets() -> [FeedbackTicket] { base.loadFeedbackTickets() }
+
+    func loadSystemMode() -> SystemModeStatus { SystemModeStatus() }
+
+    func loadUpdateRequirement() -> AppUpdateRequirement? { nil }
+
+    func loadHelpArticles() throws -> [HelpArticle] { try result.get() }
 }

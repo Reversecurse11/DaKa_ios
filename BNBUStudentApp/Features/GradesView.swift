@@ -773,6 +773,7 @@ struct ExemptionApplicationSheet: View {
             && proofAttachments.allSatisfy(isLiveCameraPhoto)
             && proofAttachments.allSatisfy(\.isValidForUpload)
         return appState.isRemoteMode
+            && appState.isWriteAllowed
             && !hasPendingSameType
             && !needsOrganization
             && ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) == nil
@@ -780,6 +781,11 @@ struct ExemptionApplicationSheet: View {
     }
 
     private var validationHint: String? {
+        if !appState.isWriteAllowed {
+            return appState.systemMode == .maintenance
+                ? BNBUL10n.text("系统当前处于维护模式，暂不能提交或修改内容。")
+                : BNBUL10n.text("系统当前处于只读模式，暂不能提交或修改内容。")
+        }
         guard appState.isRemoteMode else {
             return exemptionText(
                 "演示账号仅用于查看界面，不能提交免测申请或补充材料。",

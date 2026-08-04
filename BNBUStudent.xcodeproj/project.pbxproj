@@ -37,6 +37,8 @@
 		AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000024 /* ExerciseLocationProvider.swift */; };
 		AA0000000000000000000025 /* StudentExperienceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000025 /* StudentExperienceViews.swift */; };
 		AA0000000000000000000026 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000026 /* Localizable.xcstrings */; };
+		AA0000000000000000000091 /* privacy_policy_en.md in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000091 /* privacy_policy_en.md */; };
+		AA0000000000000000000090 /* privacy_policy_zh_cn.md in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000090 /* privacy_policy_zh_cn.md */; };
 		AA0000000000000000000027 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000027 /* InfoPlist.xcstrings */; };
 		AA0000000000000000000100 /* BNBUStudentSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000100 /* BNBUStudentSmokeUITests.swift */; };
 		AA0000000000000000000200 /* BNBUStudentModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000200 /* BNBUStudentModelTests.swift */; };
@@ -93,6 +95,8 @@
 		BB0000000000000000000024 /* ExerciseLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLocationProvider.swift; sourceTree = "<group>"; };
 		BB0000000000000000000025 /* StudentExperienceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentExperienceViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000026 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		BB0000000000000000000091 /* privacy_policy_en.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = privacy_policy_en.md; sourceTree = "<group>"; };
+		BB0000000000000000000090 /* privacy_policy_zh_cn.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = privacy_policy_zh_cn.md; sourceTree = "<group>"; };
 		BB0000000000000000000027 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		BB0000000000000000000100 /* BNBUStudentSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BNBUStudentSmokeUITests.swift; sourceTree = "<group>"; };
 		BB0000000000000000000101 /* BNBUStudentUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BNBUStudentUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -194,6 +198,8 @@
 				BB0000000000000000000022 /* PrivacyInfo.xcprivacy */,
 				BB0000000000000000000019 /* Assets.xcassets */,
 				BB0000000000000000000026 /* Localizable.xcstrings */,
+				BB0000000000000000000091 /* privacy_policy_en.md */,
+				BB0000000000000000000090 /* privacy_policy_zh_cn.md */,
 				BB0000000000000000000027 /* InfoPlist.xcstrings */,
 			);
 			path = Resources;
@@ -334,6 +340,8 @@
 				AA0000000000000000000019 /* Assets.xcassets in Resources */,
 				AA0000000000000000000020 /* PrivacyInfo.xcprivacy in Resources */,
 				AA0000000000000000000026 /* Localizable.xcstrings in Resources */,
+				AA0000000000000000000091 /* privacy_policy_en.md in Resources */,
+				AA0000000000000000000090 /* privacy_policy_zh_cn.md in Resources */,
 				AA0000000000000000000027 /* InfoPlist.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

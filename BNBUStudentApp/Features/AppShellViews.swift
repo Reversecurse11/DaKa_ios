@@ -92,6 +92,34 @@ struct AppShellView: View {
 
     var body: some View {
         Group {
+            switch appState.systemMode {
+            case .maintenance:
+                MaintenancePageView(status: appState.systemModeStatus)
+            case .normal, .readOnly:
+                VStack(spacing: 0) {
+                    if appState.systemMode == .readOnly {
+                        SystemModeBanner(kind: .readOnly, message: appState.systemModeStatus.message)
+                    } else if let plannedAt = appState.systemModeStatus.plannedMaintenanceAt {
+                        SystemModeBanner(
+                            kind: .plannedMaintenance(plannedAt),
+                            message: appState.systemModeStatus.message
+                        )
+                    }
+                    stagedContent
+                }
+            }
+        }
+        .task { await appState.refreshSystemStatus() }
+        .overlay {
+            if let requirement = appState.updateRequirement {
+                UpdateRequiredOverlay(requirement: requirement)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var stagedContent: some View {
+        Group {
             switch stage {
             case .restoring:
                 StartupSplashView()
@@ -183,6 +211,177 @@ private struct AuthenticatedShellView: View {
                     BNBUNotificationManager.requestAuthorization()
                 }
             }
+    }
+}
+
+// MARK: - Availability policy
+
+/// Android's `ReadOnlyBanner` and `PlannedMaintenanceBanner`: one status strip
+/// pinned above the shell, with its background carried into the status bar.
+private struct SystemModeBanner: View {
+    enum Kind {
+        case readOnly
+        case plannedMaintenance(String)
+    }
+
+    let kind: Kind
+    /// Server copy is shown verbatim; the fallback below is only used when the
+    /// server sends none.
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: BNBUSpacing.space12) {
+            Image(systemName: "icloud.slash")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(foreground)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(LocalizedStringKey(title))
+                    .font(BNBUFont.titleSmall)
+                    .foregroundStyle(foreground)
+                Text(message.isEmpty ? fallbackMessage : message)
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, BNBUSpacing.screen)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(background.ignoresSafeArea(edges: .top))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var title: String {
+        switch kind {
+        case .readOnly: return "系统只读模式"
+        case .plannedMaintenance: return "计划维护通知"
+        }
+    }
+
+    private var fallbackMessage: String {
+        switch kind {
+        case .readOnly:
+            return BNBUL10n.text("服务维护中；你仍可查看已有内容，但不能提交或修改。")
+        case .plannedMaintenance(let plannedAt):
+            return BNBUL10n.formatted("系统将于 %@ 进行维护，请提前完成需要提交的操作。", plannedAt)
+        }
+    }
+
+    private var background: Color {
+        switch kind {
+        case .readOnly: return BNBUTheme.secondaryContainer
+        case .plannedMaintenance: return BNBUTheme.tertiaryContainer
+        }
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .readOnly: return BNBUTheme.onSecondaryContainer
+        case .plannedMaintenance: return BNBUTheme.onTertiaryContainer
+        }
+    }
+
+    private var identifier: String {
+        switch kind {
+        case .readOnly: return "banner.readOnly"
+        case .plannedMaintenance: return "banner.plannedMaintenance"
+        }
+    }
+}
+
+/// Android's `MaintenancePage`: the whole shell is replaced while the service is
+/// down, so nothing can be opened or submitted.
+struct MaintenancePageView: View {
+    let status: SystemModeStatus
+
+    var body: some View {
+        ZStack {
+            BNBUPageBackground()
+            VStack(spacing: BNBUSpacing.space16) {
+                Image(systemName: "icloud.slash")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(BNBUTheme.primary)
+                Text("系统维护中")
+                    .font(BNBUFont.headlineSmall)
+                    .foregroundStyle(BNBUTheme.onBackground)
+                Text(status.message.isEmpty
+                     ? BNBUL10n.text("我们正在进行系统维护，请稍后再试。")
+                     : status.message)
+                    .font(BNBUFont.bodyLarge)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .multilineTextAlignment(.center)
+                Text(recoveryLine)
+                    .font(BNBUFont.titleSmall)
+                    .foregroundStyle(BNBUTheme.primary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: 420)
+            .padding(BNBUSpacing.space32)
+        }
+        .accessibilityIdentifier("screen.maintenance")
+    }
+
+    private var recoveryLine: String {
+        guard let estimate = status.estimatedRecoveryTime else {
+            return BNBUL10n.text("预计恢复时间：请留意后续通知")
+        }
+        return BNBUL10n.formatted("预计恢复时间：%@", estimate)
+    }
+}
+
+/// Android's `UpdateRequiredDialog`. The confirm action opens the download page
+/// and the dialog stays, because a build below the minimum cannot be used.
+private struct UpdateRequiredOverlay: View {
+    let requirement: AppUpdateRequirement
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Text("版本过低，需要更新")
+                        .font(BNBUFont.titleLarge)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                    Text(BNBUL10n.formatted(
+                        "当前版本 %@ 已不再支持，请更新到 %@ 及以上版本。",
+                        BNBUAppVersion.current,
+                        requirement.minimumVersion
+                    ))
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !requirement.updateMessage.isEmpty {
+                        Text(requirement.updateMessage)
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    PrimaryActionButton(
+                        title: "去更新",
+                        systemImage: "arrow.down.circle",
+                        accessibilityIdentifier: "update.required.action"
+                    ) {
+                        guard let url = URL(string: requirement.downloadURL) else { return }
+                        openURL(url)
+                    }
+                    .disabled(requirement.downloadURL.isEmpty)
+                    .opacity(requirement.downloadURL.isEmpty ? 0.5 : 1)
+                    if requirement.downloadURL.isEmpty {
+                        Text("下载地址暂不可用，请联系课程教师获取新版本。")
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+                }
+            }
+            .frame(maxWidth: 420)
+            .padding(BNBUSpacing.screen)
+        }
+        .accessibilityIdentifier("screen.updateRequired")
     }
 }
 

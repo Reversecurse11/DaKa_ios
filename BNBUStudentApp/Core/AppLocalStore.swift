@@ -53,6 +53,9 @@ struct AppLocalStore {
     static let remoteWorkspaceStorageKeyPrefix = "bnbu.student.remote.workspace.v1"
     /// The academic year the app last showed, so a rollover can be recognised.
     static let cachedAcademicYearStorageKey = "bnbu.student.academic-year.v1"
+    /// The last help articles the server returned. Public content, so it stays
+    /// readable offline and survives sign-out.
+    static let helpArticlesStorageKey = "bnbu.student.help-articles.v1"
     private static let exerciseMediaDirectoryName = "exercise-media"
 
     private let workspaceKey = Self.workspaceStorageKey
@@ -63,6 +66,7 @@ struct AppLocalStore {
     private let pendingMutationKey = Self.pendingMutationStorageKey
     private let courseJoinRequestKey = Self.courseJoinRequestStorageKey
     private let cachedAcademicYearKey = Self.cachedAcademicYearStorageKey
+    private let helpArticlesKey = Self.helpArticlesStorageKey
     private let defaults: UserDefaults?
     private let legacyDefaults: UserDefaults
     private let fileManager: FileManager
@@ -138,6 +142,17 @@ struct AppLocalStore {
     @discardableResult
     func saveCachedAcademicYear(_ academicYear: String) -> Bool {
         save(academicYear, forKey: cachedAcademicYearKey)
+    }
+
+    /// The last help articles the server returned. A stale or unreadable copy
+    /// must never stop the help centre opening, so failures read as empty.
+    func loadHelpArticles() -> [HelpArticle] {
+        read([HelpArticle].self, forKey: helpArticlesKey).value ?? []
+    }
+
+    @discardableResult
+    func saveHelpArticles(_ articles: [HelpArticle]) -> Bool {
+        save(articles, forKey: helpArticlesKey)
     }
 
     func loadDraft() -> CheckInDraft? {

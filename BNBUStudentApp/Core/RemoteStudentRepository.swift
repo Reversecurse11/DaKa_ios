@@ -454,6 +454,31 @@ struct ProofUploadPayload: Decodable {
     }
 }
 
+/// `GET health`. Every mode field is optional while the backend rollout is incomplete.
+struct SystemHealthPayload: Decodable {
+    let systemMode: String?
+    let maintenanceMessage: String?
+    let estimatedRecoveryTime: String?
+    let plannedMaintenanceAt: String?
+}
+
+/// One entry of `GET common/help-articles`.
+struct HelpArticlePayload: Decodable {
+    let id: String?
+    let title: String?
+    let category: String?
+    let content: String?
+    let sortOrder: Int?
+    let updatedAt: String?
+}
+
+/// `GET config/minimum-app-version`.
+struct MinimumAppVersionPayload: Decodable {
+    let minimumVersion: String?
+    let downloadUrl: String?
+    let updateMessage: String?
+}
+
 struct RecordIdentifierPayload: Decodable {
     let id: String?
     let recordId: String?
@@ -1033,6 +1058,56 @@ actor RemoteStudentRepository {
                 )
             ],
             hourRule: summary?.hourRule ?? .standard
+        )
+    }
+
+    /// Availability policy from `GET health`. The mode fields are optional until
+    /// the maintenance-control rollout finishes, so a missing or unreadable
+    /// payload keeps the app in `normal`.
+    func loadSystemMode() async -> SystemModeStatus {
+        guard let data = try? await get("health") else { return SystemModeStatus() }
+        guard let payload = try? decodeFlexible(SystemHealthPayload.self, from: data) else {
+            return SystemModeStatus()
+        }
+        return SystemModeStatus(
+            mode: SystemMode.parse(payload.systemMode),
+            message: payload.maintenanceMessage ?? "",
+            estimatedRecoveryTime: payload.estimatedRecoveryTime,
+            plannedMaintenanceAt: payload.plannedMaintenanceAt
+        )
+    }
+
+    /// A transient failure on the public configuration endpoint must never lock
+    /// a student out, so any error resolves to "no requirement".
+    func loadUpdateRequirement() async -> AppUpdateRequirement? {
+        guard let data = try? await get("config/minimum-app-version"),
+              let payload = try? decodeFlexible(MinimumAppVersionPayload.self, from: data) else {
+            return nil
+        }
+        return BNBUAppVersion.requirement(
+            minimumVersion: payload.minimumVersion ?? "",
+            downloadURL: payload.downloadUrl ?? "",
+            updateMessage: payload.updateMessage ?? ""
+        )
+    }
+
+    /// Help articles an administrator published, in `GET common/help-articles`.
+    /// Failures propagate so the help centre can fall back to its cached copy or
+    /// offer a retry.
+    func loadHelpArticles() async throws -> [HelpArticle] {
+        let data = try await get("common/help-articles")
+        let payload = try decodeFlexible([HelpArticlePayload].self, from: data)
+        return HelpArticle.displayOrdered(
+            payload.map { entry in
+                HelpArticle(
+                    id: entry.id ?? "",
+                    title: entry.title ?? "",
+                    category: entry.category ?? "",
+                    content: entry.content ?? "",
+                    sortOrder: entry.sortOrder ?? 0,
+                    updatedAt: entry.updatedAt
+                )
+            }
         )
     }
 

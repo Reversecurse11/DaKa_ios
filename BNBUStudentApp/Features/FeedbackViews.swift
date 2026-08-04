@@ -101,6 +101,11 @@ private struct FeedbackForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+            if !appState.isWriteAllowed {
+                ValidationPanel(message: BNBUL10n.text("系统当前为只读模式，暂时无法提交反馈。"))
+                    .accessibilityIdentifier("feedback.readOnlyNotice")
+            }
+
             SwissPanel {
                 VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
                     panelHeader(title: "问题内容", helper: "请选择问题类型并描述你遇到的情况。")
@@ -138,6 +143,8 @@ private struct FeedbackForm: View {
             ) {
                 submit()
             }
+            .disabled(!appState.isWriteAllowed)
+            .opacity(appState.isWriteAllowed ? 1 : 0.5)
         }
         .onAppear {
             // The bound address is the one support will reply to, so it is the

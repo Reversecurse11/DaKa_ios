@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 enum BNBUOnboarding {
-    static let currentVersion = 3
+    static let currentVersion = 4
     static let defaultsKey = "bnbu.onboarding.completed-version"
 
     static func completedVersion(
@@ -31,18 +31,27 @@ struct OnboardingView: View {
 
     private let pages = [
         OnboardingPage(
-            title: "打卡流程",
-            detail: "选择打卡类型，开始并结束运动，使用现场拍摄的照片或视频作为凭证后提交。",
+            eyebrow: "从首页或“运动”开始",
+            title: "开始一次运动",
+            detail: "选择课程和运动项目后开始计时，完成本次运动任务。",
             preview: .checkIn
         ),
         OnboardingPage(
-            title: "成绩查看",
-            detail: "查看当前服务返回的成绩构成与缺失项；公示状态、历史成绩版本和“未录入”区分仍待服务端接入。",
-            preview: .grades
+            eyebrow: "计时、暂停后继续",
+            title: "记录运动过程",
+            detail: "运动中可暂停后继续，并使用照片或视频记录现场过程。",
+            preview: .exerciseRecord
         ),
         OnboardingPage(
-            title: "申请提交",
-            detail: "在申请中心提交体测免测并查看进度；校队、社团的新认证申请仍待服务端接口接入。",
+            eyebrow: "完成后确认并提交",
+            title: "提交并查看记录",
+            detail: "补充说明、确认凭证后提交打卡；在“记录”中查看历史运动、时长和媒体。",
+            preview: .submittedRecords
+        ),
+        OnboardingPage(
+            eyebrow: "个人中心 · 服务",
+            title: "需要时提交申请",
+            detail: "可提交免测、校队或社团认证申请，并查看状态、补充材料或重新提交。",
             preview: .applications
         )
     ]
@@ -50,83 +59,154 @@ struct OnboardingView: View {
     var body: some View {
         ZStack {
             BNBUPageBackground()
-            VStack(spacing: 18) {
-                HStack {
-                    BrandMark(compact: true)
-                    Spacer()
-                    if page < pages.count - 1 {
-                        Button("跳过") { onComplete() }
-                            .font(BNBUFont.titleSmall)
-                            .accessibilityIdentifier("onboarding.skip")
-                    }
-                }
-                .padding(.horizontal, BNBUSpacing.screen)
-                .padding(.top, 12)
+            VStack(spacing: 0) {
+                header
 
                 TabView(selection: $page) {
                     ForEach(Array(pages.enumerated()), id: \.offset) { index, item in
-                        VStack(spacing: 20) {
-                            Spacer(minLength: 4)
+                        VStack(spacing: 0) {
+                            Spacer(minLength: BNBUSpacing.space8)
                             OnboardingScreenshotPreview(
                                 kind: item.preview,
                                 isActive: page == index
                             )
-                                .frame(maxWidth: 360)
-                                .padding(.horizontal, 24)
-                            VStack(spacing: 12) {
+                            .frame(maxWidth: 360)
+                            .padding(.horizontal, BNBUSpacing.space20)
+                            .scaleEffect(page == index ? 1 : 0.97)
+                            .opacity(page == index ? 1 : 0.45)
+
+                            Spacer(minLength: BNBUSpacing.space24)
+
+                            VStack(spacing: 0) {
+                                Text(LocalizedStringKey(item.eyebrow))
+                                    .font(BNBUFont.labelMedium)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(BNBUTheme.primary)
+                                    .multilineTextAlignment(.center)
+                                Spacer().frame(height: BNBUSpacing.space8)
                                 Text(LocalizedStringKey(item.title))
                                     .font(BNBUFont.headlineLarge)
+                                    .foregroundStyle(BNBUTheme.onSurface)
                                     .multilineTextAlignment(.center)
+                                Spacer().frame(height: BNBUSpacing.space12)
                                 Text(LocalizedStringKey(item.detail))
                                     .font(BNBUFont.bodyLarge)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     .multilineTextAlignment(.center)
                                     .lineSpacing(4)
+                                    .frame(maxWidth: 340)
                             }
-                            .padding(.horizontal, 28)
-                            Spacer()
+                            .padding(.horizontal, BNBUSpacing.space20)
+                            Spacer(minLength: BNBUSpacing.space16)
                         }
                         .tag(index)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .always))
+                .tabViewStyle(.page(indexDisplayMode: .never))
 
-                Button {
-                    if page == pages.count - 1 {
-                        onComplete()
-                    } else {
-                        withAnimation { page += 1 }
-                    }
-                } label: {
-                    Text(
-                        page == pages.count - 1
-                            ? LocalizedStringKey("开始使用")
-                            : LocalizedStringKey("下一步")
-                    )
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.horizontal, BNBUSpacing.screen)
-                .padding(.bottom, 18)
-                .accessibilityIdentifier(page == pages.count - 1 ? "onboarding.finish" : "onboarding.next")
+                actions
             }
         }
         .interactiveDismissDisabled()
-        // The onboarding walkthrough intentionally stays in Simplified Chinese,
-        // independent of the app's currently selected language.
+        // The walkthrough intentionally stays in Simplified Chinese, independent
+        // of the app's currently selected language, matching the Android guide.
         .environment(\.locale, Locale(identifier: "zh-Hans"))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.onboarding")
+    }
+
+    /// Mirrors the Android guide header: a centred title, a back slot that only
+    /// appears past the first page, and a skip that is always available.
+    private var header: some View {
+        HStack(spacing: 0) {
+            Group {
+                if page > 0 {
+                    Button {
+                        withAnimation { page -= 1 }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(BNBUTheme.onSurface)
+                            .frame(width: 96, height: BNBUSpacing.touchTarget, alignment: .leading)
+                    }
+                    .accessibilityLabel(Text("上一步"))
+                    .accessibilityIdentifier("onboarding.back")
+                } else {
+                    Color.clear.frame(width: 96, height: BNBUSpacing.touchTarget)
+                }
+            }
+
+            Text("运动指引")
+                .font(BNBUFont.titleMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+                .frame(maxWidth: .infinity)
+
+            Button("跳过") { onComplete() }
+                .font(BNBUFont.labelLarge)
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 96, height: BNBUSpacing.touchTarget, alignment: .trailing)
+                .accessibilityLabel(Text("跳过运动指引并进入首页"))
+                .accessibilityIdentifier("onboarding.skip")
+        }
+        .padding(.horizontal, BNBUSpacing.screen)
+        .frame(height: 64)
+    }
+
+    private var actions: some View {
+        VStack(spacing: BNBUSpacing.space16) {
+            stepIndicator
+
+            PrimaryActionButton(
+                title: isLastPage ? "进入首页" : "继续",
+                systemImage: isLastPage ? "house.fill" : "arrow.right",
+                accessibilityIdentifier: isLastPage ? "onboarding.finish" : "onboarding.next"
+            ) {
+                if isLastPage {
+                    onComplete()
+                } else {
+                    withAnimation { page += 1 }
+                }
+            }
+        }
+        .padding(.horizontal, BNBUSpacing.screen)
+        .padding(.top, BNBUSpacing.space12)
+        .padding(.bottom, BNBUSpacing.space16)
+    }
+
+    private var stepIndicator: some View {
+        HStack(spacing: BNBUSpacing.space12) {
+            Text(verbatim: "\(page + 1) / \(pages.count)")
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .monospacedDigit()
+
+            HStack(spacing: 6) {
+                ForEach(0..<pages.count, id: \.self) { index in
+                    Capsule(style: .continuous)
+                        .fill(index == page ? BNBUTheme.primary : BNBUTheme.outlineVariant)
+                        .frame(width: index == page ? 20 : 6, height: 6)
+                }
+            }
+            .animation(.easeInOut(duration: BNBUMotion.standard), value: page)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "当前第 \(page + 1) 步，共 \(pages.count) 步"))
+    }
+
+    private var isLastPage: Bool {
+        page == pages.count - 1
     }
 }
 
 struct HelpCenterView: View {
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @Environment(\.openURL) private var openURL
 
     @State private var searchText = ""
     @State private var showOnboarding = false
+    @State private var expandedArticleID: String?
 
     private let onReplayOnboarding: (() -> Void)?
 
@@ -209,8 +289,11 @@ struct HelpCenterView: View {
         )
     ]
 
+    private var query: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var filteredEntries: [HelpEntry] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return entries }
 
         return entries.filter { entry in
@@ -221,44 +304,35 @@ struct HelpCenterView: View {
         }
     }
 
+    private var filteredArticles: [HelpArticle] {
+        guard !query.isEmpty else { return appState.helpArticles }
+        return appState.helpArticles.filter { $0.matches(query) }
+    }
+
+    /// Categories in name order, matching Android's sorted grouping. A blank
+    /// category is published as "其他" rather than an unlabelled block.
+    private var articleCategories: [(name: String, articles: [HelpArticle])] {
+        Dictionary(grouping: filteredArticles) { article in
+            article.category.isEmpty ? BNBUL10n.text("其他") : article.category
+        }
+        .map { (name: $0.key, articles: $0.value) }
+        .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 BNBUPageBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        SectionTitle(eyebrow: "OFFLINE HELP", title: "帮助中心")
-                        Text("以下内容保存在 App 内，无网络时也可以查看。")
+                        SectionTitle(eyebrow: "HELP", title: "帮助中心")
+                        Text("帮助内容由管理员发布，会随服务更新；页面底部的内置帮助保存在 App 内，无网络时也可以查看。")
                             .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
 
-                        if filteredEntries.isEmpty {
-                            SwissPanel {
-                                ContentUnavailableView(
-                                    "未找到相关帮助",
-                                    systemImage: "magnifyingglass",
-                                    description: Text("请尝试搜索“打卡”“密码”“成绩”或“申请”。")
-                                )
-                                .frame(maxWidth: .infinity)
-                            }
-                        } else {
-                            ForEach(filteredEntries) { entry in
-                                SwissPanel {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(LocalizedStringKey(entry.category))
-                                            .font(BNBUFont.labelMedium)
-                                            .foregroundStyle(BNBUTheme.primary)
-                                            .textCase(.uppercase)
-                                        Text(LocalizedStringKey(entry.question))
-                                            .font(BNBUFont.titleMedium)
-                                        Text(LocalizedStringKey(entry.answer))
-                                            .font(BNBUFont.bodyMedium)
-                                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                                            .lineSpacing(3)
-                                    }
-                                }
-                            }
-                        }
+                        publishedArticlesSection
+
+                        bundledEntriesSection
 
                         SecondaryActionButton(title: "重新查看新手引导", systemImage: "rectangle.on.rectangle") {
                             replayOnboarding()
@@ -274,6 +348,7 @@ struct HelpCenterView: View {
                     .padding(BNBUSpacing.screen)
                 }
             }
+            .task { await appState.refreshHelpArticles() }
             .navigationTitle("帮助中心")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(
@@ -295,6 +370,113 @@ struct HelpCenterView: View {
         .accessibilityIdentifier("screen.help")
     }
 
+    /// Server-published content, with the load states Android shows: a spinner
+    /// while fetching, a retry on failure, and a notice when the shown copy is
+    /// the last cached one.
+    @ViewBuilder
+    private var publishedArticlesSection: some View {
+        if appState.isShowingCachedHelpArticles {
+            Text("当前正在显示最近缓存的帮助内容。")
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .accessibilityIdentifier("help.cached-notice")
+        }
+
+        if appState.isLoadingHelpArticles {
+            SwissPanel {
+                HStack(spacing: BNBUSpacing.space12) {
+                    ProgressView()
+                    Text("正在加载帮助内容…")
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, BNBUSpacing.space12)
+            }
+            .accessibilityIdentifier("help.loading")
+        } else if let failure = appState.helpArticlesError {
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Text("帮助内容加载失败")
+                        .font(BNBUFont.titleMedium)
+                    Text(failure)
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    SecondaryActionButton(title: "点击重试", systemImage: "arrow.clockwise") {
+                        Task { await appState.refreshHelpArticles() }
+                    }
+                    .accessibilityIdentifier("help.retry")
+                }
+            }
+            // The panel carries the state's own identifier, so its children must
+            // stay reachable for the retry to be tappable in tests.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("help.load-failed")
+        } else if filteredArticles.isEmpty {
+            SwissPanel {
+                ContentUnavailableView(
+                    appState.helpArticles.isEmpty ? "暂无帮助内容" : "未找到相关帮助",
+                    systemImage: appState.helpArticles.isEmpty ? "text.book.closed" : "magnifyingglass",
+                    description: Text(
+                        LocalizedStringKey(
+                            appState.helpArticles.isEmpty
+                                ? "管理员尚未发布帮助内容，可先查看下方内置帮助。"
+                                : "请尝试其他关键词，或查看下方内置帮助。"
+                        )
+                    )
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .accessibilityIdentifier("help.articles-empty")
+        } else {
+            ForEach(articleCategories, id: \.name) { group in
+                Text(group.name)
+                    .font(BNBUFont.titleSmall)
+                    .foregroundStyle(BNBUTheme.primary)
+                    .padding(.top, BNBUSpacing.space4)
+
+                ForEach(group.articles) { article in
+                    HelpDisclosureCard(
+                        title: article.title,
+                        answer: article.content,
+                        isExpanded: expandedArticleID == article.id
+                    ) {
+                        withAnimation(.easeInOut(duration: BNBUMotion.standard)) {
+                            expandedArticleID = expandedArticleID == article.id ? nil : article.id
+                        }
+                    }
+                    .accessibilityIdentifier("help.article.\(article.id)")
+                }
+            }
+        }
+    }
+
+    /// Basics that ship with the app so the page still answers the common
+    /// questions when the service cannot be reached at all.
+    @ViewBuilder
+    private var bundledEntriesSection: some View {
+        if !filteredEntries.isEmpty {
+            Text("内置离线帮助")
+                .font(BNBUFont.titleSmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .padding(.top, BNBUSpacing.space8)
+                .accessibilityIdentifier("help.bundled-title")
+
+            ForEach(filteredEntries) { entry in
+                HelpDisclosureCard(
+                    title: entry.question,
+                    answer: entry.answer,
+                    caption: entry.category,
+                    isExpanded: expandedArticleID == entry.id
+                ) {
+                    withAnimation(.easeInOut(duration: BNBUMotion.standard)) {
+                        expandedArticleID = expandedArticleID == entry.id ? nil : entry.id
+                    }
+                }
+            }
+        }
+    }
+
     private func localized(_ value: String) -> String {
         String(localized: String.LocalizationValue(value), locale: locale)
     }
@@ -313,9 +495,55 @@ struct HelpCenterView: View {
 }
 
 private struct OnboardingPage {
+    let eyebrow: String
     let title: String
     let detail: String
     let preview: OnboardingPreviewKind
+}
+
+/// One collapsed help answer. Both published and bundled content use it so a
+/// student cannot tell which source a card came from by its shape.
+private struct HelpDisclosureCard: View {
+    let title: String
+    let answer: String
+    var caption: String?
+    let isExpanded: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                if let caption, !caption.isEmpty {
+                    Text(LocalizedStringKey(caption))
+                        .font(BNBUFont.labelMedium)
+                        .foregroundStyle(BNBUTheme.primary)
+                        .textCase(.uppercase)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: BNBUSpacing.space12) {
+                    Text(LocalizedStringKey(title))
+                        .font(BNBUFont.titleMedium)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+
+                if isExpanded {
+                    Text(LocalizedStringKey(answer))
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(Text(isExpanded ? "收起答案" : "展开答案"))
+    }
 }
 
 private struct HelpEntry: Identifiable {
@@ -332,13 +560,19 @@ private struct HelpEntry: Identifiable {
 
 private enum OnboardingPreviewKind {
     case checkIn
+    case exerciseRecord
+    case submittedRecords
     case grades
     case applications
 
     var accessibilitySummary: String {
         switch self {
         case .checkIn:
-            return "运动打卡动态演示：展示定位、计时、暂停和继续运动。"
+            return "开始一次运动动态演示：展示选择课程、运动项目和开始计时。"
+        case .exerciseRecord:
+            return "记录运动过程动态演示：展示计时、暂停继续和现场拍摄。"
+        case .submittedRecords:
+            return "提交并查看记录动态演示：展示补充说明、确认凭证和历史记录。"
         case .grades:
             return "成绩查看动态演示：展示成绩同步和各项成绩逐步更新。"
         case .applications:
@@ -384,7 +618,7 @@ private struct OnboardingScreenshotPreview: View {
                 .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(height: 252)
+        .frame(height: 272)
         .background(BNBUTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
@@ -413,6 +647,10 @@ private struct OnboardingScreenshotPreview: View {
         switch kind {
         case .checkIn:
             checkInPreview
+        case .exerciseRecord:
+            exerciseRecordPreview
+        case .submittedRecords:
+            submittedRecordsPreview
         case .grades:
             gradesPreview
         case .applications:
@@ -508,6 +746,97 @@ private struct OnboardingScreenshotPreview: View {
             }
             .font(BNBUFont.labelMedium)
             .foregroundStyle(BNBUTheme.primary)
+        }
+    }
+
+    private var exerciseRecordPreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PreviewHeader(title: "运动中", symbol: "figure.run")
+
+            HStack(spacing: 14) {
+                Text(verbatim: recordElapsedTime)
+                    .font(BNBUFont.headlineSmall.monospacedDigit())
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .contentTransition(.numericText())
+                Spacer(minLength: 0)
+                ZStack {
+                    Circle().fill(BNBUTheme.primary)
+                    Image(systemName: animationStep == 2 ? "play.fill" : "pause.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(BNBUTheme.onPrimary)
+                }
+                .frame(width: 40, height: 40)
+            }
+
+            Capsule(style: .continuous)
+                .fill(BNBUTheme.surfaceContainerHighest)
+                .frame(height: 6)
+                .overlay(alignment: .leading) {
+                    GeometryReader { proxy in
+                        Capsule(style: .continuous)
+                            .fill(BNBUTheme.primary)
+                            .frame(width: proxy.size.width * recordProgress)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.45), value: animationStep)
+
+            HStack(spacing: 8) {
+                PreviewChoice(title: "拍照", selected: animationStep == 1)
+                PreviewChoice(title: "录像", selected: animationStep == 3)
+            }
+
+            Spacer(minLength: 0)
+            PreviewStatusPill(
+                title: animationStep == 2 ? "暂停后可继续本次运动" : "正在记录运动时长",
+                color: animationStep == 2 ? BNBUTheme.secondary : BNBUTheme.tertiary
+            )
+        }
+    }
+
+    private var submittedRecordsPreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PreviewHeader(title: "完成记录", symbol: "clock.arrow.circlepath")
+
+            ForEach(Array(recordChecklist.enumerated()), id: \.offset) { index, title in
+                HStack(spacing: 10) {
+                    Text(LocalizedStringKey(title))
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                    Spacer(minLength: 0)
+                    Image(systemName: index <= animationStep ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(
+                            index <= animationStep ? BNBUTheme.primary : BNBUTheme.outlineVariant
+                        )
+                }
+                .padding(.vertical, 5)
+                .animation(.easeInOut(duration: 0.35), value: animationStep)
+            }
+
+            Spacer(minLength: 0)
+            PreviewStatusPill(title: "在“记录”中查看历史", color: BNBUTheme.tertiary)
+        }
+    }
+
+    private var recordChecklist: [String] {
+        ["补充说明", "确认现场凭证", "提交本次打卡"]
+    }
+
+    private var recordElapsedTime: String {
+        switch animationStep {
+        case 0: return "00:12:05"
+        case 1: return "00:24:31"
+        case 2: return "00:32:18"
+        default: return "00:41:52"
+        }
+    }
+
+    private var recordProgress: Double {
+        switch animationStep {
+        case 0: return 0.24
+        case 1: return 0.45
+        case 2: return 0.62
+        default: return 0.83
         }
     }
 

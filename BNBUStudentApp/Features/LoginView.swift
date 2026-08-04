@@ -972,51 +972,134 @@ private struct RecoveryField: View {
     }
 }
 
+/// Renders the complete policy bundled with the app, mirroring Android's
+/// `PrivacyPolicyScreen`. Keeping the legal copy in a resource file lets
+/// compliance review it without reading UI code.
 struct PrivacyPolicyView: View {
+    @Environment(\.locale) private var locale
+
     var body: some View {
         ZStack {
             BNBUPageBackground()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: "PRIVACY", title: "隐私政策")
-                    privacySection("一、信息收集", paragraphs: [
-                        "本应用仅收集校园体育服务所需的账户、课程、学时、成绩和申请信息。",
-                        "提交打卡或免测申请时，只有经您主动选择或拍摄的图片、视频及说明会被上传。"
-                    ])
-                    privacySection("二、信息使用", paragraphs: [
-                        "相关信息仅用于体育学时计算、成绩展示、打卡记录、免测申请和校园通知，不用于商业广告。"
-                    ])
-                    privacySection("三、本地存储与安全", paragraphs: [
-                        "密码仅用于登录请求，不写入本地持久化状态。短期登录令牌保存在本机 Keychain；工作台缓存和未提交草稿使用完整文件保护并排除云备份。退出登录会清理当前账号凭据、缓存和草稿。",
-                        "从相册选择凭证使用系统照片选择器，App 只接收您明确选中的项目；直接拍摄仅在您操作时申请摄像头及录音权限。",
-                        "正式环境应使用受信任的 HTTPS 服务；调试环境的 HTTP 地址仅用于联调，不应承载真实敏感数据。"
-                    ])
-                    privacySection("四、用户权利", paragraphs: [
-                        "您可以查看自己的学时、成绩和打卡记录；如需更正或删除服务器数据，请联系体育老师或系统管理员。"
-                    ])
-                    privacySection("五、政策更新", paragraphs: [
-                        "重大变更将通过 App 内通知或学校公告告知。最新修订日期：2026 年 7 月 23 日。"
-                    ])
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    let document = BNBUPrivacyPolicyDocument.load(locale: locale)
+                    Text(verbatim: "PRIVACY")
+                        .font(BNBUFont.labelMedium)
+                        .foregroundStyle(BNBUTheme.primary)
+                    Text(verbatim: document.title)
+                        .font(BNBUFont.headlineSmall)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                        .padding(.bottom, 2)
+                    ForEach(document.sections) { section in
+                        privacySection(section)
+                    }
                 }
                 .padding(BNBUSpacing.screen)
             }
         }
         .navigationTitle("隐私政策")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("screen.privacyPolicy")
     }
 
-    private func privacySection(_ title: String, paragraphs: [String]) -> some View {
+    private func privacySection(_ section: BNBUPrivacyPolicyDocument.Section) -> some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 10) {
-                Text(LocalizedStringKey(title))
+                Text(verbatim: section.title)
                     .font(BNBUFont.titleMedium)
-                ForEach(paragraphs, id: \.self) { paragraph in
-                    Text(LocalizedStringKey(paragraph))
-                        .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                ForEach(Array(section.paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                    Text(verbatim: paragraph)
+                        .font(section.isSubheading(paragraph) ? BNBUFont.titleSmall : BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+    }
+}
+
+/// Parses the bundled policy markdown into panels: `#` is the document title,
+/// `##` starts a panel, `###` becomes a subheading inside the current panel.
+enum BNBUPrivacyPolicyDocument {
+    struct Section: Identifiable {
+        let id: Int
+        let title: String
+        let paragraphs: [String]
+
+        func isSubheading(_ paragraph: String) -> Bool {
+            paragraph.range(of: "^\\d{1,2}\\.\\d{1,2} .+", options: .regularExpression) != nil
+        }
+    }
+
+    struct Document {
+        let title: String
+        let sections: [Section]
+    }
+
+    static func load(locale: Locale) -> Document {
+        let isEnglish = locale.identifier.hasPrefix("en")
+        let name = isEnglish ? "privacy_policy_en" : "privacy_policy_zh_cn"
+        let fallbackTitle = isEnglish ? "BNBU Sports Privacy Policy" : "BNBU Sports 用户隐私政策"
+        let preambleTitle = isEnglish ? "Version and scope" : "版本与适用说明"
+        guard let url = Bundle.main.url(forResource: name, withExtension: "md"),
+              let markdown = try? String(contentsOf: url, encoding: .utf8) else {
+            return Document(
+                title: fallbackTitle,
+                sections: [
+                    Section(
+                        id: 0,
+                        title: fallbackTitle,
+                        paragraphs: [
+                            isEnglish
+                                ? "The bundled policy text could not be read. Contact the sports teaching administration for a copy."
+                                : "未能读取随应用打包的隐私政策全文，请联系体育教学管理部门获取副本。"
+                        ]
+                    )
+                ]
+            )
+        }
+        return parse(markdown, fallbackTitle: fallbackTitle, preambleTitle: preambleTitle)
+    }
+
+    static func parse(
+        _ markdown: String,
+        fallbackTitle: String,
+        preambleTitle: String = "版本与适用说明"
+    ) -> Document {
+        var documentTitle = fallbackTitle
+        var sections: [Section] = []
+        var currentTitle = fallbackTitle
+        var paragraphs: [String] = []
+        var hasSeenSection = false
+
+        func commit() {
+            guard !paragraphs.isEmpty else { return }
+            sections.append(Section(id: sections.count, title: currentTitle, paragraphs: paragraphs))
+            paragraphs = []
+        }
+
+        for rawLine in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if line.hasPrefix("# "), !hasSeenSection, paragraphs.isEmpty {
+                documentTitle = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                // The version and scope lines ahead of the first article are their
+                // own panel, as on Android.
+                currentTitle = preambleTitle
+            } else if line.hasPrefix("## ") {
+                commit()
+                hasSeenSection = true
+                currentTitle = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("### ") {
+                paragraphs.append(String(line.dropFirst(4)).trimmingCharacters(in: .whitespaces))
+            } else {
+                paragraphs.append(line)
+            }
+        }
+        commit()
+        return Document(title: documentTitle, sections: sections)
     }
 }

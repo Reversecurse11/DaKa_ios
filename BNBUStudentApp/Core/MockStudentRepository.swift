@@ -10,6 +10,16 @@ protocol StudentRepository {
     func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool
     /// Problem reports the student has already filed.
     func loadFeedbackTickets() -> [FeedbackTicket]
+    /// Availability policy the server publishes on its health endpoint. A missing
+    /// field keeps the app in `normal` during the staged backend rollout.
+    func loadSystemMode() -> SystemModeStatus
+    /// Minimum supported build. Nil leaves the app usable, so a configuration or
+    /// network failure never locks a student out.
+    func loadUpdateRequirement() -> AppUpdateRequirement?
+    /// Help articles an administrator published. An empty result means nothing
+    /// has been published yet; a thrown error is the load failure the help
+    /// centre offers to retry.
+    func loadHelpArticles() throws -> [HelpArticle]
 }
 
 struct MockStudentRepository: StudentRepository {
@@ -279,6 +289,104 @@ struct MockStudentRepository: StudentRepository {
 
     /// One resolved and one in-flight ticket, so the list, the status badges and
     /// the reply row all have something to show before the endpoint ships.
+    /// Demo and screenshot runs need to reach the maintenance surfaces without a
+    /// server, so the availability policy is selected by launch argument.
+    func loadSystemMode() -> SystemModeStatus {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-testing-maintenance") {
+            return SystemModeStatus(
+                mode: .maintenance,
+                message: "",
+                estimatedRecoveryTime: "2026-08-04 22:00"
+            )
+        }
+        if arguments.contains("-ui-testing-read-only") {
+            return SystemModeStatus(mode: .readOnly)
+        }
+        if arguments.contains("-ui-testing-planned-maintenance") {
+            return SystemModeStatus(
+                mode: .normal,
+                message: "",
+                plannedMaintenanceAt: "2026-08-06 23:00"
+            )
+        }
+        return SystemModeStatus()
+    }
+
+    func loadUpdateRequirement() -> AppUpdateRequirement? {
+        guard ProcessInfo.processInfo.arguments.contains("-ui-testing-update-required") else {
+            return nil
+        }
+        return AppUpdateRequirement(
+            minimumVersion: "99.0",
+            downloadURL: "https://example.invalid/bnbu-sports",
+            updateMessage: "本次更新修复了打卡凭证上传失败的问题。"
+        )
+    }
+
+    /// Stands in for the administrator-managed article list. Screenshot runs pick
+    /// the failure and empty states, which demo data cannot produce on its own.
+    func loadHelpArticles() throws -> [HelpArticle] {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-testing-help-error") {
+            throw RepositoryError.networkError("演示：帮助内容加载失败")
+        }
+        if arguments.contains("-ui-testing-help-empty") {
+            return []
+        }
+
+        return [
+            HelpArticle(
+                id: "help-checkin-flow",
+                title: "如何完成一次运动打卡？",
+                category: "运动打卡",
+                content: "在首页或“运动”页选择打卡类型和运动项目后开始计时。运动中可暂停后继续；结束时确认时长，选择至少 1 张现场照片或 1 个现场视频作为凭证，再提交。",
+                sortOrder: 10,
+                updatedAt: "2026-07-28T09:12:00Z"
+            ),
+            HelpArticle(
+                id: "help-checkin-evidence",
+                title: "照片和视频凭证有什么限制？",
+                category: "运动打卡",
+                content: "凭证必须在运动过程中或提交环节用相机现场拍摄，不能从相册选择。每次最多 6 张照片和 1 个视频，且至少选择其中 1 项。",
+                sortOrder: 20,
+                updatedAt: "2026-07-28T09:12:00Z"
+            ),
+            HelpArticle(
+                id: "help-location-denied",
+                title: "为什么获取不到定位？",
+                category: "定位与权限",
+                content: "请在 iPhone“设置 → 隐私与安全性 → 定位服务”中允许本 App 使用定位。定位失败不会阻止计时和提交，记录会显示为“未获取位置”。",
+                sortOrder: 30,
+                updatedAt: "2026-07-20T02:00:00Z"
+            ),
+            HelpArticle(
+                id: "help-exemption-apply",
+                title: "如何提交体测免测申请？",
+                category: "申请与审核",
+                content: "从个人页进入申请中心，选择免测类型，填写申请信息并上传证明材料后提交。提交后可查看审核状态，被退回时可补充材料重新提交。",
+                sortOrder: 40,
+                updatedAt: "2026-07-15T06:30:00Z"
+            ),
+            HelpArticle(
+                id: "help-grade-publish",
+                title: "成绩什么时候公示？",
+                category: "课程与成绩",
+                content: "成绩由任课教师录入并公示。公示前显示为“未录入”，公示后可在成绩页查看各项得分与总评。对成绩有疑问请先联系任课教师。",
+                sortOrder: 50,
+                updatedAt: "2026-07-15T06:30:00Z"
+            ),
+            HelpArticle(
+                id: "help-maintenance",
+                title: "维护期间可以做什么？",
+                category: "系统与账号",
+                content: "维护公告会说明影响范围和预计恢复时间。服务暂时不可用时可继续查看已缓存内容，提交类操作请在恢复后重试；未提交的运动会保留在本机草稿中。",
+                sortOrder: 60,
+                updatedAt: "2026-07-01T11:00:00Z"
+            )
+        ]
+    }
+
     func loadFeedbackTickets() -> [FeedbackTicket] {
         [
             FeedbackTicket(
@@ -331,6 +439,12 @@ struct EmptyStudentRepository: StudentRepository {
     }
 
     func loadFeedbackTickets() -> [FeedbackTicket] { [] }
+
+    func loadSystemMode() -> SystemModeStatus { SystemModeStatus() }
+
+    func loadUpdateRequirement() -> AppUpdateRequirement? { nil }
+
+    func loadHelpArticles() throws -> [HelpArticle] { [] }
 
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(

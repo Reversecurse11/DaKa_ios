@@ -429,12 +429,3 @@ private struct ChangelogItem: View {
     }
 }
 
-enum BNBUAppVersion {
-    static var displayName: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let build = info?["CFBundleVersion"] as? String
-        guard let build, !build.isEmpty, build != short else { return short }
-        return "\(short) (\(build))"
-    }
-}

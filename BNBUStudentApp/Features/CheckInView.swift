@@ -406,7 +406,9 @@ struct CheckInView: View {
             ) {
                 startExercise()
             }
-            .accessibilityHint(startValidationMessage.map { Text($0) } ?? Text(""))
+            // The message is already resolved for the app language, so it is read
+            // verbatim rather than looked up again as a key.
+            .accessibilityHint(Text(verbatim: startValidationMessage ?? ""))
         }
     }
 
@@ -886,7 +888,8 @@ struct CheckInView: View {
     }
 
     private var canSubmit: Bool {
-        guard let session = appState.exerciseSession,
+        guard appState.isWriteAllowed,
+              let session = appState.exerciseSession,
               session.status == .completed,
               submissionContext != nil else { return false }
         let creditedHours = session.creditedHours()
@@ -1084,6 +1087,11 @@ struct CheckInView: View {
     }
 
     private var startValidationMessage: String? {
+        if !appState.isWriteAllowed {
+            return appState.systemMode == .maintenance
+                ? BNBUL10n.text("系统当前处于维护模式，暂不能提交或修改内容。")
+                : BNBUL10n.text("系统当前处于只读模式，暂不能提交或修改内容。")
+        }
         if appState.hasSubmittedCheckInToday() {
             return "今日已打卡，每天只能开始一次计时。"
         }
