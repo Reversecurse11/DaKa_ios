@@ -5,6 +5,7 @@ struct ProfileView: View {
     @EnvironmentObject private var languageSettings: BNBULanguageSettings
     @AppStorage(BNBUAppearanceMode.defaultsKey) private var appearanceModeRaw = BNBUAppearanceMode.light.rawValue
     @State private var showExemptionCenter = false
+
     @State private var showEnduranceScoring = false
     @State private var showPendingDiscardConfirmation = false
     @State private var pendingScopeToDiscard: String?
@@ -41,6 +42,10 @@ struct ProfileView: View {
             }
         }
         .accessibilityIdentifier("screen.profile")
+        .onAppear(perform: consumeExemptionCentreRequest)
+        .onChange(of: appState.opensExemptionCentre) { _, _ in
+            consumeExemptionCentreRequest()
+        }
         .sheet(isPresented: $showExemptionCenter) {
             ExemptionCenterSheet()
                 .environmentObject(appState)
@@ -66,6 +71,14 @@ struct ProfileView: View {
         } message: {
             Text("放弃后将删除本机保存的幂等键和已上传凭证引用；如仍需提交，请从对应页面重新开始。")
         }
+    }
+
+    /// A review notice asked for the exemption centre. Claiming the request on
+    /// appear covers the tab having been off screen when it was made.
+    private func consumeExemptionCentreRequest() {
+        guard appState.opensExemptionCentre else { return }
+        appState.opensExemptionCentre = false
+        showExemptionCenter = true
     }
 
     /// Android's `ProfileHeader`: a page title with a gear button, then a
@@ -435,6 +448,7 @@ private struct ExemptionCenterSheet: View {
             }
             .navigationTitle(exemptionCenterText("免测与免打卡", "Exemptions"))
             .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("screen.exemptionCenter")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
@@ -578,15 +592,16 @@ private struct ExemptionCenterSheet: View {
                     .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.onSurface)
                 Text(verbatim: exemptionCenterText(
-                    "申请项目会依据学生资料自动匹配为女生 800m 或男生 1000m。证明材料必须使用本机相机现场拍摄。",
-                    "The item is matched automatically to 800 m for female students or 1000 m for male students. Proof must be photographed live with this device."
+                    "可申请耐力跑免测，或校队、社团免打卡。耐力跑项目按学生资料匹配为女生 800m 或男生 1000m；校队、社团须填写组织名称。证明材料必须使用本机相机现场拍摄。",
+                    "You can apply for an endurance-run exemption, or a team or club check-in exemption. The run is matched to 800 m for female students or 1000 m for male students; a team or club needs its name. Proof must be photographed live with this device."
                 ))
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
                 PrimaryActionButton(
                     title: exemptionCenterText("填写申请", "Open application form"),
-                    systemImage: "plus"
+                    systemImage: "plus",
+                    accessibilityIdentifier: "exemptionCenter.openForm"
                 ) {
                     showApplicationForm = true
                 }
@@ -634,6 +649,19 @@ private struct ExemptionCenterSheet: View {
                             ? exemptionCenterText("待同步", "Pending sync")
                             : application.submittedAt
                     )
+                }
+            }
+
+            if !application.organization.isEmpty {
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(verbatim: exemptionCenterText("组织名称", "Organization"))
+                            .font(BNBUFont.titleMedium)
+                        Text(verbatim: application.organization)
+                            .font(BNBUFont.bodyMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 

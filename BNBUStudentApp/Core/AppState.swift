@@ -61,6 +61,13 @@ final class AppState: ObservableObject {
     /// The student's own join application. It is filed before sign-in, so it
     /// lives outside the workspace and survives until the teacher decides.
     @Published var courseJoinRequest: CourseJoinRequest?
+    /// A review notice routes to the application it is about. The intent is held
+    /// here rather than sent as a one-shot signal, so it survives the profile tab
+    /// not being on screen yet.
+    @Published var opensExemptionCentre = false
+    /// Set to the new academic year when the semester has rolled over since the
+    /// student last opened the app, so the dashboard can say so once.
+    @Published var newSemesterWelcomeAcademicYear: String?
     @Published var feedbackTickets: [FeedbackTicket] = []
     /// Why the ticket list is empty, when the reason is not "no tickets yet".
     @Published var feedbackNotice: String?
@@ -215,6 +222,30 @@ final class AppState: ObservableObject {
         }
         errorMessage = nil
         return invite
+    }
+
+    /// The academic year rolls over on 1 September. The first time the app runs
+    /// in a new one, last term's cached workspace no longer applies, so the
+    /// dashboard says so rather than showing stale progress without comment.
+    func evaluateNewSemesterWelcome() {
+        let currentYear = StudentAcademicProjection
+            .resolve(profile: workspace.student)
+            .academicYear
+        guard !currentYear.isEmpty else { return }
+        let cachedYear = localStore.loadCachedAcademicYear()
+        guard !cachedYear.isEmpty else {
+            localStore.saveCachedAcademicYear(currentYear)
+            return
+        }
+        guard cachedYear != currentYear else { return }
+        newSemesterWelcomeAcademicYear = currentYear
+    }
+
+    func dismissNewSemesterWelcome() {
+        if let year = newSemesterWelcomeAcademicYear {
+            localStore.saveCachedAcademicYear(year)
+        }
+        newSemesterWelcomeAcademicYear = nil
     }
 
     /// Sends a sign-in code to a bound contact. Only a verified contact can be
@@ -1369,7 +1400,13 @@ final class AppState: ObservableObject {
     }
 
     @discardableResult
-    func submitExemption(item: ExemptionItem, reason: String, detail: String, proofAttachments: [ProofAttachment]) async -> Bool {
+    func submitExemption(
+        item: ExemptionItem,
+        reason: String,
+        detail: String,
+        organization: String = "",
+        proofAttachments: [ProofAttachment]
+    ) async -> Bool {
         guard !isSubmittingExemption else {
             errorMessage = BNBUL10n.text("免测申请正在提交，请勿重复操作。")
             return false
@@ -1388,6 +1425,13 @@ final class AppState: ObservableObject {
         let normalizedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
         if let inputMessage = ExemptionInputRule.validationMessage(reason: normalizedReason, detail: normalizedDetail) {
             errorMessage = inputMessage
+            return false
+        }
+        let normalizedOrganization = organization.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A check-in exemption is granted through a named team or club, so the
+        // teacher cannot review it without one.
+        if item.isCheckInExemption, normalizedOrganization.isEmpty {
+            errorMessage = BNBUL10n.text("请填写校队或社团名称")
             return false
         }
         guard isRemoteMode else {
@@ -1411,6 +1455,7 @@ final class AppState: ObservableObject {
             item: item,
             reason: normalizedReason,
             detail: normalizedDetail,
+            organization: normalizedOrganization,
             proofAttachments: proofAttachments,
             expectedSessionEpoch: sessionEpoch
         )
@@ -2059,6 +2104,7 @@ final class AppState: ObservableObject {
         item: ExemptionItem,
         reason: String,
         detail: String,
+        organization: String = "",
         proofAttachments: [ProofAttachment],
         expectedSessionEpoch: UInt64
     ) async -> Bool {
@@ -2075,13 +2121,18 @@ final class AppState: ObservableObject {
             return false
         }
 
-        let scope = "exemption:create:physical-test"
+        let normalizedOrganization = organization.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Team and club applications go to their own collection, so they get
+        // their own idempotency scope; retrying one must not match the other.
+        let scope = item.isCheckInExemption
+            ? "exemption:create:check-in"
+            : "exemption:create:physical-test"
         let requestFields = [
             "type": item.apiValue,
             "reason": normalizedReason,
             "detail": normalizedDetail,
             "combinedReason": ExemptionInputRule.combinedReason(reason: normalizedReason, detail: normalizedDetail),
-            "organization": ""
+            "organization": normalizedOrganization
         ]
         let fingerprint = RemoteMutationFingerprint.make(
             scope: scope,
@@ -2133,6 +2184,7 @@ final class AppState: ObservableObject {
                 item: item.apiValue,
                 reason: normalizedReason,
                 detail: normalizedDetail,
+                organization: normalizedOrganization,
                 proofFiles: attempt.uploadedProofs.map { $0.cosKey ?? $0.source },
                 idempotencyKey: attempt.idempotencyKey
             )

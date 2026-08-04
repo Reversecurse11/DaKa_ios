@@ -748,6 +748,7 @@ actor RemoteStudentRepository {
         item: String,
         reason: String,
         detail: String,
+        organization: String = "",
         proofFiles: [String] = [],
         idempotencyKey: String? = nil
     ) async throws -> ExemptionApplication {
@@ -755,14 +756,18 @@ actor RemoteStudentRepository {
             throw RepositoryError.apiError(inputMessage)
         }
         let combinedReason = ExemptionInputRule.combinedReason(reason: reason, detail: detail)
+        let trimmedOrganization = organization.trimmingCharacters(in: .whitespacesAndNewlines)
         let body: [String: Any] = [
             "type": item,
             "reason": combinedReason,
             "proofFiles": proofFiles,
-            "organization": NSNull()
+            "organization": trimmedOrganization.isEmpty ? NSNull() : trimmedOrganization
         ]
+        // A check-in exemption waives打卡 hours rather than a test, so it is
+        // filed against its own collection.
+        let isCheckInExemption = item == "team" || item == "club"
         let data = try await post(
-            "student/physical-test-exemptions",
+            isCheckInExemption ? "student/checkin-exemptions" : "student/physical-test-exemptions",
             body: try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
             idempotencyKey: idempotencyKey
         )
@@ -777,6 +782,7 @@ actor RemoteStudentRepository {
             item: resolvedExemptionItem(from: item),
             reason: reason,
             detail: detail,
+            organization: trimmedOrganization,
             submittedAt: RecentTimestamp.justNow,
             status: .pending,
             proofFiles: remoteProofAttachments(from: proofFiles),

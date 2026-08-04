@@ -51,6 +51,8 @@ struct AppLocalStore {
     /// workspace cache and needs a key of its own.
     static let courseJoinRequestStorageKey = "bnbu.student.course-join-request.v1"
     static let remoteWorkspaceStorageKeyPrefix = "bnbu.student.remote.workspace.v1"
+    /// The academic year the app last showed, so a rollover can be recognised.
+    static let cachedAcademicYearStorageKey = "bnbu.student.academic-year.v1"
     private static let exerciseMediaDirectoryName = "exercise-media"
 
     private let workspaceKey = Self.workspaceStorageKey
@@ -60,6 +62,7 @@ struct AppLocalStore {
     private let exerciseMediaDraftsKey = Self.exerciseMediaDraftsStorageKey
     private let pendingMutationKey = Self.pendingMutationStorageKey
     private let courseJoinRequestKey = Self.courseJoinRequestStorageKey
+    private let cachedAcademicYearKey = Self.cachedAcademicYearStorageKey
     private let defaults: UserDefaults?
     private let legacyDefaults: UserDefaults
     private let fileManager: FileManager
@@ -126,6 +129,15 @@ struct AppLocalStore {
 
     func clearCourseJoinRequest() {
         _ = removeValue(forKey: courseJoinRequestKey)
+    }
+
+    func loadCachedAcademicYear() -> String {
+        read(String.self, forKey: cachedAcademicYearKey).value ?? ""
+    }
+
+    @discardableResult
+    func saveCachedAcademicYear(_ academicYear: String) -> Bool {
+        save(academicYear, forKey: cachedAcademicYearKey)
     }
 
     func loadDraft() -> CheckInDraft? {

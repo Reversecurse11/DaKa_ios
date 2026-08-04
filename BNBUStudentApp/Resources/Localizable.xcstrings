@@ -3197,6 +3197,23 @@
         }
       }
     },
+    "填写校队或社团名称": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the team or club name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写校队或社团名称"
+          }
+        }
+      }
+    },
     "填写老师提供的课程邀请码": {
       "localizations": {
         "en": {
@@ -4089,6 +4106,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已保存 %@，包含 1 个凭证。"
+          }
+        }
+      }
+    },
+    "已切换至 %@，旧学期的本地数据已清除。请扫码或输入邀请码加入本学期课程。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You are now in %@. Local data from the previous semester has been cleared. Scan a QR code or enter an invitation code to join this semester's course."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已切换至 %@，旧学期的本地数据已清除。请扫码或输入邀请码加入本学期课程。"
           }
         }
       }
@@ -7291,6 +7325,23 @@
         }
       }
     },
+    "新学期已开始": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A new semester has started"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新学期已开始"
+          }
+        }
+      }
+    },
     "无效": {
       "extractionState": "stale",
       "localizations": {
@@ -8697,6 +8748,23 @@
         }
       }
     },
+    "校队免打卡": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team check-in exemption"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "校队免打卡"
+          }
+        }
+      }
+    },
     "校队或社团免打卡须填写组织名称并上传证明，审核通过后由教师确认可抵扣的运动时长。": {
       "extractionState": "stale",
       "localizations": {
@@ -9913,6 +9981,23 @@
         }
       }
     },
+    "社团免打卡": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Club check-in exemption"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社团免打卡"
+          }
+        }
+      }
+    },
     "离线说明": {
       "extractionState": "stale",
       "localizations": {
@@ -10160,6 +10245,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "系统通知"
+          }
+        }
+      }
+    },
+    "组织名称": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organization name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组织名称"
           }
         }
       }
@@ -11322,6 +11424,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请填写学号。"
+          }
+        }
+      }
+    },
+    "请填写校队或社团名称": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the team or club name."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请填写校队或社团名称"
           }
         }
       }

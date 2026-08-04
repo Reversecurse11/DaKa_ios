@@ -242,6 +242,14 @@ struct MockStudentRepository: StudentRepository {
                 time: "06.01 10:30",
                 category: .organization,
                 isUnread: false
+            ),
+            StudentNotice(
+                id: "n4",
+                title: "免测申请需补材料",
+                message: "800m 免测申请需要补充校医室证明，请在申请详情中补交后重新提交。",
+                time: "07.30 15:40",
+                category: .review,
+                isUnread: true
             )
         ]
 

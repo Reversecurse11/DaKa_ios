@@ -272,6 +272,54 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     /// Temporary: captures the eight pages added on 29 July for the page-by-page
     /// comparison against the Android baseline.
+    func testReviewNoticeOpensTheExemptionCentre() {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
+        app.buttons["dashboard.notifications.button"].firstMatch.tap()
+        let applicationFilter = app.buttons["notifications.filter.申请与材料"]
+        XCTAssertTrue(applicationFilter.waitForExistence(timeout: 5))
+        applicationFilter.tap()
+        attachScreenshot(named: "N1-review-notices")
+
+        let firstNotice = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "notice.")
+        ).firstMatch
+        XCTAssertTrue(firstNotice.waitForExistence(timeout: 5))
+        firstNotice.tap()
+
+        // A review notice is about an application, so it lands on the
+        // application itself rather than a restatement of the notice.
+        XCTAssertTrue(screen("screen.exemptionCenter").waitForExistence(timeout: 8))
+        attachScreenshot(named: "N2-exemption-centre-from-notice")
+    }
+
+    func testTempShotsExemptionTypes() {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 8))
+        app.buttons["profile.exemption.button"].tap()
+        attachScreenshot(named: "E1-exemption-center")
+        app.buttons["exemption.tab.submit"].tap()
+        scrollToAndTap(app.buttons["exemptionCenter.openForm"])
+        XCTAssertTrue(app.descendants(matching: .any)["exemption.item.picker"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "E2-exemption-form-types")
+        app.buttons["exemption.type.team"].tap()
+        XCTAssertTrue(app.textFields["exemption.organization.field"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "E3-exemption-team-organization")
+    }
+
     func testTempShotsSupportPages() {
         app.launchArguments = [
             "-ui-testing-reset",

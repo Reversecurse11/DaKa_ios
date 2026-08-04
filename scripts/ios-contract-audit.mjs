@@ -351,6 +351,13 @@ requireText(feedbackViews, "FeedbackRule.maximumScreenshots", "Screenshots stop 
 requireText(feedbackViews, "screen.feedbackSubmitted", "A filed report confirms with its ticket number");
 requireText(contactManagementViews, "screen.contactManagement", "Settings can manage bound contacts");
 requireText(contactManagementViews, "allowsReplacement: true", "A verified contact can be replaced from Settings");
+requireText(models, "case team = \"校队免打卡\"", "A team check-in exemption is applicable");
+requireText(models, "case club = \"社团免打卡\"", "A club check-in exemption is applicable");
+requireText(models, "static func selectableItems(gender:", "Only the gender-matched endurance run is offered");
+requireText(gradesView, "exemption.organization.field", "A check-in exemption asks which organization it is claimed through");
+requireText(gradesView, "ExemptionTypeSelector", "The exemption type grid replaces the locked row");
+requireText(appState, "请填写校队或社团名称", "A check-in exemption cannot be filed without its organization");
+requireText(remote, "student/checkin-exemptions", "Check-in exemptions post to their own collection");
 const settingsSource = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
 rejectText(settingsSource, "验证码登录接口发布后开放", "The contact row is no longer greyed out");
 rejectText(settingsSource, "反馈工单接口发布后开放", "The feedback row is no longer greyed out");
@@ -506,7 +513,8 @@ requireText(models, "var sourceFileURL: URL? = nil", "Large proof uploads keep a
 rejectText(models, "case sourceFileURL", "Transient proof file URLs are never Codable persistence fields");
 requireText(models, "var pendingRemoteMutation: PendingRemoteMutationAttempt?", "Check-in drafts persist ambiguous mutation attempts");
 requireText(appState, 'let scope = "sport-record:create"', "Check-in creation resolves a stable logical attempt");
-requireText(appState, 'let scope = "exemption:create:physical-test"', "Exemption creation resolves a stable logical attempt");
+requireText(appState, '"exemption:create:physical-test"', "Exemption creation resolves a stable logical attempt");
+requireText(appState, '"exemption:create:check-in"', "A check-in exemption retries under its own scope");
 requireText(appState, 'let scope = "exemption:supplement:', "Exemption supplements resolve a stable logical attempt");
 requireText(appState, "for index in attempt.uploadedProofs.count..<sourceProofs.count", "Check-in retry skips proofs already uploaded to COS");
 requireCount(appState, "idempotencyKey: attempt.idempotencyKey", 3, "AppState passes its stable key to all three remote mutations");

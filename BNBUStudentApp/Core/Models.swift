@@ -2341,9 +2341,25 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
     case enduranceRun = "800/1000 米耐力跑"
     case physicalTest = "体测免测"
     case singlePhysicalItem = "体测单项免测"
+    case team = "校队免打卡"
+    case club = "社团免打卡"
 
     static var allCases: [ExemptionItem] {
-        [.run800m, .run1000m]
+        [.run800m, .run1000m, .team, .club]
+    }
+
+    /// A check-in exemption waives打卡 rather than a physical test, so it needs
+    /// the organization it is claimed through and posts to a different endpoint.
+    var isCheckInExemption: Bool {
+        self == .team || self == .club
+    }
+
+    /// Rule: the endurance run a student is tested on follows their gender, so
+    /// only the matching one is offered. Team and club apply to everyone.
+    static let maximumOrganizationLength = 128
+
+    static func selectableItems(gender: StudentGender?) -> [ExemptionItem] {
+        [gender == .male ? .run1000m : .run800m, .team, .club]
     }
 
     var id: String { rawValue }
@@ -2358,6 +2374,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             return "physical_test"
         case .singlePhysicalItem:
             return "single_physical_item"
+        case .team:
+            return "team"
+        case .club:
+            return "club"
         }
     }
 
@@ -2369,6 +2389,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             return "heart.text.square"
         case .singlePhysicalItem:
             return "list.clipboard"
+        case .team:
+            return "flag.2.crossed"
+        case .club:
+            return "person.3"
         }
     }
 
@@ -2384,6 +2408,8 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             return "建议上传医院证明，说明本学期体测整体免测原因。"
         case .singlePhysicalItem:
             return "请在说明中写明申请免测的具体项目，并上传证明。"
+        case .team, .club:
+            return "请上传能够证明校队或社团身份的材料。"
         }
     }
 
@@ -2401,6 +2427,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             self = .physicalTest
         case "singlePhysicalItem", "single_physical_item", "SINGLE_PHYSICAL_ITEM", "体测单项免测", "单项免测":
             self = .singlePhysicalItem
+        case "team", "TEAM", "校队免打卡", "校队":
+            self = .team
+        case "club", "CLUB", "社团免打卡", "社团":
+            self = .club
         default:
             self = .physicalTest
         }
@@ -2613,6 +2643,9 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
     var item: ExemptionItem
     var reason: String
     var detail: String
+    /// The team or club a check-in exemption is claimed through; empty for a
+    /// physical-test exemption.
+    var organization: String = ""
     var submittedAt: String
     var status: ExemptionStatus
     var proofFiles: [ProofAttachment]
@@ -2630,6 +2663,7 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
         item: ExemptionItem,
         reason: String,
         detail: String,
+        organization: String = "",
         submittedAt: String,
         status: ExemptionStatus,
         proofFiles: [ProofAttachment],
@@ -2642,6 +2676,7 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
         self.item = item
         self.reason = reason
         self.detail = detail
+        self.organization = organization
         self.submittedAt = submittedAt
         self.status = status
         self.proofFiles = proofFiles
@@ -2662,6 +2697,7 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
         case reason
         case detail
         case description
+        case organization
         case submittedAt
         case createdAt
         case status
@@ -2695,6 +2731,7 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
         detail = try container.decodeIfPresent(String.self, forKey: .detail)
             ?? container.decodeIfPresent(String.self, forKey: .description)
             ?? ""
+        organization = try container.decodeIfPresent(String.self, forKey: .organization) ?? ""
         submittedAt = try container.decodeIfPresent(String.self, forKey: .submittedAt)
             ?? container.decodeIfPresent(String.self, forKey: .createdAt)
             ?? ""
@@ -2720,6 +2757,7 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
         try container.encode(item, forKey: .item)
         try container.encode(reason, forKey: .reason)
         try container.encode(detail, forKey: .detail)
+        try container.encode(organization, forKey: .organization)
         try container.encode(submittedAt, forKey: .submittedAt)
         try container.encode(status, forKey: .status)
         try container.encode(proofFiles, forKey: .proofFiles)

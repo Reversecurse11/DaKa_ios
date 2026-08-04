@@ -31,6 +31,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 
 struct AppRootView: View {
+    @EnvironmentObject private var appState: AppState
     @State private var selectedTab: AppTab = .dashboard
 
     var body: some View {
@@ -67,6 +68,9 @@ struct AppRootView: View {
             if let destination = notification.object as? AppTab {
                 selectedTab = destination
             }
+        }
+        .onChange(of: appState.opensExemptionCentre) { _, isRequested in
+            if isRequested { selectedTab = .profile }
         }
     }
 

@@ -24,6 +24,12 @@ struct DashboardView: View {
                         }
                     }
 
+                    if let academicYear = appState.newSemesterWelcomeAcademicYear {
+                        NewSemesterWelcomePanel(academicYear: academicYear) {
+                            appState.dismissNewSemesterWelcome()
+                        }
+                    }
+
                     if hasActiveEnrollment {
                         todayCheckInPanel
                     }
@@ -44,6 +50,7 @@ struct DashboardView: View {
             }
         }
         .accessibilityIdentifier("screen.dashboard")
+        .task { appState.evaluateNewSemesterWelcome() }
         .sheet(isPresented: $showNotifications) {
             NotificationCenterSheet()
                 .environmentObject(appState)
@@ -602,19 +609,28 @@ private struct NotificationCenterSheet: View {
                         LazyVStack(spacing: 10) {
                             ForEach(filteredNotices) { notice in
                                 Button {
+                                    if notice.isUnread {
+                                        appState.markNoticeRead(id: notice.id)
+                                    }
+                                    // A review notice is about an application, so
+                                    // it opens the application itself rather than a
+                                    // restatement of the notice.
+                                    if notice.category == .review {
+                                        appState.opensExemptionCentre = true
+                                        dismiss()
+                                        return
+                                    }
                                     // Opening a notice marks it read, which drops
                                     // it out of the "unread" filter. The detail is
                                     // therefore pushed from a captured copy so the
                                     // destination never depends on a row that is
                                     // about to disappear.
                                     openedNotice = notice
-                                    if notice.isUnread {
-                                        appState.markNoticeRead(id: notice.id)
-                                    }
                                 } label: {
                                     NoticeRow(notice: notice)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("notice.\(notice.id)")
                             }
                         }
                     }
@@ -660,5 +676,37 @@ private struct NotificationCenterSheet: View {
                 return notice.category == .review
             }
         }
+    }
+}
+
+/// Mirrors Android `NewSemesterWelcomePanel`. Shown once per academic year so a
+/// returning student understands why last term's data is gone.
+private struct NewSemesterWelcomePanel: View {
+    let academicYear: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                Text("新学期已开始")
+                    .font(BNBUFont.titleLarge)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                Text(verbatim: BNBUL10n.formatted(
+                    "已切换至 %@，旧学期的本地数据已清除。请扫码或输入邀请码加入本学期课程。",
+                    academicYear
+                ))
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Button("开始使用", action: onDismiss)
+                    .font(BNBUFont.labelLarge)
+                    .foregroundStyle(BNBUTheme.primary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, BNBUSpacing.space4)
+                    .accessibilityIdentifier("dashboard.newSemester.dismiss")
+            }
+        }
+        .accessibilityIdentifier("dashboard.newSemester")
     }
 }

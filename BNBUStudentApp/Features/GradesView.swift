@@ -397,6 +397,61 @@ struct ExemptionApplicationRow: View {
     }
 }
 
+/// Mirrors Android `ExemptionTypeSelector`: a two-column grid of 56pt cells,
+/// `primaryContainer` when picked and `surfaceVariant` otherwise.
+private struct ExemptionTypeSelector: View {
+    @Binding var selected: ExemptionItem
+    let items: [ExemptionItem]
+    let isDisabled: Bool
+    let title: (ExemptionItem) -> String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 10) {
+                    ForEach(row) { item in
+                        cell(for: item)
+                    }
+                    // Keeps a trailing odd cell at half width like the baseline.
+                    if row.count == 1 {
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+    }
+
+    private var rows: [[ExemptionItem]] {
+        stride(from: 0, to: items.count, by: 2).map {
+            Array(items[$0..<min($0 + 2, items.count)])
+        }
+    }
+
+    private func cell(for item: ExemptionItem) -> some View {
+        let isSelected = item == selected
+        return Button {
+            selected = item
+        } label: {
+            Text(verbatim: title(item))
+                .font(BNBUFont.bodyMedium)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .foregroundStyle(isSelected ? BNBUTheme.onPrimaryContainer : BNBUTheme.onSurfaceVariant)
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .background(isSelected ? BNBUTheme.primaryContainer : BNBUTheme.surfaceVariant)
+                .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+        }
+        .buttonStyle(BNBUPressStyle())
+        .disabled(isDisabled)
+        .animation(.easeInOut(duration: BNBUMotion.standard), value: isSelected)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("exemption.type.\(item.apiValue)")
+    }
+}
+
 struct ExemptionApplicationSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
@@ -406,6 +461,7 @@ struct ExemptionApplicationSheet: View {
     @State private var selectedItem: ExemptionItem
     @State private var reason: String
     @State private var detail: String
+    @State private var organization: String
     @State private var proofAttachments: [ProofAttachment]
     @State private var recoveryNotice: String?
     private let livePhotoPolicy = ExemptionLivePhotoPolicy(
@@ -417,6 +473,7 @@ struct ExemptionApplicationSheet: View {
         _selectedItem = State(initialValue: mode.application?.item ?? .run800m)
         _reason = State(initialValue: "")
         _detail = State(initialValue: "")
+        _organization = State(initialValue: mode.application?.organization ?? "")
         _proofAttachments = State(initialValue: [])
         _recoveryNotice = State(initialValue: nil)
     }
@@ -504,35 +561,69 @@ struct ExemptionApplicationSheet: View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("申请项目")
-                        .font(BNBUFont.titleSmall)
-                    HStack(spacing: 10) {
-                        Image(systemName: selectedItem.symbolName)
-                            .font(BNBUFont.titleLarge)
-                            .foregroundStyle(BNBUTheme.primary)
-                            .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(verbatim: itemTitle(selectedItem))
-                                .font(BNBUFont.titleSmall)
-                                .foregroundStyle(BNBUTheme.onSurface)
-                            Text(verbatim: mode.application == nil
-                                ? exemptionText(
-                                    "已根据学生性别自动匹配，不能手动切换",
-                                    "Matched automatically from the student profile"
-                                )
-                                : exemptionText(
+                    if mode.application == nil {
+                        Text("选择申请类型")
+                            .font(BNBUFont.labelMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        ExemptionTypeSelector(
+                            selected: $selectedItem,
+                            items: ExemptionItem.selectableItems(
+                                gender: appState.workspace.student.gender
+                            ),
+                            isDisabled: appState.isSubmittingExemption,
+                            title: itemTitle
+                        )
+                        // Container first, otherwise the identifier collapses
+                        // the grid into one element and hides the type buttons.
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("exemption.item.picker")
+                    } else {
+                        Text("申请项目")
+                            .font(BNBUFont.titleSmall)
+                        HStack(spacing: 10) {
+                            Image(systemName: selectedItem.symbolName)
+                                .font(BNBUFont.titleLarge)
+                                .foregroundStyle(BNBUTheme.primary)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: itemTitle(selectedItem))
+                                    .font(BNBUFont.titleSmall)
+                                    .foregroundStyle(BNBUTheme.onSurface)
+                                Text(verbatim: exemptionText(
                                     "补充材料沿用原申请项目",
                                     "Additional documents keep the original application item"
                                 ))
                                 .font(BNBUFont.bodySmall)
                                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            }
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
+                        .padding(12)
+                        .background(BNBUTheme.surfaceVariant)
+                        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+                        .accessibilityIdentifier("exemption.item.picker")
                     }
-                    .padding(12)
-                    .background(BNBUTheme.surfaceVariant)
-                    .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-                    .accessibilityIdentifier("exemption.item.picker")
+
+                    if selectedItem.isCheckInExemption {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("组织名称")
+                                .font(BNBUFont.labelMedium)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            TextField("填写校队或社团名称", text: $organization)
+                                .bnbuInputText()
+                                .padding(12)
+                                .background(BNBUTheme.surface)
+                                .bnbuOutlinedSurface(lineWidth: 1.5)
+                                .disabled(appState.isSubmittingExemption)
+                                .onChange(of: organization) { _, value in
+                                    guard value.count > ExemptionItem.maximumOrganizationLength else { return }
+                                    organization = String(value.prefix(ExemptionItem.maximumOrganizationLength))
+                                }
+                                .accessibilityLabel("组织名称")
+                                .accessibilityIdentifier("exemption.organization.field")
+                        }
+                        .padding(.top, 4)
+                    }
 
                     if hasPendingSameType {
                         Text(verbatim: exemptionText(
@@ -683,6 +774,7 @@ struct ExemptionApplicationSheet: View {
             && proofAttachments.allSatisfy(\.isValidForUpload)
         return appState.isRemoteMode
             && !hasPendingSameType
+            && !needsOrganization
             && ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) == nil
             && (hasValidProof || canResumePendingAttempt)
     }
@@ -705,6 +797,9 @@ struct ExemptionApplicationSheet: View {
         }
         if hasPendingSameType {
             return nil
+        }
+        if needsOrganization {
+            return exemptionText("请填写校队或社团名称", "Enter the team or club name.")
         }
         if proofAttachments.isEmpty {
             return exemptionText(
@@ -738,6 +833,14 @@ struct ExemptionApplicationSheet: View {
         detail.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var trimmedOrganization: String {
+        organization.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var needsOrganization: Bool {
+        selectedItem.isCheckInExemption && trimmedOrganization.isEmpty
+    }
+
     private func submit() async -> Bool {
         guard canSubmit else { return false }
         if let application = mode.application {
@@ -752,6 +855,7 @@ struct ExemptionApplicationSheet: View {
             item: selectedItem,
             reason: trimmedReason,
             detail: trimmedDetail,
+            organization: trimmedOrganization,
             proofAttachments: proofAttachments
         )
     }
@@ -790,8 +894,10 @@ struct ExemptionApplicationSheet: View {
         return ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
 
+    /// Only the endurance run follows gender; a team or club choice is the
+    /// student's and must survive a profile refresh.
     private func normalizeSelectedItemForStudent() {
-        guard mode.application == nil else { return }
+        guard mode.application == nil, !selectedItem.isCheckInExemption else { return }
         selectedItem = appState.workspace.student.gender == .male ? .run1000m : .run800m
     }
 
@@ -807,6 +913,10 @@ struct ExemptionApplicationSheet: View {
             return exemptionText("体测免测", "Physical-test exemption")
         case .singlePhysicalItem:
             return exemptionText("体测单项免测", "Single-item exemption")
+        case .team:
+            return exemptionText("校队免打卡", "Team check-in exemption")
+        case .club:
+            return exemptionText("社团免打卡", "Club check-in exemption")
         }
     }
 

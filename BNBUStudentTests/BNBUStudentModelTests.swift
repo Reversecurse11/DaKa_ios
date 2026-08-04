@@ -858,6 +858,95 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(state.errorMessage)
     }
 
+    func testNewSemesterWelcomeAppearsOnceWhenTheAcademicYearRollsOver() {
+        let defaults = isolatedDefaults()
+        let store = AppLocalStore(defaults: defaults)
+        let state = AppState(repository: MockStudentRepository(), localStore: store)
+
+        // A first run has nothing to compare against, so it records the year
+        // silently rather than greeting a student who never left.
+        state.evaluateNewSemesterWelcome()
+        XCTAssertNil(state.newSemesterWelcomeAcademicYear)
+        let firstRunYear = store.loadCachedAcademicYear()
+        XCTAssertFalse(firstRunYear.isEmpty)
+
+        store.saveCachedAcademicYear("2019-2020 学年")
+        state.evaluateNewSemesterWelcome()
+        XCTAssertEqual(state.newSemesterWelcomeAcademicYear, firstRunYear)
+
+        state.dismissNewSemesterWelcome()
+        XCTAssertNil(state.newSemesterWelcomeAcademicYear)
+        XCTAssertEqual(store.loadCachedAcademicYear(), firstRunYear)
+
+        // Dismissing records the year, so it does not greet again.
+        state.evaluateNewSemesterWelcome()
+        XCTAssertNil(state.newSemesterWelcomeAcademicYear)
+    }
+
+    func testExemptionOffersTheGenderMatchedRunPlusTeamAndClub() {
+        XCTAssertEqual(
+            ExemptionItem.selectableItems(gender: .male),
+            [.run1000m, .team, .club]
+        )
+        XCTAssertEqual(
+            ExemptionItem.selectableItems(gender: .female),
+            [.run800m, .team, .club]
+        )
+        // An unknown gender still gets a run option rather than none.
+        XCTAssertEqual(
+            ExemptionItem.selectableItems(gender: nil),
+            [.run800m, .team, .club]
+        )
+        XCTAssertTrue(ExemptionItem.team.isCheckInExemption)
+        XCTAssertTrue(ExemptionItem.club.isCheckInExemption)
+        XCTAssertFalse(ExemptionItem.run800m.isCheckInExemption)
+        XCTAssertEqual(ExemptionItem.team.apiValue, "team")
+        XCTAssertEqual(ExemptionItem.club.apiValue, "club")
+    }
+
+    func testCheckInExemptionRefusesToSubmitWithoutAnOrganization() async {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        let submitted = await state.submitExemption(
+            item: .team,
+            reason: "校队训练",
+            detail: "每周随校队训练四次。",
+            organization: "   ",
+            proofAttachments: []
+        )
+        XCTAssertFalse(submitted)
+        XCTAssertEqual(state.errorMessage, "请填写校队或社团名称")
+    }
+
+    func testExemptionApplicationCarriesItsOrganizationThroughCoding() throws {
+        let application = ExemptionApplication(
+            id: "ex-1",
+            studentId: "stu-1",
+            item: .club,
+            reason: "社团活动",
+            detail: "每周两次羽毛球社活动。",
+            organization: "羽毛球社",
+            submittedAt: "2026-08-01",
+            status: .pending,
+            proofFiles: [],
+            teacherFeedback: "等待老师审核。",
+            updatedAt: "2026-08-01"
+        )
+        let restored = try JSONDecoder().decode(
+            ExemptionApplication.self,
+            from: try JSONEncoder().encode(application)
+        )
+        XCTAssertEqual(restored.organization, "羽毛球社")
+        XCTAssertEqual(restored.item, .club)
+
+        // A payload from before the field existed still decodes.
+        let legacy = Data(#"{"id":"ex-2","studentId":"s","type":"800m","reason":"伤","status":"pending","createdAt":"2026-07-01","updatedAt":"2026-07-01"}"#.utf8)
+        let decodedLegacy = try JSONDecoder().decode(ExemptionApplication.self, from: legacy)
+        XCTAssertEqual(decodedLegacy.organization, "")
+    }
+
     func testFeedbackRequiresADescriptionAndReachableContacts() {
         XCTAssertEqual(
             FeedbackRule.validationMessage(description: "  ", email: "a@b.c", phone: "13800138000"),
