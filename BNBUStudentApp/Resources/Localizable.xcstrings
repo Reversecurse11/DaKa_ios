@@ -165,7 +165,6 @@
       }
     },
     "%@已验证": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -312,7 +311,6 @@
       }
     },
     "%lld 秒后可重发": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1450,6 +1448,23 @@
         }
       }
     },
+    "例如：138 0000 0000": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For example: 138 0000 0000"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：138 0000 0000"
+          }
+        }
+      }
+    },
     "例如：BNBU2026": {
       "localizations": {
         "en": {
@@ -1462,6 +1477,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "例如：BNBU2026"
+          }
+        }
+      }
+    },
+    "例如：操作步骤、预期结果和实际情况": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For example: the steps you took, what you expected and what happened"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：操作步骤、预期结果和实际情况"
           }
         }
       }
@@ -1663,6 +1695,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Exempt"
+          }
+        }
+      }
+    },
+    "免测/认证": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exemption or certification"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免测/认证"
           }
         }
       }
@@ -2477,6 +2526,23 @@
         }
       }
     },
+    "删除截图": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove screenshot"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除截图"
+          }
+        }
+      }
+    },
     "删除草稿 %@": {
       "localizations": {
         "en": {
@@ -2493,6 +2559,23 @@
         }
       }
     },
+    "刷新处理状态": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新处理状态"
+          }
+        }
+      }
+    },
     "剩余 12h": {
       "localizations": {
         "en": {
@@ -2505,6 +2588,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "剩余 12h"
+          }
+        }
+      }
+    },
+    "功能异常": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something is broken"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "功能异常"
           }
         }
       }
@@ -2746,6 +2846,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Available once the feedback ticket endpoints ship"
+          }
+        }
+      }
+    },
+    "反馈工单接口尚未发布，暂时无法加载反馈记录。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The feedback endpoint is not published yet, so reports cannot be loaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈工单接口尚未发布，暂时无法加载反馈记录。"
+          }
+        }
+      }
+    },
+    "反馈工单接口尚未发布，请等待服务端上线后重试。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The feedback endpoint is not published yet. Try again once the server ships it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈工单接口尚未发布，请等待服务端上线后重试。"
           }
         }
       }
@@ -3092,6 +3226,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "填写身份资料"
+          }
+        }
+      }
+    },
+    "处理中": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In progress"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理中"
+          }
+        }
+      }
+    },
+    "处理说明：": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Response: "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理说明："
           }
         }
       }
@@ -3876,6 +4044,23 @@
         }
       }
     },
+    "工单编号：": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ticket number:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工单编号："
+          }
+        }
+      }
+    },
     "已保存 %@，包含 %lld 个凭证。": {
       "localizations": {
         "en": {
@@ -4146,6 +4331,23 @@
         }
       }
     },
+    "已解决": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已解决"
+          }
+        }
+      }
+    },
     "已读": {
       "extractionState": "stale",
       "localizations": {
@@ -4346,6 +4548,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已驳回"
+          }
+        }
+      }
+    },
+    "已验证": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verified"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已验证"
           }
         }
       }
@@ -4916,6 +5135,23 @@
         }
       }
     },
+    "当前状态：": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前状态："
+          }
+        }
+      }
+    },
     "当前网络不可用，请检查网络连接": {
       "localizations": {
         "en": {
@@ -4960,6 +5196,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前设备无法拍摄"
+          }
+        }
+      }
+    },
+    "当前设备没有可用的相机。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device has no camera available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前设备没有可用的相机。"
           }
         }
       }
@@ -5062,6 +5315,23 @@
       }
     },
     "待同步时间": {},
+    "待处理": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待处理"
+          }
+        }
+      }
+    },
     "待完善": {
       "localizations": {
         "en": {
@@ -5135,6 +5405,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pending calculation"
+          }
+        }
+      }
+    },
+    "待验证": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not verified"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待验证"
           }
         }
       }
@@ -5555,6 +5842,23 @@
         }
       }
     },
+    "成绩问题": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grades"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成绩问题"
+          }
+        }
+      }
+    },
     "成绩：%lld 分": {
       "extractionState": "manual",
       "localizations": {
@@ -5588,6 +5892,23 @@
         }
       }
     },
+    "我们已收到你的问题。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We have received your report."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我们已收到你的问题。"
+          }
+        }
+      }
+    },
     "我已阅读并同意当前版本《隐私政策》": {
       "extractionState": "stale",
       "localizations": {
@@ -5617,6 +5938,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "我的"
+          }
+        }
+      }
+    },
+    "我的反馈": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My reports"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的反馈"
           }
         }
       }
@@ -5684,6 +6022,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "我知道了"
+          }
+        }
+      }
+    },
+    "截图 %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图 %lld"
+          }
+        }
+      }
+    },
+    "截图最多 %lld 张。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At most %lld screenshots."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图最多 %lld 张。"
+          }
+        }
+      }
+    },
+    "截图（可选）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshots (optional)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图（可选）"
           }
         }
       }
@@ -5972,6 +6361,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "打卡记录待重试"
+          }
+        }
+      }
+    },
+    "打卡问题": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check-in"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡问题"
           }
         }
       }
@@ -6430,6 +6836,23 @@
         }
       }
     },
+    "提交时间：": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitted: "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交时间："
+          }
+        }
+      }
+    },
     "提交申请": {
       "extractionState": "stale",
       "localizations": {
@@ -6476,6 +6899,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "提交运动凭证"
+          }
+        }
+      }
+    },
+    "提交问题": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report a problem"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交问题"
+          }
+        }
+      }
+    },
+    "提交问题后，可在这里查看处理状态。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once you report a problem, its status appears here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交问题后，可在这里查看处理状态。"
           }
         }
       }
@@ -7130,6 +7587,23 @@
         }
       }
     },
+    "暂无已提交问题": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No reports yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无已提交问题"
+          }
+        }
+      }
+    },
     "暂无成绩来源": {
       "extractionState": "stale",
       "localizations": {
@@ -7206,6 +7680,40 @@
         }
       }
     },
+    "更换手机号": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace mobile number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换手机号"
+          }
+        }
+      }
+    },
+    "更换邮箱": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace email"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换邮箱"
+          }
+        }
+      }
+    },
     "更改后将立即更新界面语言。课程名称等由教师或管理员录入的数据内容保持原文。": {
       "extractionState": "manual",
       "localizations": {
@@ -7224,6 +7732,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "What’s new"
+          }
+        }
+      }
+    },
+    "最多 %lld 张。截图可帮助我们更快定位问题。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to %lld. Screenshots help us find the problem faster."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 张。截图可帮助我们更快定位问题。"
           }
         }
       }
@@ -8045,6 +8570,23 @@
         }
       }
     },
+    "查看处理状态": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看处理状态"
+          }
+        }
+      }
+    },
     "查看完整隐私政策": {
       "extractionState": "manual",
       "localizations": {
@@ -8580,6 +9122,23 @@
         }
       }
     },
+    "添加或更换邮箱、手机号，保持登录方式随时可用。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add or replace an email or mobile number so you can always sign in."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加或更换邮箱、手机号，保持登录方式随时可用。"
+          }
+        }
+      }
+    },
     "清空凭证": {
       "extractionState": "stale",
       "localizations": {
@@ -8748,6 +9307,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "班级"
+          }
+        }
+      }
+    },
+    "用于回复和跟进此问题，不会公开展示。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used to reply and follow up. It is never shown publicly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于回复和跟进此问题，不会公开展示。"
           }
         }
       }
@@ -8925,6 +9501,23 @@
         }
       }
     },
+    "登录与安全": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in and security"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录与安全"
+          }
+        }
+      }
+    },
     "登录与密码": {
       "extractionState": "stale",
       "localizations": {
@@ -9035,6 +9628,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "登录操作已取消"
+          }
+        }
+      }
+    },
+    "登录方式": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in methods"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录方式"
           }
         }
       }
@@ -9288,7 +9898,6 @@
       }
     },
     "确认验证": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -9500,6 +10109,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "系统"
+          }
+        }
+      }
+    },
+    "系统故障": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System failure"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统故障"
           }
         }
       }
@@ -9909,6 +10535,23 @@
         }
       }
     },
+    "联系电话（必填）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phone (required)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系电话（必填）"
+          }
+        }
+      }
+    },
     "自主其他运动": {
       "extractionState": "stale",
       "localizations": {
@@ -10036,7 +10679,6 @@
       }
     },
     "获取验证码": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10476,7 +11118,6 @@
       }
     },
     "请先完成手机号和邮箱绑定。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10548,6 +11189,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先确认学号和密码无误。当前 App 尚未接入忘记密码接口；需要重置时，请联系课程教师或系统管理员。"
+          }
+        }
+      }
+    },
+    "请先获取验证码。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request a code first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先获取验证码。"
           }
         }
       }
@@ -10684,6 +11342,23 @@
         }
       }
     },
+    "请填写问题描述。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Describe the problem."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请填写问题描述。"
+          }
+        }
+      }
+    },
     "请尝试搜索“打卡”“密码”“成绩”或“申请”。": {
       "localizations": {
         "en": {
@@ -10748,6 +11423,40 @@
         }
       }
     },
+    "请留下联系电话，便于跟进问题。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave a phone number so we can follow up."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请留下联系电话，便于跟进问题。"
+          }
+        }
+      }
+    },
+    "请留下邮箱，便于接收处理回复。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave an email so we can reply."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请留下邮箱，便于接收处理回复。"
+          }
+        }
+      }
+    },
     "请确认以上课程信息无误后再提交申请": {
       "localizations": {
         "en": {
@@ -10791,6 +11500,23 @@
         }
       }
     },
+    "请至少填写一个新的手机号或邮箱，供老师换绑。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provide at least one new mobile number or email for staff to rebind."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少填写一个新的手机号或邮箱，供老师换绑。"
+          }
+        }
+      }
+    },
     "请至少选择或拍摄 1 张照片或 1 个视频作为凭证。": {
       "localizations": {
         "en": {
@@ -10807,8 +11533,25 @@
         }
       }
     },
-    "请输入 6 位数字验证码": {
+    "请说明当前无法接收验证码的原因。": {
       "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explain why you can no longer receive a code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请说明当前无法接收验证码的原因。"
+          }
+        }
+      }
+    },
+    "请输入 11 位手机号": {},
+    "请输入 6 位数字验证码": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10857,7 +11600,6 @@
       }
     },
     "请输入有效的手机号": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10873,8 +11615,24 @@
         }
       }
     },
-    "请输入有效的邮箱": {
+    "请输入有效的联系电话。": {
       "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid phone number."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的联系电话。"
+          }
+        }
+      }
+    },
+    "请输入有效的邮箱": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10891,6 +11649,7 @@
       }
     },
     "请输入有效的邮箱地址。": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10977,6 +11736,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请选择运动项目。"
+          }
+        }
+      }
+    },
+    "请选择问题类型并描述你遇到的情况。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a category and describe what happened."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择问题类型并描述你遇到的情况。"
           }
         }
       }
@@ -11371,6 +12147,23 @@
         }
       }
     },
+    "课程问题": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Courses"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "课程问题"
+          }
+        }
+      }
+    },
     "课程页可查看当前和历史课程，成绩页显示当前服务返回的成绩。公示状态、历史成绩版本和“未录入”区分仍需服务端接口支持。": {
       "extractionState": "stale",
       "localizations": {
@@ -11384,6 +12177,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "课程页可查看当前和历史课程，成绩页显示当前服务返回的成绩。公示状态、历史成绩版本和“未录入”区分仍需服务端接口支持。"
+          }
+        }
+      }
+    },
+    "账号问题": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号问题"
           }
         }
       }
@@ -12000,7 +12810,6 @@
       }
     },
     "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12292,6 +13101,23 @@
         }
       }
     },
+    "邮箱（必填）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Email (required)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱（必填）"
+          }
+        }
+      }
+    },
     "邮箱（选填）": {
       "extractionState": "stale",
       "localizations": {
@@ -12360,6 +13186,23 @@
         }
       }
     },
+    "问题内容": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The problem"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题内容"
+          }
+        }
+      }
+    },
     "问题反馈": {
       "extractionState": "manual",
       "localizations": {
@@ -12367,6 +13210,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Report a problem"
+          }
+        }
+      }
+    },
+    "问题已提交": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report submitted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题已提交"
+          }
+        }
+      }
+    },
+    "问题描述最多 %@ 字。": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The description cannot exceed %@ characters."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题描述最多 %@ 字。"
+          }
+        }
+      }
+    },
+    "问题描述（必填）": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description (required)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题描述（必填）"
+          }
+        }
+      }
+    },
+    "问题类型": {
+      "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Category"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题类型"
           }
         }
       }
@@ -12519,8 +13430,24 @@
         }
       }
     },
-    "验证失败，请检查验证码后重试": {
+    "验证任一联系方式后会自动保存。": {
       "extractionState": "stale",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A contact is saved as soon as it is verified."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证任一联系方式后会自动保存。"
+          }
+        }
+      }
+    },
+    "验证失败，请检查验证码后重试": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12537,7 +13464,6 @@
       }
     },
     "验证码已发送，10 分钟内有效。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -12554,7 +13480,6 @@
       }
     },
     "验证码接口尚未发布，请等待服务端上线后重试。": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {

@@ -293,6 +293,7 @@ private enum VerificationMethod {
 }
 
 private struct VerificationLoginView: View {
+    @EnvironmentObject private var appState: AppState
     @Environment(\.locale) private var locale
     let onBack: () -> Void
 
@@ -300,6 +301,10 @@ private struct VerificationLoginView: View {
     @State private var contact = ""
     @State private var code = ""
     @State private var notice: String?
+    @State private var codeSent = false
+    @State private var resendSeconds = 0
+
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     init(initialMethod: VerificationMethod, onBack: @escaping () -> Void) {
         _method = State(initialValue: initialMethod)
@@ -331,10 +336,15 @@ private struct VerificationLoginView: View {
                             codeField
 
                             Label(
-                                copy(
-                                    "验证码 10 分钟内有效，且仅可使用一次。",
-                                    "The code is valid for 10 minutes and can only be used once."
-                                ),
+                                codeSent
+                                    ? copy(
+                                        "验证码已发送，10 分钟内有效，且仅可使用一次。",
+                                        "Code sent. It is valid for 10 minutes and can only be used once."
+                                    )
+                                    : copy(
+                                        "验证码 10 分钟内有效，且仅可使用一次。",
+                                        "The code is valid for 10 minutes and can only be used once."
+                                    ),
                                 systemImage: "info.circle"
                             )
                             .font(BNBUFont.bodySmall)
@@ -349,7 +359,7 @@ private struct VerificationLoginView: View {
                                 systemImage: "arrow.right",
                                 accessibilityIdentifier: "verification.submit"
                             ) {
-                                notice = unavailableMessage
+                                signIn()
                             }
                             .disabled(!canSubmit)
                             .opacity(canSubmit ? 1 : 0.55)
@@ -361,6 +371,8 @@ private struct VerificationLoginView: View {
                         contact = ""
                         code = ""
                         notice = nil
+                        codeSent = false
+                        resendSeconds = 0
                     } label: {
                         Label(
                             method == .email
@@ -382,6 +394,9 @@ private struct VerificationLoginView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .accessibilityIdentifier(method == .email ? "screen.login.email" : "screen.login.phone")
+        .onReceive(ticker) { _ in
+            if resendSeconds > 0 { resendSeconds -= 1 }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -455,12 +470,12 @@ private struct VerificationLoginView: View {
                     .onChange(of: code) { _, value in
                         code = String(value.filter(\.isNumber).prefix(6))
                     }
-                Button(copy("获取验证码", "Get code")) {
-                    notice = unavailableMessage
-                }
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(isContactValid ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant.opacity(0.55))
-                .disabled(!isContactValid)
+                Button(sendTitle) { sendCode() }
+                    .font(BNBUFont.labelMedium)
+                    .foregroundStyle(canSend ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant.opacity(0.55))
+                    .disabled(!canSend)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("verification.sendCode")
             }
             .padding(.horizontal, BNBUSpacing.space16)
             .frame(height: 56)
@@ -470,23 +485,50 @@ private struct VerificationLoginView: View {
         }
     }
 
-    private var unavailableMessage: String {
-        copy(
-            "验证码登录接口尚未接入 iOS，当前不能发送或验证验证码。",
-            "The verification-code API is not connected on iOS, so codes cannot be sent or verified."
-        )
+    private var channel: ContactChannel {
+        method == .email ? .email : .phone
+    }
+
+    private var sendTitle: String {
+        resendSeconds > 0
+            ? BNBUL10n.formatted("%lld 秒后可重发", resendSeconds)
+            : copy("获取验证码", "Get code")
+    }
+
+    private var canSend: Bool {
+        resendSeconds == 0 && isContactValid
     }
 
     private var isContactValid: Bool {
-        let trimmed = contact.trimmingCharacters(in: .whitespacesAndNewlines)
-        if method == .email {
-            return trimmed.contains("@") && trimmed.contains(".")
-        }
-        return trimmed.filter(\.isNumber).count == 11
+        ContactBindingRule.isValid(contact, for: channel)
     }
 
     private var canSubmit: Bool {
-        isContactValid && code.count == 6
+        isContactValid && ContactBindingRule.isValidCode(code)
+    }
+
+    private func sendCode() {
+        dismissBNBUKeyboard()
+        guard appState.sendLoginCode(to: contact, channel: channel) else {
+            notice = appState.errorMessage
+            return
+        }
+        codeSent = true
+        resendSeconds = ContactBindingRule.resendInterval
+        notice = nil
+    }
+
+    private func signIn() {
+        dismissBNBUKeyboard()
+        guard codeSent else {
+            notice = copy("请先获取验证码。", "Request a code first.")
+            return
+        }
+        guard appState.signInWithCode(code, contact: contact, channel: channel) else {
+            notice = appState.errorMessage
+            return
+        }
+        notice = nil
     }
 
     private func copy(_ chinese: String, _ english: String) -> String {
@@ -690,9 +732,11 @@ private struct AccountPasswordLoginView: View {
 }
 
 private struct RecoveryRequestView: View {
+    @EnvironmentObject private var appState: AppState
     @Environment(\.locale) private var locale
     let onBack: () -> Void
 
+    @State private var isSubmitted = false
     @State private var studentID = ""
     @State private var name = ""
     @State private var explanation = ""
@@ -701,6 +745,64 @@ private struct RecoveryRequestView: View {
     @State private var notice: String?
 
     var body: some View {
+        if isSubmitted {
+            recoverySubmitted
+        } else {
+            form
+        }
+    }
+
+    /// Recovery is reviewed by a person, so the only honest confirmation is
+    /// that the request was filed and what happens next.
+    private var recoverySubmitted: some View {
+        ZStack {
+            BNBUPageBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                    BNBUBackRow(title: copy("账号恢复", "Account recovery"), action: onBack)
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                        Text(copy("恢复申请已提交", "Recovery request submitted"))
+                            .font(BNBUFont.headlineSmall)
+                            .foregroundStyle(BNBUTheme.onSurface)
+                        Text(copy(
+                            "老师或系统管理员会核对你的身份，通过后会把账号换绑到你填写的新联系方式。请留意新手机号或邮箱的通知。",
+                            "A teacher or administrator will verify your identity and then rebind the account to the new contact you provided. Watch for a notice there."
+                        ))
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+
+                    SwissPanel {
+                        VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                            DetailFactRow(label: copy("学号", "Student ID"), value: studentID)
+                            DetailFactRow(label: copy("姓名", "Name"), value: name)
+                            if !newPhone.isEmpty {
+                                DetailFactRow(label: copy("新手机号", "New mobile"), value: newPhone)
+                            }
+                            if !newEmail.isEmpty {
+                                DetailFactRow(label: copy("新邮箱", "New email"), value: newEmail)
+                            }
+                        }
+                    }
+
+                    PrimaryActionButton(
+                        title: copy("返回登录", "Back to sign-in"),
+                        systemImage: "arrow.left",
+                        accessibilityIdentifier: "recovery.done"
+                    ) {
+                        onBack()
+                    }
+                }
+                .frame(maxWidth: 680)
+                .padding(.horizontal, BNBUSpacing.screen)
+                .padding(.bottom, BNBUSpacing.space32)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityIdentifier("screen.recoverySubmitted")
+    }
+
+    private var form: some View {
         ZStack(alignment: .bottom) {
             BNBUPageBackground()
 
@@ -713,8 +815,8 @@ private struct RecoveryRequestView: View {
                             .font(BNBUFont.headlineSmall)
                             .foregroundStyle(BNBUTheme.onSurface)
                         Text(copy(
-                            "填写身份和情况说明。接口发布后，老师或管理员可据此核验并协助换绑。",
-                            "Provide your identity and an explanation. Once the endpoint ships, staff can verify it and help update your contact details."
+                            "填写身份和情况说明，并留下一个当前可用的联系方式。老师或管理员核验后会协助换绑。",
+                            "Provide your identity, an explanation and a contact you can currently use. Staff will verify it and help rebind your account."
                         ))
                         .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -758,8 +860,8 @@ private struct RecoveryRequestView: View {
                     recoverySection(
                         title: copy("新的联系方式", "New contact details"),
                         detail: copy(
-                            "选填；填写当前可用的手机号或邮箱",
-                            "Optional. Add a mobile number or email you can currently use."
+                            "至少填写一项，供老师换绑",
+                            "Provide at least one so staff can rebind the account."
                         )
                     ) {
                         RecoveryField(
@@ -788,10 +890,7 @@ private struct RecoveryRequestView: View {
                 systemImage: "paperplane.fill",
                 accessibilityIdentifier: "recovery.submit"
             ) {
-                notice = copy(
-                    "账号恢复接口尚未接入 iOS，当前无法提交。请联系课程老师或系统管理员。",
-                    "The account-recovery API is not connected on iOS. Contact your teacher or system administrator."
-                )
+                submit()
             }
             .disabled(!canSubmit)
             .opacity(canSubmit ? 1 : 0.55)
@@ -830,6 +929,22 @@ private struct RecoveryRequestView: View {
         !studentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !explanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit() {
+        dismissBNBUKeyboard()
+        guard appState.submitRecoveryRequest(
+            studentNumber: studentID,
+            name: name,
+            description: explanation,
+            newPhone: newPhone,
+            newEmail: newEmail
+        ) else {
+            notice = appState.errorMessage
+            return
+        }
+        notice = nil
+        isSubmitted = true
     }
 
     private func copy(_ chinese: String, _ english: String) -> String {

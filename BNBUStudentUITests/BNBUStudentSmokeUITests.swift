@@ -272,6 +272,49 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
     /// Temporary: captures the eight pages added on 29 July for the page-by-page
     /// comparison against the Android baseline.
+    func testTempShotsSupportPages() {
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        tabButton("tab.profile").tap()
+        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 8))
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S1-settings")
+
+        scrollToAndTap(app.buttons["settings.feedback"])
+        XCTAssertTrue(screen("screen.feedback").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S2-feedback-form")
+        app.buttons["feedback.tab.tickets"].tap()
+        XCTAssertTrue(screen("feedback.tickets").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S3-feedback-tickets")
+        app.buttons["feedback.tab.submit"].tap()
+        focusAndType(app.textViews["feedback.description"], text: "打卡提交后凭证上传卡住。")
+        focusAndType(app.textFields["feedback.phone"], text: "13800138000")
+        app.buttons["feedback.submit"].tap()
+        XCTAssertTrue(screen("screen.feedbackSubmitted").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S4-feedback-submitted")
+        app.buttons["feedback.viewStatus"].tap()
+        XCTAssertTrue(screen("feedback.tickets").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S5-feedback-after-submit")
+        app.buttons["feedback.close"].tap()
+
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 5))
+        scrollToAndTap(app.buttons["settings.contactBinding"])
+        XCTAssertTrue(screen("screen.contactManagement").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S6-contact-management")
+        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
+        app.buttons["contactBinding.phone.sendCode"].tap()
+        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
+        app.buttons["contactBinding.phone.verify"].tap()
+        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S7-contact-phone-verified")
+    }
+
     func testTempShotsNewPagesBaseline() throws {
         func relaunch(_ arguments: [String]) {
             app.terminate()

@@ -99,6 +99,8 @@ struct ProfileSettingsView: View {
     @State private var showPrivacyPolicy = false
     @State private var showHelpCenter = false
     @State private var showAbout = false
+    @State private var showFeedback = false
+    @State private var showContactManagement = false
     @State private var showLogoutConfirmation = false
 
     var body: some View {
@@ -140,6 +142,12 @@ struct ProfileSettingsView: View {
                 AboutView { showAbout = false }
             }
         }
+        .sheet(isPresented: $showFeedback) {
+            FeedbackView()
+        }
+        .sheet(isPresented: $showContactManagement) {
+            ContactManagementView()
+        }
         .confirmationDialog(
             "退出登录？",
             isPresented: $showLogoutConfirmation,
@@ -161,15 +169,13 @@ struct ProfileSettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 BNBUGroupLabel("账户与安全")
                     .padding(.bottom, 4)
-                // The contact-binding page needs the passwordless auth endpoints,
-                // so the row states why it cannot be opened yet instead of
-                // navigating to an empty screen.
                 BNBUNavigationSettingRow(
                     title: "绑定或更换邮箱、手机号",
                     systemImage: "phone",
-                    detail: "验证码登录接口发布后开放",
-                    enabled: false
-                ) {}
+                    accessibilityIdentifier: "settings.contactBinding"
+                ) {
+                    showContactManagement = true
+                }
             }
         }
     }
@@ -237,16 +243,13 @@ struct ProfileSettingsView: View {
                     showPrivacyPolicy = true
                 }
                 settingsDivider
-                // Android's feedback form uploads screenshots as COS keys and
-                // reads a ticket list; both endpoints are still unpublished, so
-                // the row states that instead of opening an empty form.
                 BNBUNavigationSettingRow(
                     title: "问题反馈",
                     systemImage: "exclamationmark.bubble",
-                    detail: "反馈工单接口发布后开放",
-                    enabled: false,
                     accessibilityIdentifier: "settings.feedback"
-                ) {}
+                ) {
+                    showFeedback = true
+                }
                 settingsDivider
                 BNBUNavigationSettingRow(
                     title: "关于",

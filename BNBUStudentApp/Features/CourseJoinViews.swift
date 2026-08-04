@@ -389,11 +389,14 @@ struct ContactBindingView: View {
 
 /// One contact: enter it, request a code, then verify. The send button waits
 /// out the server's resend window before it can be used again.
-private struct ContactChannelPanel: View {
+struct ContactChannelPanel: View {
     @EnvironmentObject private var appState: AppState
     let channel: ContactChannel
     @Binding var value: String
     @Binding var verifiedValue: String?
+    /// Settings lets a student swap an already-verified contact; registration
+    /// does not, because the request has not been filed yet.
+    var allowsReplacement = false
 
     @State private var code = ""
     @State private var codeSent = false
@@ -428,22 +431,38 @@ private struct ContactChannelPanel: View {
     }
 
     private func verifiedRow(_ verified: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(BNBUTheme.primary)
-            Text(verbatim: BNBUL10n.formatted(
-                "%@已验证",
-                BNBUL10n.dynamicText(channel.title)
-            ))
-            .font(BNBUFont.titleSmall)
-            .foregroundStyle(BNBUTheme.onSurface)
-            Spacer(minLength: 0)
-            Text(verbatim: ContactBindingRule.masked(verified, for: channel))
-                .font(BNBUFont.bodyMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(BNBUTheme.primary)
+                Text(verbatim: BNBUL10n.formatted(
+                    "%@已验证",
+                    BNBUL10n.dynamicText(channel.title)
+                ))
+                .font(BNBUFont.titleSmall)
+                .foregroundStyle(BNBUTheme.onSurface)
+                Spacer(minLength: 0)
+                Text(verbatim: ContactBindingRule.masked(verified, for: channel))
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("contactBinding.\(channel.rawValue).verified")
+
+            if allowsReplacement {
+                OutlinedActionButton(
+                    title: channel == .phone ? "更换手机号" : "更换邮箱",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    accessibilityIdentifier: "contactBinding.\(channel.rawValue).change"
+                ) {
+                    verifiedValue = nil
+                    value = ""
+                    code = ""
+                    codeSent = false
+                    notice = nil
+                }
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("contactBinding.\(channel.rawValue).verified")
     }
 
     private var contactRow: some View {

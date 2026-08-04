@@ -340,6 +340,25 @@ requireText(appState, "请先完成手机号和邮箱绑定。", "An application
 requireText(modelTests, "testCourseJoinRequestRequiresBothContactsBound", "XCTest covers the contact-binding gate");
 requireText(modelTests, "testContactBindingChecksFormatAndCodeBeforeAccepting", "XCTest covers contact and code validation");
 requireText(modelTests, "testBoundContactsAreShownMasked", "XCTest covers masking bound contacts");
+
+// Support pages the lead asked to finish while the backend is still building.
+const feedbackViews = read("BNBUStudentApp/Features/FeedbackViews.swift");
+const contactManagementViews = read("BNBUStudentApp/Features/ContactManagementViews.swift");
+requireText(models, "enum FeedbackRule", "Feedback input limits live with the other rules");
+requireText(models, "enum FeedbackCategory", "The eight Android feedback categories exist");
+requireText(feedbackViews, "screen.feedback", "The feedback page is reachable, not a greyed-out row");
+requireText(feedbackViews, "FeedbackRule.maximumScreenshots", "Screenshots stop at the documented maximum");
+requireText(feedbackViews, "screen.feedbackSubmitted", "A filed report confirms with its ticket number");
+requireText(contactManagementViews, "screen.contactManagement", "Settings can manage bound contacts");
+requireText(contactManagementViews, "allowsReplacement: true", "A verified contact can be replaced from Settings");
+const settingsSource = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
+rejectText(settingsSource, "验证码登录接口发布后开放", "The contact row is no longer greyed out");
+rejectText(settingsSource, "反馈工单接口发布后开放", "The feedback row is no longer greyed out");
+requireText(loginView, "appState.signInWithCode", "Verification-code sign-in submits instead of reporting a stub");
+requireText(loginView, "verification.sendCode", "Requesting a sign-in code is its own control");
+requireText(loginView, "screen.recoverySubmitted", "A filed recovery request confirms what happens next");
+rejectText(loginView, "验证码登录接口尚未接入 iOS", "The sign-in stub notice is gone");
+rejectText(loginView, "账号恢复接口尚未接入 iOS", "The recovery stub notice is gone");
 requireText(models, "struct CourseInvite", "An invite lookup has its own model");
 requireText(loginView, "login.joinRequest.entry", "The sign-in screen reports an application under review");
 requireText(modelTests, "testCourseJoinRequestIsFiledBeforeSignIn", "XCTest covers filing an application without an account");

@@ -858,6 +858,136 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(state.errorMessage)
     }
 
+    func testFeedbackRequiresADescriptionAndReachableContacts() {
+        XCTAssertEqual(
+            FeedbackRule.validationMessage(description: "  ", email: "a@b.c", phone: "13800138000"),
+            "请填写问题描述。"
+        )
+        XCTAssertEqual(
+            FeedbackRule.validationMessage(
+                description: String(repeating: "问", count: FeedbackRule.maximumDescriptionLength + 1),
+                email: "a@b.c",
+                phone: "13800138000"
+            ),
+            "问题描述最多 2000 字。"
+        )
+        XCTAssertEqual(
+            FeedbackRule.validationMessage(description: "打不开", email: "", phone: "13800138000"),
+            "请留下邮箱，便于接收处理回复。"
+        )
+        XCTAssertEqual(
+            FeedbackRule.validationMessage(description: "打不开", email: "nope", phone: "13800138000"),
+            "请输入有效的邮箱地址。"
+        )
+        XCTAssertEqual(
+            FeedbackRule.validationMessage(description: "打不开", email: "a@b.c", phone: ""),
+            "请留下联系电话，便于跟进问题。"
+        )
+        XCTAssertEqual(
+            FeedbackRule.validationMessage(description: "打不开", email: "a@b.c", phone: "abc"),
+            "请输入有效的联系电话。"
+        )
+        XCTAssertNil(
+            FeedbackRule.validationMessage(description: "打不开", email: "a@b.c", phone: "138 0013 8000")
+        )
+    }
+
+    func testFilingFeedbackPrependsTheTicketAndRefusesTooManyScreenshots() {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        state.refreshFeedbackTickets()
+        let seeded = state.feedbackTickets.count
+        XCTAssertGreaterThan(seeded, 0)
+
+        let filed = state.submitFeedback(
+            category: .checkIn,
+            description: "提交打卡后一直转圈。",
+            email: "lin@bnbu.edu.cn",
+            phone: "13800138000",
+            screenshots: []
+        )
+        XCTAssertNotNil(filed)
+        XCTAssertEqual(state.feedbackTickets.count, seeded + 1)
+        XCTAssertEqual(state.feedbackTickets.first?.id, filed?.id)
+        XCTAssertEqual(state.feedbackTickets.first?.status, .pending)
+
+        let tooMany = (0...FeedbackRule.maximumScreenshots).map { index in
+            ProofAttachment(
+                id: "shot-\(index)",
+                type: .image,
+                fileName: "shot-\(index).jpg",
+                byteCount: 1024,
+                source: "library",
+                cosKey: nil,
+                mimeType: "image/jpeg",
+                contentDigest: nil
+            )
+        }
+        XCTAssertNil(state.submitFeedback(
+            category: .other,
+            description: "截图太多。",
+            email: "lin@bnbu.edu.cn",
+            phone: "13800138000",
+            screenshots: tooMany
+        ))
+        XCTAssertEqual(state.errorMessage, "截图最多 3 张。")
+    }
+
+    func testFeedbackStatusParsesEveryServerSpelling() {
+        XCTAssertEqual(FeedbackTicketStatus.parsed(""), .pending)
+        XCTAssertEqual(FeedbackTicketStatus.parsed("open"), .pending)
+        XCTAssertEqual(FeedbackTicketStatus.parsed("IN_PROGRESS"), .processing)
+        XCTAssertEqual(FeedbackTicketStatus.parsed("处理中"), .processing)
+        XCTAssertEqual(FeedbackTicketStatus.parsed("closed"), .resolved)
+        XCTAssertEqual(FeedbackTicketStatus.parsed("已驳回"), .rejected)
+    }
+
+    // A reinstalled app signs back in with a code, so this is the only way in.
+    func testVerificationCodeSignInOpensTheWorkspace() {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        XCTAssertFalse(state.sendLoginCode(to: "1380013800", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
+        XCTAssertTrue(state.sendLoginCode(to: "13800138000", channel: .phone))
+
+        XCTAssertFalse(state.signInWithCode("12345", contact: "13800138000", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
+        XCTAssertFalse(state.isAuthenticated)
+
+        XCTAssertTrue(state.signInWithCode("123456", contact: "13800138000", channel: .phone))
+        XCTAssertTrue(state.isAuthenticated)
+    }
+
+    func testRecoveryRequestNeedsAnIdentityAndOneReachableContact() {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        XCTAssertFalse(state.submitRecoveryRequest(
+            studentNumber: "", name: "林同学", description: "手机丢了", newPhone: "13800138000", newEmail: ""
+        ))
+        XCTAssertEqual(state.errorMessage, "请填写学号。")
+
+        XCTAssertFalse(state.submitRecoveryRequest(
+            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: ""
+        ))
+        XCTAssertEqual(state.errorMessage, "请至少填写一个新的手机号或邮箱，供老师换绑。")
+
+        XCTAssertFalse(state.submitRecoveryRequest(
+            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "138", newEmail: ""
+        ))
+        XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
+
+        XCTAssertTrue(state.submitRecoveryRequest(
+            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: "lin@bnbu.edu.cn"
+        ))
+        XCTAssertNil(state.errorMessage)
+    }
+
     func testBoundContactsAreShownMasked() {
         XCTAssertEqual(ContactBindingRule.masked("13800138000", for: .phone), "138****8000")
         XCTAssertEqual(ContactBindingRule.masked("lin@bnbu.edu.cn", for: .email), "li***@bnbu.edu.cn")

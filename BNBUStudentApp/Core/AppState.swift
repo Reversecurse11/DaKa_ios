@@ -61,6 +61,9 @@ final class AppState: ObservableObject {
     /// The student's own join application. It is filed before sign-in, so it
     /// lives outside the workspace and survives until the teacher decides.
     @Published var courseJoinRequest: CourseJoinRequest?
+    @Published var feedbackTickets: [FeedbackTicket] = []
+    /// Why the ticket list is empty, when the reason is not "no tickets yet".
+    @Published var feedbackNotice: String?
 
     private let repository: StudentRepository
     private let localStore: AppLocalStore
@@ -212,6 +215,129 @@ final class AppState: ObservableObject {
         }
         errorMessage = nil
         return invite
+    }
+
+    /// Sends a sign-in code to a bound contact. Only a verified contact can be
+    /// issued a session, so an unknown address is refused by the server rather
+    /// than here; this checks the format only.
+    @discardableResult
+    func sendLoginCode(to value: String, channel: ContactChannel) -> Bool {
+        if let validationMessage = ContactBindingRule.validationMessage(value, for: channel) {
+            errorMessage = validationMessage
+            return false
+        }
+        errorMessage = nil
+        return true
+    }
+
+    /// Exchanges a code for a session. Until the auth endpoints ship this signs
+    /// into the demo workspace, so the passwordless flow can be walked end to
+    /// end instead of dead-ending on a notice.
+    @discardableResult
+    func signInWithCode(_ code: String, contact: String, channel: ContactChannel) -> Bool {
+        guard ContactBindingRule.isValidCode(code) else {
+            errorMessage = BNBUL10n.text("请输入 6 位数字验证码")
+            return false
+        }
+        guard ContactBindingRule.isValid(contact, for: channel) else {
+            errorMessage = ContactBindingRule.validationMessage(contact, for: channel)
+            return false
+        }
+        errorMessage = nil
+        demoLogin()
+        return true
+    }
+
+    /// Files an account-recovery request for a student who has lost access to
+    /// both bound contacts. A teacher or administrator verifies identity before
+    /// rebinding, so the client only records the request.
+    @discardableResult
+    func submitRecoveryRequest(
+        studentNumber: String,
+        name: String,
+        description: String,
+        newPhone: String,
+        newEmail: String
+    ) -> Bool {
+        let trimmedNumber = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedNumber.isEmpty { return failRecovery("请填写学号。") }
+        if trimmedName.isEmpty { return failRecovery("请填写姓名。") }
+        if trimmedDescription.isEmpty { return failRecovery("请说明当前无法接收验证码的原因。") }
+        // At least one new contact is required, otherwise there is nothing for
+        // the reviewer to rebind the account to.
+        let hasPhone = ContactBindingRule.isValid(newPhone, for: .phone)
+        let hasEmail = ContactBindingRule.isValid(newEmail, for: .email)
+        if !newPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !hasPhone {
+            return failRecovery("请输入有效的手机号")
+        }
+        if !newEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !hasEmail {
+            return failRecovery("请输入有效的邮箱")
+        }
+        guard hasPhone || hasEmail else {
+            return failRecovery("请至少填写一个新的手机号或邮箱，供老师换绑。")
+        }
+        errorMessage = nil
+        return true
+    }
+
+    private func failRecovery(_ message: String.LocalizationValue) -> Bool {
+        errorMessage = BNBUL10n.text(message)
+        return false
+    }
+
+    /// Problem reports the student has filed. Loaded lazily the first time the
+    /// feedback page opens its list tab.
+    func refreshFeedbackTickets() {
+        guard !isRemoteMode else {
+            feedbackTickets = []
+            feedbackNotice = BNBUL10n.text("反馈工单接口尚未发布，暂时无法加载反馈记录。")
+            return
+        }
+        feedbackNotice = nil
+        feedbackTickets = repository.loadFeedbackTickets()
+    }
+
+    /// Files a problem report. Returns the accepted ticket so the caller can
+    /// show its number, mirroring the Android confirmation screen.
+    func submitFeedback(
+        category: FeedbackCategory,
+        description: String,
+        email: String,
+        phone: String,
+        screenshots: [ProofAttachment]
+    ) -> FeedbackTicket? {
+        if let validationMessage = FeedbackRule.validationMessage(
+            description: description,
+            email: email,
+            phone: phone
+        ) {
+            errorMessage = validationMessage
+            return nil
+        }
+        guard screenshots.count <= FeedbackRule.maximumScreenshots else {
+            errorMessage = BNBUL10n.formatted("截图最多 %lld 张。", FeedbackRule.maximumScreenshots)
+            return nil
+        }
+        guard !isRemoteMode else {
+            errorMessage = BNBUL10n.text("反馈工单接口尚未发布，请等待服务端上线后重试。")
+            return nil
+        }
+        errorMessage = nil
+        // The server assigns the real number; a local one keeps the submitted
+        // report visible in the list until the endpoint ships.
+        let ticket = FeedbackTicket(
+            id: UUID().uuidString,
+            ticketNumber: "FB-\(Int(Date().timeIntervalSince1970) % 100000)",
+            category: category.title,
+            description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: .pending,
+            createdAt: BNBUDateFormat.writtenDateTime(Date()),
+            reply: nil
+        )
+        feedbackTickets.insert(ticket, at: 0)
+        return ticket
     }
 
     /// Sends a verification code to a contact the student is binding. Both

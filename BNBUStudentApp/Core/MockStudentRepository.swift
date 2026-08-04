@@ -8,6 +8,8 @@ protocol StudentRepository {
     /// Accepts a contact verification code. The real check is server-side; this
     /// seam exists so the flow runs before the endpoint ships.
     func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool
+    /// Problem reports the student has already filed.
+    func loadFeedbackTickets() -> [FeedbackTicket]
 }
 
 struct MockStudentRepository: StudentRepository {
@@ -267,6 +269,31 @@ struct MockStudentRepository: StudentRepository {
         )
     }
 
+    /// One resolved and one in-flight ticket, so the list, the status badges and
+    /// the reply row all have something to show before the endpoint ships.
+    func loadFeedbackTickets() -> [FeedbackTicket] {
+        [
+            FeedbackTicket(
+                id: "fb-2026-0043",
+                ticketNumber: "FB-2026-0043",
+                category: FeedbackCategory.checkIn.title,
+                description: "结束运动后提交打卡，凭证上传到一半就停住了，重试两次才成功。",
+                status: .processing,
+                createdAt: "2026 年 7 月 30 日 19:24",
+                reply: nil
+            ),
+            FeedbackTicket(
+                id: "fb-2026-0031",
+                ticketNumber: "FB-2026-0031",
+                category: FeedbackCategory.grades.title,
+                description: "耐力跑成绩换算结果和老师给的分数差 1 分。",
+                status: .resolved,
+                createdAt: "2026 年 7 月 21 日 10:05",
+                reply: "已核对评分表，差异来自年级组别取值，本周已修正。"
+            )
+        ]
+    }
+
     /// Demo data has no mailbox or handset to deliver to, so any well-formed
     /// code is accepted until the contact endpoints ship.
     func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
@@ -294,6 +321,8 @@ struct EmptyStudentRepository: StudentRepository {
     func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
         ContactBindingRule.isValidCode(code)
     }
+
+    func loadFeedbackTickets() -> [FeedbackTicket] { [] }
 
     func loadWorkspace() -> StudentWorkspace {
         let student = StudentProfile(

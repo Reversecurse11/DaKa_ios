@@ -2439,6 +2439,106 @@ enum ExemptionInputRule {
     }
 }
 
+/// The categories a student can file a problem report under, in the Android
+/// order; the selected title is what the server stores.
+enum FeedbackCategory: String, CaseIterable, Identifiable, Hashable, Codable {
+    case functionality = "功能异常"
+    case checkIn = "打卡问题"
+    case grades = "成绩问题"
+    case course = "课程问题"
+    case account = "账号问题"
+    case exemption = "免测/认证"
+    case system = "系统故障"
+    case other = "其他"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+}
+
+enum FeedbackTicketStatus: String, CaseIterable, Identifiable, Hashable, Codable {
+    case pending = "待处理"
+    case processing = "处理中"
+    case resolved = "已解决"
+    case rejected = "已驳回"
+
+    var id: String { rawValue }
+
+    var apiValue: String {
+        switch self {
+        case .pending: return "pending"
+        case .processing: return "processing"
+        case .resolved: return "resolved"
+        case .rejected: return "rejected"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = Self.parsed(value)
+    }
+
+    static func parsed(_ value: String) -> Self {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "processing", "in_progress", "处理中":
+            return .processing
+        case "resolved", "closed", "completed", "已解决", "已关闭":
+            return .resolved
+        case "rejected", "已驳回":
+            return .rejected
+        default:
+            // Android treats pending, open, submitted and blank alike.
+            return .pending
+        }
+    }
+}
+
+struct FeedbackTicket: Identifiable, Hashable, Codable {
+    let id: String
+    let ticketNumber: String
+    let category: String
+    let description: String
+    var status: FeedbackTicketStatus
+    let createdAt: String
+    var reply: String?
+
+    /// Falls back to the opaque id when the server has not assigned a
+    /// human-readable number yet.
+    var displayNumber: String { ticketNumber.isEmpty ? id : ticketNumber }
+}
+
+enum FeedbackRule {
+    static let maximumDescriptionLength = 2000
+    static let maximumScreenshots = 3
+
+    static func validationMessage(
+        description: String,
+        email: String,
+        phone: String
+    ) -> String? {
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmedDescription.isEmpty { return BNBUL10n.text("请填写问题描述。") }
+        if trimmedDescription.count > maximumDescriptionLength {
+            // A plain count, not a grouped number: the baseline prints 2000.
+            return BNBUL10n.formatted("问题描述最多 %@ 字。", String(maximumDescriptionLength))
+        }
+        if trimmedEmail.isEmpty { return BNBUL10n.text("请留下邮箱，便于接收处理回复。") }
+        if !CourseJoinRequestRule.isValidEmail(trimmedEmail) {
+            return BNBUL10n.text("请输入有效的邮箱地址。")
+        }
+        if trimmedPhone.isEmpty { return BNBUL10n.text("请留下联系电话，便于跟进问题。") }
+        guard trimmedPhone.range(
+            of: "^[0-9+()\\-\\s]{5,32}$",
+            options: .regularExpression
+        ) != nil else {
+            return BNBUL10n.text("请输入有效的联系电话。")
+        }
+        return nil
+    }
+}
+
 enum ExemptionStatus: String, CaseIterable, Identifiable, Hashable, Codable {
     case pending = "待审核"
     case approved = "已通过"
@@ -2661,6 +2761,17 @@ struct ExemptionApplication: Identifiable, Hashable, Codable {
             }
         }
         return []
+    }
+}
+
+enum BNBUDateFormat {
+    /// Written date plus time, the way Android prints ticket timestamps.
+    static func writtenDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = BNBUL10n.locale
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 
