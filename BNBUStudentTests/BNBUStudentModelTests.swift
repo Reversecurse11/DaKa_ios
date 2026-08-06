@@ -1454,10 +1454,10 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(appState.hasSubmittedCheckInToday(at: nextDay))
     }
 
-    func testDebugServerConfigDefaultsToTestAPI() {
+    func testDebugServerConfigDefaultsToLocalAPI() {
         let resolved = StudentServerConfig.resolvedBaseURL(arguments: ["BNBUStudent"], environment: [:])
 
-        XCTAssertEqual(resolved.absoluteString, "http://123.207.5.70:82/api/v1")
+        XCTAssertEqual(resolved.absoluteString, "http://127.0.0.1:3000/api/v1")
         XCTAssertEqual(StudentAPIClient().baseURL.absoluteString, resolved.absoluteString)
     }
 
@@ -1468,11 +1468,16 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         let environmentURL = StudentServerConfig.resolvedBaseURL(
             arguments: ["BNBUStudent"],
+            environment: ["BNBU_API_BASE_URL": "http://192.168.1.20:3000/api/v1"]
+        )
+        let rejectedLegacyURL = StudentServerConfig.resolvedBaseURL(
+            arguments: ["BNBUStudent"],
             environment: ["BNBU_API_BASE_URL": "http://123.207.5.70:82/api/v1"]
         )
 
         XCTAssertEqual(argumentURL.absoluteString, "http://127.0.0.1:8080/api/v1")
-        XCTAssertEqual(environmentURL.absoluteString, "http://123.207.5.70:82/api/v1")
+        XCTAssertEqual(environmentURL.absoluteString, "http://192.168.1.20:3000/api/v1")
+        XCTAssertEqual(rejectedLegacyURL.absoluteString, "http://127.0.0.1:3000/api/v1")
     }
 
     func testProofAttachmentValidationCatchesSizeAndDurationLimits() {
@@ -2110,7 +2115,11 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(appState.isLoadingExemptions)
         XCTAssertEqual(
             ExemptionRefreshURLProtocol.paths,
-            ["/api/v1/student/physical-test-exemptions"]
+            [
+                "/api/v1/student/physical-test-exemptions",
+                "/api/v1/student/physical-test-exemptions"
+            ],
+            "Safe GET requests use the transport's single bounded retry on HTTP 503"
         )
     }
 

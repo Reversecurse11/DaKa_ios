@@ -22,6 +22,67 @@ protocol StudentRepository {
     func loadHelpArticles() throws -> [HelpArticle]
 }
 
+/// Non-domain bootstrap state used before a real authenticated projection is
+/// restored. It contains no demo account, course, score, or exercise truth.
+struct UnauthenticatedStudentRepository: StudentRepository {
+    func loadCourseInvite(code: String) -> CourseInvite? { nil }
+    func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool { false }
+    func loadFeedbackTickets() -> [FeedbackTicket] { [] }
+    func loadSystemMode() -> SystemModeStatus { SystemModeStatus() }
+    func loadUpdateRequirement() -> AppUpdateRequirement? { nil }
+    func loadHelpArticles() throws -> [HelpArticle] { [] }
+
+    func loadWorkspace() -> StudentWorkspace {
+        let student = StudentProfile(
+            id: "",
+            studentNumber: nil,
+            name: "",
+            email: "",
+            college: "",
+            className: "",
+            status: ""
+        )
+        return StudentWorkspace(
+            student: student,
+            courses: [],
+            progress: StudentProgress(
+                id: "",
+                name: "",
+                college: "",
+                className: "",
+                course: 0,
+                general: 0,
+                rawCourse: 0,
+                rawGeneral: 0,
+                exam: 0,
+                attendance: 0,
+                physical: 0,
+                status: "",
+                source: "server-required",
+                organizationCredit: nil
+            ),
+            records: [],
+            grades: GradeRow(
+                studentId: "",
+                studentName: "",
+                checkinScore: 0,
+                exam: 0,
+                attendance: 0,
+                physical: 0,
+                total: 0,
+                sourceTrace: "server-required",
+                missingItems: [],
+                state: .ruleUnpublished
+            ),
+            memberships: [],
+            notices: [],
+            exemptions: [],
+            syncOperations: []
+        )
+    }
+}
+
+#if BNBU_FIXTURES && DEBUG
 struct MockStudentRepository: StudentRepository {
     /// The endurance-run card has four server-driven states that demo data
     /// cannot show at once, so screenshot runs select one by launch argument.
@@ -494,3 +555,4 @@ struct EmptyStudentRepository: StudentRepository {
         )
     }
 }
+#endif

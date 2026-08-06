@@ -1,71 +1,5 @@
 import Foundation
 
-enum StudentServerConfig {
-    static let testBaseURL = URL(string: "http://123.207.5.70:82/api/v1")!
-    static let productionBaseURL = URL(string: "https://configuration-required.invalid/api/v1")!
-    static let localDevelopmentBaseURL = URL(string: "http://127.0.0.1:8080/api/v1")!
-    static let requestTimeout: TimeInterval = 60
-
-    #if DEBUG
-    static let defaultBaseURL = testBaseURL
-    #endif
-
-    static func resolvedBaseURL(
-        arguments: [String] = ProcessInfo.processInfo.arguments,
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundleValue: String? = Bundle.main.object(forInfoDictionaryKey: "BNBUAPIBaseURL") as? String
-    ) -> URL {
-        #if DEBUG
-        if let url = argumentValue(named: "-server-base-url", in: arguments).flatMap(URL.init(string:)).flatMap(validatedBaseURL) {
-            return url
-        }
-        if let rawURL = environment["BNBU_API_BASE_URL"], let url = URL(string: rawURL).flatMap(validatedBaseURL) {
-            return url
-        }
-        return defaultBaseURL
-        #else
-        guard let productionURL = validatedProductionBaseURL(bundleValue) else {
-            preconditionFailure("Release BNBU_API_BASE_URL must be a non-placeholder HTTPS URL ending in /api/v1")
-        }
-        return productionURL
-        #endif
-    }
-
-    static func validatedProductionBaseURL(_ rawValue: String?) -> URL? {
-        guard let rawValue,
-              let url = URL(string: rawValue),
-              let validated = validatedBaseURL(url),
-              validated.scheme == "https",
-              let host = validated.host?.lowercased(),
-              !host.hasSuffix(".invalid"),
-              host != "localhost",
-              host != "127.0.0.1" else {
-            return nil
-        }
-        return validated
-    }
-
-    private static func validatedBaseURL(_ url: URL) -> URL? {
-        guard url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
-              url.path.replacingOccurrences(of: "/+$", with: "", options: .regularExpression) == "/api/v1" else {
-            return nil
-        }
-        #if DEBUG
-        guard url.scheme == "http" || url.scheme == "https" else { return nil }
-        #else
-        guard url.scheme == "https" else { return nil }
-        #endif
-        return url
-    }
-
-    private static func argumentValue(named name: String, in arguments: [String]) -> String? {
-        guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else {
-            return nil
-        }
-        return arguments[index + 1]
-    }
-}
-
 struct APIErrorResponse: Decodable {
     let code: String?
     let message: String
@@ -515,7 +449,8 @@ actor RemoteStudentRepository {
     private let baseURL: URL
     nonisolated let serverIdentity: String
     private let credentialStore: any SecureCredentialStoring
-    private let urlSession: URLSession
+    private let apiClient: StudentAPIClient
+    private let legacyCompatibilityEnabled: Bool
     private var accessToken: String?
     private var currentUser: StudentProfile?
     private var authenticationEpoch: UInt64 = 0
@@ -542,20 +477,22 @@ actor RemoteStudentRepository {
         baseURL: URL = StudentServerConfig.resolvedBaseURL(),
         credentialStore: any SecureCredentialStoring = KeychainCredentialStore(),
         urlSession: URLSession = .shared,
-        legacyDefaults: UserDefaults = .standard
+        legacyDefaults: UserDefaults = .standard,
+        legacyCompatibilityEnabled: Bool = RemoteStudentRepository.automatedTestCompatibilityEnabled
     ) {
         Self.removeStaleUploadFiles()
         ProofTransientFileStore.removeStaleCopies()
         self.baseURL = baseURL
         self.serverIdentity = baseURL.absoluteString
         self.credentialStore = credentialStore
-        self.urlSession = urlSession
+        self.apiClient = StudentAPIClient(baseURL: baseURL, urlSession: urlSession)
+        self.legacyCompatibilityEnabled = legacyCompatibilityEnabled
         let storageKey = Self.accessTokenKey(for: baseURL)
         accessTokenStorageKey = storageKey
 
         let storedCredential: Data?
         do {
-            storedCredential = try credentialStore.data(forKey: storageKey)
+            storedCredential = legacyCompatibilityEnabled ? try credentialStore.data(forKey: storageKey) : nil
         } catch {
             storedCredential = nil
         }
@@ -563,7 +500,7 @@ actor RemoteStudentRepository {
            let token = String(data: secureData, encoding: .utf8),
            !token.isEmpty {
             accessToken = token
-        } else {
+        } else if legacyCompatibilityEnabled {
             let legacyKey = Self.legacyAccessTokenDefaultsKey(for: baseURL)
             let legacyToken = legacyDefaults.string(forKey: legacyKey)
             if let legacyToken, !legacyToken.isEmpty,
@@ -581,11 +518,22 @@ actor RemoteStudentRepository {
         legacyDefaults.removeObject(forKey: "bnbu.remote.refreshToken.v1.\(suffix)")
     }
 
+    private static var automatedTestCompatibilityEnabled: Bool {
+        #if BNBU_FIXTURES && DEBUG
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        #else
+        return false
+        #endif
+    }
+
     var isAuthenticated: Bool {
-        accessToken != nil
+        legacyCompatibilityEnabled && accessToken != nil
     }
 
     func login(account: String, password: String) async throws -> StudentProfile {
+        guard legacyCompatibilityEnabled else {
+            throw RepositoryError.contractStudentJoinRequired
+        }
         authenticationEpoch &+= 1
         let loginEpoch = authenticationEpoch
         let body = try JSONSerialization.data(withJSONObject: [
@@ -746,6 +694,9 @@ actor RemoteStudentRepository {
         attachment: ProofAttachment,
         progressHandler: @escaping @Sendable (Double) -> Void
     ) async throws -> ProofAttachment? {
+        guard legacyCompatibilityEnabled else {
+            throw RepositoryError.contractStudentJoinRequired
+        }
         let boundary = UUID().uuidString
         var request = URLRequest(url: url(for: path), timeoutInterval: StudentServerConfig.requestTimeout)
         request.httpMethod = "POST"
@@ -1112,6 +1063,7 @@ actor RemoteStudentRepository {
     }
 
     private func get(_ path: String, queryItems: [URLQueryItem] = []) async throws -> Data {
+        guard legacyCompatibilityEnabled else { throw RepositoryError.contractStudentJoinRequired }
         var request = URLRequest(url: url(for: path, queryItems: queryItems), timeoutInterval: StudentServerConfig.requestTimeout)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1125,6 +1077,7 @@ actor RemoteStudentRepository {
         authenticated: Bool = true,
         idempotencyKey: String? = nil
     ) async throws -> Data {
+        guard legacyCompatibilityEnabled else { throw RepositoryError.contractStudentJoinRequired }
         var request = URLRequest(url: url(for: path), timeoutInterval: StudentServerConfig.requestTimeout)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1143,6 +1096,7 @@ actor RemoteStudentRepository {
     }
 
     private func patch(_ path: String, body: Data?) async throws -> Data {
+        guard legacyCompatibilityEnabled else { throw RepositoryError.contractStudentJoinRequired }
         var request = URLRequest(url: url(for: path), timeoutInterval: StudentServerConfig.requestTimeout)
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1153,6 +1107,7 @@ actor RemoteStudentRepository {
     }
 
     private func put(_ path: String, body: Data?) async throws -> Data {
+        guard legacyCompatibilityEnabled else { throw RepositoryError.contractStudentJoinRequired }
         var request = URLRequest(url: url(for: path), timeoutInterval: StudentServerConfig.requestTimeout)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1259,9 +1214,9 @@ actor RemoteStudentRepository {
 
     private func networkData(for request: URLRequest) async throws -> (Data, URLResponse) {
         do {
-            return try await urlSession.data(for: request)
-        } catch let error as URLError {
-            throw mappedNetworkError(error)
+            return try await apiClient.data(for: request)
+        } catch let error as APITransportError {
+            throw mappedTransportError(error)
         }
     }
 
@@ -1272,14 +1227,21 @@ actor RemoteStudentRepository {
     ) async throws -> (Data, URLResponse) {
         let delegate = UploadProgressDelegate(progressHandler: progressHandler)
         do {
-            return try await urlSession.upload(
+            return try await apiClient.upload(
                 for: request,
                 fromFile: bodyFileURL,
                 delegate: delegate
             )
-        } catch let error as URLError {
-            throw mappedNetworkError(error)
+        } catch let error as APITransportError {
+            throw mappedTransportError(error)
         }
+    }
+
+    private func mappedTransportError(_ error: APITransportError) -> RepositoryError {
+        if case .network(let code) = error {
+            return mappedNetworkError(URLError(code))
+        }
+        return .networkError("无效的服务器响应")
     }
 
     private func mappedNetworkError(_ error: URLError) -> RepositoryError {
@@ -1476,6 +1438,7 @@ private struct EmptyPayload: Decodable {}
 
 enum RepositoryError: Error, LocalizedError {
     case unauthorized
+    case contractStudentJoinRequired
     case sessionChanged
     case secureStorageUnavailable
     case networkError(String)
@@ -1500,7 +1463,7 @@ enum RepositoryError: Error, LocalizedError {
             return message.localizedCaseInsensitiveContains("processing") ||
                 message.localizedCaseInsensitiveContains("idempotency conflict") ||
                 message.contains("处理中")
-        case .unauthorized, .sessionChanged, .secureStorageUnavailable:
+        case .unauthorized, .contractStudentJoinRequired, .sessionChanged, .secureStorageUnavailable:
             return false
         }
     }
@@ -1509,6 +1472,8 @@ enum RepositoryError: Error, LocalizedError {
         switch self {
         case .unauthorized:
             return BNBUL10n.text("登录已过期，请重新登录")
+        case .contractStudentJoinRequired:
+            return BNBUL10n.text("学生身份必须通过课程二维码加入流程建立；旧密码登录不再连接后端。")
         case .sessionChanged:
             return BNBUL10n.text("登录操作已取消")
         case .secureStorageUnavailable:

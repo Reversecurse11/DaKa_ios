@@ -2,9 +2,18 @@
 
 SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透明化，不包含老师端或管理端功能。
 
-> **现行口径（2026-07-16）**：Debug 使用 `http://123.207.5.70:82/api/v1`；Release 必须由学校确认的 HTTPS 域名提供 `/api/v1`。本页后半部分按轮次保留的是历史开发记录，其中的 3333/96 端口、`/api` 前缀、旧上传路径和历史测试结论不得再作为构建或部署说明。当前执行入口以 [`IOS_QA_RUNBOOK.md`](IOS_QA_RUNBOOK.md)、`scripts/ios-contract-audit.mjs` 和 `scripts/run-macos-release-gate.sh` 为准。
+> **现行口径（2026-08-06）**：Local 使用 `http://127.0.0.1:3000/api/v1`；Staging/Production 必须显式注入获批的 HTTPS `/api/v1` 地址，否则构建失败。统一合同固定在 `Contracts/openapi.snapshot.yaml`，SHA-256 为 `1171cb76a485911ef44f5df9fc65f99ad5cbb9f7ab9d6a4e0d479c06eb4dad8c`。本页后半部分按轮次保留的是历史开发记录，旧远程 IP、旧端口、旧路径和历史测试结论不得再作为构建或部署说明。
 
 > **主线切换（2026-07-19）**：本目录源自负责人 7.18 回传的反馈版源码（`7.18 Feedback/BNBUStudent-iOS-Source-20260717-Aligned-API-Version.zip`），经编译修复、68 项单元测试、UI 冒烟和真实服务器提交/读回闭环验证后升级为主线。旧 3333/96 主线保留在 `../ios-app-legacy-20260715/`，仅作归档不再开发。2026-07-19 验证记录：`test-evidence-20260718/`；Debug 演示图片凭证已携带真实字节，可在真实服务器模式走通上传与提交（演示视频仍为预览占位）。
+
+## 后端集成基础层
+
+- `APIV1` 模型由固定 OpenAPI 快照生成；构建阶段验证哈希和生成物可重复性。
+- `Configurations/` 分离 Local、Staging、Production，正式环境缺少获批 URL 时 fail closed。
+- 单一 `URLSession` transport 处理 `data/meta`、五字段错误 envelope、最终 `requestId` 和安全有界重试。
+- 新会话适配器以二维码 `preview → join-capabilities → join` 为学生主链，Access/Refresh 作为一个原子 Keychain 会话保存并支持轮换、撤销与重启恢复。
+- Media 采用 `initiate → private PUT → confirm → bind`；Session 与 Score 仅消费服务端权威投影。
+- 现有 SwiftUI 页面和旧 repository 作为迁移 seam 保留；普通构建不会连接旧路径或自动回退演示数据，后续按业务域逐页接入新 gateway。
 
 ## 范围
 
@@ -22,7 +31,7 @@ SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透�
 
 ## 数据与后端对齐
 
-App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测试服，Release 必须显式注入正式 HTTPS 地址；本地 Mock 仅用于自动化测试。模型命名与字段语义以三端共用 OpenAPI 为准：
+新集成代码以固定 OpenAPI 快照为唯一合同输入。Local 默认连接本机 Docker API；Mock 仅在 Debug 测试编译且带显式 `-ui-testing-*` 参数时可达，Release 不包含 fixture 实现。以下名称属于现有 UI 迁移层，后续将按业务域替换为生成的 `APIV1` 投影：
 
 - `Course`
 - `StudentProgress`
@@ -33,9 +42,9 @@ App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测�
 - `ProofAttachment`
 - `CheckInDraft`
 
-登录 Token 只由 Keychain 保存；工作台缓存和打卡草稿由 `Core/AppLocalStore.swift` 写入应用私有、完整文件保护且排除云备份的存储，并按 API Base URL 与学生账号隔离。退出或鉴权失效会清除当前账号的 Token、缓存和未提交草稿。
+Access/Refresh Token 作为一个会话 blob 只由 Keychain 保存；工作台缓存和打卡草稿由 `Core/AppLocalStore.swift` 写入应用私有、完整文件保护且排除云备份的存储，并按 API Base URL 与学生账号隔离。退出或鉴权失效会清除当前账号的 Token、缓存和未提交草稿。
 
-`Core/RemoteStudentRepository.swift` 已接入学生登录、体育总览、课程、打卡记录、凭证上传、免测申请、运动身份和通知接口。远程提交只有在服务器确认成功后才展示成功状态；断网、超时、服务器错误、字段变化与 token 失效均有学生可理解的反馈。
+`Core/RemoteStudentRepository.swift` 是旧 UI 的测试兼容适配器，普通运行 fail closed；新后端链路位于 `Backend/` 并复用 `Core/StudentAPIClient.swift` 的统一 transport。
 
 ## 构建与门禁
 
