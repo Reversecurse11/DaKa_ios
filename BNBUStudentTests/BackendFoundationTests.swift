@@ -10,9 +10,15 @@ final class BackendFoundationTests: XCTestCase {
     func testContractMetadataAndLocalEnvironmentArePinned() throws {
         XCTAssertEqual(
             APIV1ContractMetadata.sourceSHA256,
-            "1171cb76a485911ef44f5df9fc65f99ad5cbb9f7ab9d6a4e0d479c06eb4dad8c"
+            "fb040b671e3f25c48279ad6b173ced5f633de1b1a1a9db0cc0f23a11e3fde4d1"
         )
+        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.1.0-contract")
         XCTAssertEqual(APIV1ContractMetadata.apiPrefix, "/api/v1")
+        XCTAssertEqual(APIV1ContractMetadata.pathCount, 104)
+        XCTAssertEqual(APIV1ContractMetadata.operationCount, 122)
+        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 271)
+        XCTAssertEqual(APIV1ContractMetadata.defaultDeniedClientCapabilityCount, 30)
+        XCTAssertEqual(APIV1DefaultDeniedClientCapability.allCases.count, 30)
 
         let local = try BackendEnvironment.resolve(
             arguments: ["BNBUStudent"],
@@ -196,6 +202,95 @@ final class BackendFoundationTests: XCTestCase {
         ]))
         XCTAssertFalse(SensitiveLoggingPolicy.isAllowed(metadata: ["accessToken": "secret"]))
         XCTAssertFalse(SensitiveLoggingPolicy.isAllowed(metadata: ["url": "https://x.test/a?X-Amz-Signature=secret"]))
+        XCTAssertFalse(SensitiveLoggingPolicy.isAllowed(metadata: ["sampleLatitude": "22.35"]))
+        XCTAssertFalse(SensitiveLoggingPolicy.isAllowed(metadata: ["payload": #"{"longitude":114.20}"#]))
+        XCTAssertTrue(SensitiveLoggingPolicy.isAllowed(metadata: [
+            "operationId": "getExerciseRecordLocationSummary",
+            "requestId": "req-coarse-summary"
+        ]))
+    }
+
+    func testDefaultDeniedCapabilitiesKeep503AndIOSPlatformBoundaries() {
+        let error = APITransportError.failure(
+            statusCode: 503,
+            envelope: APIErrorEnvelope(
+                code: "SYSTEM_MODE_UNSUPPORTED",
+                message: "Unsupported",
+                details: .object([:]),
+                requestId: "req-capability-503",
+                timestamp: "2026-08-06T00:00:00Z"
+            )
+        )
+
+        XCTAssertEqual(
+            DefaultDeniedCapabilityPolicy.unavailableState(for: .listNotifications, from: error),
+            DefaultDeniedCapabilityState(
+                operationID: "listNotifications",
+                message: "该功能尚未开放。",
+                requestId: "req-capability-503"
+            )
+        )
+        XCTAssertEqual(
+            DefaultDeniedCapabilityPolicy.unavailableState(for: .startExerciseLocationTrack, from: error)?.requestId,
+            "req-capability-503"
+        )
+        XCTAssertFalse(IOSPlatformContractPolicy.isRepresentable(.registerPushDevice))
+        XCTAssertFalse(IOSPlatformContractPolicy.isRepresentable(.unregisterPushDevice))
+        XCTAssertFalse(IOSPlatformContractPolicy.isRepresentable(.getAppReleasePolicy))
+        XCTAssertTrue(IOSPlatformContractPolicy.isRepresentable(.requestStudentSignInCode))
+        XCTAssertTrue(IOSPlatformContractPolicy.isRepresentable(.createFeedback))
+    }
+
+    func testLocationPrivacyGateFailsClosedUntilEveryGovernanceValueIsApproved() {
+        let now = ISO8601DateFormatter().date(from: "2026-08-06T01:00:00Z")!
+        let enabledPolicy = APIV1LocationPrivacyPolicy(
+            organizationId: "organization-1",
+            policyVersion: "gps-policy-1",
+            collectionEnabled: true,
+            purposeCode: "EXERCISE_EVIDENCE",
+            sampleIntervalSeconds: 10,
+            maximumAccuracyMeters: 100,
+            rawRetentionDays: 0,
+            coarseRetentionDays: 30,
+            coarseProjectionMeters: 500,
+            effectiveAt: "2026-08-06T00:00:00Z",
+            version: 1
+        )
+
+        XCTAssertFalse(LocationPrivacyGate.allowsCollection(
+            policy: nil,
+            consentPolicyVersion: nil,
+            at: now
+        ))
+        XCTAssertFalse(LocationPrivacyGate.allowsCollection(
+            policy: enabledPolicy,
+            consentPolicyVersion: "different-policy",
+            at: now
+        ))
+        XCTAssertTrue(LocationPrivacyGate.allowsCollection(
+            policy: enabledPolicy,
+            consentPolicyVersion: "gps-policy-1",
+            at: now
+        ))
+
+        let unapprovedPolicy = APIV1LocationPrivacyPolicy(
+            organizationId: "organization-1",
+            policyVersion: "gps-policy-1",
+            collectionEnabled: true,
+            purposeCode: "EXERCISE_EVIDENCE",
+            sampleIntervalSeconds: nil,
+            maximumAccuracyMeters: nil,
+            rawRetentionDays: nil,
+            coarseRetentionDays: nil,
+            coarseProjectionMeters: nil,
+            effectiveAt: nil,
+            version: 1
+        )
+        XCTAssertFalse(LocationPrivacyGate.allowsCollection(
+            policy: unapprovedPolicy,
+            consentPolicyVersion: "gps-policy-1",
+            at: now
+        ))
     }
 
     func testConcurrent401UsesOneRefreshRotationAndLogoutRevokesFirst() async throws {

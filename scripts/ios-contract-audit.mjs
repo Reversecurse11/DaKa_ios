@@ -154,6 +154,7 @@ const profileView = read("BNBUStudentApp/Features/ProfileView.swift");
 const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
 const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
 const checkinView = read("BNBUStudentApp/Features/CheckInView.swift");
+const locationProvider = read("BNBUStudentApp/Core/ExerciseLocationProvider.swift");
 const gradesView = read("BNBUStudentApp/Features/GradesView.swift");
 const dashboardView = read("BNBUStudentApp/Features/DashboardView.swift");
 const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
@@ -167,6 +168,7 @@ const backendEnvironment = read("BNBUStudentApp/Backend/BackendEnvironment.swift
 const backendAuth = read("BNBUStudentApp/Backend/BackendAuthSession.swift");
 const generatedModels = read("BNBUStudentApp/Backend/Generated/APIV1Models.generated.swift");
 const productionConfiguration = read("Configurations/Production.xcconfig");
+const stagingConfiguration = read("Configurations/Staging.xcconfig");
 const appSources = swiftFiles(path.join(iosRoot, "BNBUStudentApp"))
   .map((file) => fs.readFileSync(file, "utf8"))
   .join("\n");
@@ -440,7 +442,14 @@ requireText(dashboardView, "if hasActiveEnrollment {", "Today's check-in panel n
 requireText(dashboardView, "CheckInTimeWindowRule.canStartExercise(at: date)", "The dashboard reuses the check-in window rule rather than its own copy");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
-requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");
+rejectText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build does not request default-denied location access");
+requireText(locationProvider, "#if BNBU_FIXTURES && DEBUG", "Core Location exists only in the explicit Debug fixture build");
+requireText(productionConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Production excludes the location provider source");
+requireText(stagingConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Staging excludes the location provider source");
+requireText(checkinView, 'arguments.contains("-ui-testing-location-check")', "Only the dedicated UI fixture can start a location request");
+requireText(checkinView, 'BNBUL10n.text("定位功能未开放")', "Formal builds label the default-denied location state accurately");
+rejectText(models, "var latitude: Double?", "Legacy exercise sessions cannot retain raw latitude");
+rejectText(models, "var longitude: Double?", "Legacy exercise sessions cannot retain raw longitude");
 rejectText(debugInfoPlist + releaseInfoPlist, "NSLocationAlwaysAndWhenInUseUsageDescription", "Background location is never requested");
 requireText(gradesView, "maxAttachmentCount: ExemptionProofRule.maxAttachmentCount", "Exemption picker stops at five proofs");
 requireText(appState, "guard ExemptionProofRule.accepts(proofAttachments)", "Exemption submission revalidates its proof contract");
@@ -608,9 +617,10 @@ requireText(components, ".photosPicker(", "Photo evidence uses the system privac
 requireText(privacyManifest, "<key>NSPrivacyTracking</key>\n\t<false/>", "Privacy manifest declares no tracking");
 requireText(privacyManifest, "NSPrivacyAccessedAPICategoryUserDefaults", "Privacy manifest declares UserDefaults required-reason API");
 requireText(privacyManifest, "CA92.1", "UserDefaults access has the app-only required reason");
-for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo", "PreciseLocation"]) {
+for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo"]) {
   requireText(privacyManifest, `NSPrivacyCollectedDataType${dataType}`, `Privacy manifest declares ${dataType}`);
 }
+rejectText(privacyManifest, "NSPrivacyCollectedDataTypePreciseLocation", "Release privacy manifest does not claim disabled precise-location collection");
 
 rejectText(debugInfoPlist + releaseInfoPlist, "CFBundleURLTypes", "No custom URL-scheme deep-link surface is registered");
 rejectText(project, "com.apple.developer.associated-domains", "No unreviewed universal-link entitlement is enabled");
@@ -741,6 +751,7 @@ requireText(
 // names Firebase and promises no microphone, neither of which is true here.
 rejectText(appShellViews, "Firebase", "The iOS consent summary does not claim Firebase messaging");
 requireText(appShellViews, "麦克风记录声音", "The iOS consent summary discloses microphone use during video capture");
+requireText(appShellViews, "当前正式版本不申请定位权限，也不采集原始坐标", "The consent summary discloses the default-denied location state");
 requireText(
   appState,
   "localStore.saveCourseJoinRequest(request)",

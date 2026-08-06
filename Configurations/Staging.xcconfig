@@ -4,3 +4,4 @@ BNBU_ENVIRONMENT = staging
 BNBU_API_BASE_URL = https:/$()/configuration-required.invalid/api/v1
 BNBU_REQUIRE_APPROVED_API_URL = YES
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) BNBU_STAGING
+EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift

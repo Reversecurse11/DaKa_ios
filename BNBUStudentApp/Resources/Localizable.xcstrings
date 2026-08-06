@@ -8575,6 +8575,17 @@
         }
       }
     },
+    "定位功能未开放" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location unavailable"
+          }
+        }
+      }
+    },
     "未获取（不影响计时）" : {
       "extractionState" : "stale",
       "localizations" : {

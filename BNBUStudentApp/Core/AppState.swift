@@ -131,7 +131,14 @@ final class AppState: ObservableObject {
 
         self.workspace = workspace
         self.draft = restoredDraft
-        self.exerciseSession = exerciseSessionRead.value?.reconciled()
+        let restoredExerciseSession = exerciseSessionRead.value?.reconciled()
+        self.exerciseSession = restoredExerciseSession
+        // Rewrite the decoded value once so files from older builds lose any
+        // latitude/longitude keys that the 1.1 default-deny contract forbids us
+        // from retaining.
+        if let restoredExerciseSession {
+            _ = localStore.saveExerciseSession(restoredExerciseSession)
+        }
         var restoredMutations = pendingMutationRead.value ?? [:]
         if let draftAttempt = restoredDraft?.pendingRemoteMutation {
             restoredMutations[draftAttempt.scope] = draftAttempt
@@ -598,8 +605,7 @@ final class AppState: ObservableObject {
         category: ExerciseCategory,
         sportType: ExerciseSportType?,
         customSportName: String,
-        at startTime: Date = Date(),
-        location: (latitude: Double, longitude: Double)? = nil
+        at startTime: Date = Date()
     ) -> Bool {
         guard exerciseSession == nil else {
             errorMessage = BNBUL10n.text("已有进行中或待提交的运动，请先完成当前记录。")
@@ -638,9 +644,7 @@ final class AppState: ObservableObject {
             startTime: startTime,
             endTime: nil,
             status: .active,
-            locationStatus: location == nil ? .unavailable : .available,
-            latitude: location?.latitude,
-            longitude: location?.longitude
+            locationStatus: .unavailable
         )
         guard localStore.saveExerciseSession(session) else {
             errorMessage = BNBUL10n.text("无法安全保存运动开始时间，请确认设备存储空间后重试。")
@@ -651,19 +655,18 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Business rule 5.5: location is fetched once, best-effort, after the
-    /// timer starts. A late fix attaches to the still-running session;
-    /// failures leave the record marked "未获取位置" and never block anything.
-    func attachExerciseSessionLocation(latitude: Double, longitude: Double) {
+    #if BNBU_FIXTURES && DEBUG
+    /// Debug-only permission-flow fixture. Production and staging builds do
+    /// not compile the location provider or this attachment path.
+    func attachExerciseSessionLocation(latitude _: Double, longitude _: Double) {
         guard var session = exerciseSession,
               session.status == .active,
               session.locationStatus == .unavailable else { return }
         session.locationStatus = .available
-        session.latitude = latitude
-        session.longitude = longitude
         guard localStore.saveExerciseSession(session) else { return }
         exerciseSession = session
     }
+    #endif
 
     func reconcileExerciseSession(at date: Date = Date()) {
         guard let session = exerciseSession else { return }
@@ -2625,9 +2628,8 @@ final class AppState: ObservableObject {
 
         let reconciledSession = storedSession.reconciled()
         exerciseSession = reconciledSession
-        if reconciledSession != storedSession {
-            _ = localStore.saveExerciseSession(reconciledSession)
-        }
+        // Always rewrite to scrub raw coordinates left by a pre-1.1 build.
+        _ = localStore.saveExerciseSession(reconciledSession)
     }
 
     private func upsertExemption(_ application: ExemptionApplication) {

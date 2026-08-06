@@ -64,9 +64,7 @@ final class BNBUStudentModelTests: XCTestCase {
             startTime: start,
             endTime: nil,
             status: .active,
-            locationStatus: .unavailable,
-            latitude: nil,
-            longitude: nil
+            locationStatus: .unavailable
         )
 
         XCTAssertEqual(session.creditedHours(at: start.addingTimeInterval(3_599)), 0)
@@ -88,9 +86,7 @@ final class BNBUStudentModelTests: XCTestCase {
             startTime: start,
             endTime: nil,
             status: .active,
-            locationStatus: .available,
-            latitude: 22.35,
-            longitude: 114.20
+            locationStatus: .available
         )
 
         XCTAssertEqual(active.reconciled(at: start.addingTimeInterval(7_199)).status, .active)
@@ -120,6 +116,47 @@ final class BNBUStudentModelTests: XCTestCase {
         let restored = AppState(repository: MockStudentRepository(), localStore: store)
         XCTAssertEqual(restored.exerciseSession?.id, stored.id)
         XCTAssertEqual(restored.exerciseSession?.resolvedSportName, "飞盘")
+    }
+
+    func testLegacyExerciseSessionCoordinatesAreScrubbedDuringRestore() throws {
+        let defaults = isolatedDefaults()
+        let repository = MockStudentRepository()
+        let session = ExerciseSession(
+            id: "legacy-location-session",
+            studentID: repository.loadWorkspace().student.id,
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: Date(timeIntervalSince1970: 1_783_516_800),
+            status: .active,
+            locationStatus: .unavailable
+        )
+        var legacyJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any]
+        )
+        legacyJSON["locationStatus"] = "available"
+        legacyJSON["latitude"] = 22.35
+        legacyJSON["longitude"] = 114.20
+        defaults.set(
+            try JSONSerialization.data(withJSONObject: legacyJSON),
+            forKey: AppLocalStore.exerciseSessionStorageKey
+        )
+
+        let restored = AppState(
+            repository: repository,
+            localStore: AppLocalStore(defaults: defaults)
+        )
+
+        XCTAssertEqual(restored.exerciseSession?.locationStatus, .unavailable)
+        let migratedData = try XCTUnwrap(defaults.data(forKey: AppLocalStore.exerciseSessionStorageKey))
+        let migratedJSON = String(decoding: migratedData, as: UTF8.self)
+        XCTAssertFalse(migratedJSON.contains("latitude"))
+        XCTAssertFalse(migratedJSON.contains("longitude"))
+        let migratedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: migratedData) as? [String: Any]
+        )
+        XCTAssertEqual(migratedObject["locationStatus"] as? String, "unavailable")
     }
 
     // MARK: - Pause model (business rule 3.2.1)
@@ -1365,12 +1402,15 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(GradeTimeFormatter.compact("  "), "")
     }
 
-    // MARK: - Best-effort location (business rules 5.5/10.3)
+    // MARK: - Default-denied location fixture
 
-    func testLocationAttachesOnlyToRunningSessionWithoutFix() throws {
+    #if BNBU_FIXTURES && DEBUG
+    func testLocationFixtureIsMemoryOnlyAndRawCoordinatesNeverPersist() throws {
+        let defaults = isolatedDefaults()
+        let store = AppLocalStore(defaults: defaults)
         let appState = AppState(
             repository: MockStudentRepository(),
-            localStore: AppLocalStore(defaults: isolatedDefaults())
+            localStore: store
         )
         appState.enforcesCheckInTimeWindow = false
 
@@ -1385,22 +1425,26 @@ final class BNBUStudentModelTests: XCTestCase {
         ))
         XCTAssertEqual(appState.exerciseSession?.locationStatus, .unavailable)
 
-        // A late fix attaches to the running session and persists.
+        // A late Debug fixture fix can update only the in-memory UI state.
         appState.attachExerciseSessionLocation(latitude: 22.35, longitude: 114.20)
         XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
-        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
-        XCTAssertEqual(appState.exerciseSession?.longitude, 114.20)
 
-        // A second fix never overwrites the first.
+        // A second fix is ignored, and persistence always scrubs the status.
         appState.attachExerciseSessionLocation(latitude: 0, longitude: 0)
-        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
+        let stored = try XCTUnwrap(store.readExerciseSession().value)
+        XCTAssertEqual(stored.locationStatus, .unavailable)
+        let encodedSession = try XCTUnwrap(appState.exerciseSession)
+        let encoded = String(decoding: try JSONEncoder().encode(encodedSession), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("latitude"))
+        XCTAssertFalse(encoded.contains("longitude"))
 
         // A completed session no longer accepts fixes.
         XCTAssertTrue(appState.endExerciseSession())
-        let endedLatitude = appState.exerciseSession?.latitude
         appState.attachExerciseSessionLocation(latitude: 1, longitude: 1)
-        XCTAssertEqual(appState.exerciseSession?.latitude, endedLatitude)
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
     }
+    #endif
 
     func testDailyLimitUsesExerciseStartDateWhenSessionCrossesMidnight() async throws {
         let defaults = isolatedDefaults()

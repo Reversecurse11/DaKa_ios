@@ -512,7 +512,7 @@ struct PrivacyConsentView: View {
                 // build declares NSMicrophoneUsageDescription for in-app video and
                 // has no remote push registration yet, so the disclosure has to
                 // describe what iOS actually does.
-                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频，并在前台单次获取位置。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
+                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(BNBUFont.LineSpacing.bodyMedium)

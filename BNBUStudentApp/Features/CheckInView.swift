@@ -587,15 +587,7 @@ struct CheckInView: View {
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
                     Spacer(minLength: BNBUSpacing.space8)
-                    SessionStatePill(
-                        text: session.locationStatus == .available
-                            ? BNBUL10n.text("已获取位置")
-                            : BNBUL10n.text("未获取位置"),
-                        tint: session.locationStatus == .available
-                            ? BNBUTheme.tertiary
-                            : BNBUTheme.secondary
-                    )
-                    .accessibilityIdentifier("checkin.location.status")
+                    exerciseLocationPill(session)
                 }
 
                 HStack(spacing: 10) {
@@ -656,6 +648,26 @@ struct CheckInView: View {
                 }
             }
         }
+    }
+
+    private func exerciseLocationPill(_ session: ExerciseSession) -> some View {
+        #if BNBU_FIXTURES && DEBUG
+        return SessionStatePill(
+            text: session.locationStatus == .available
+                ? BNBUL10n.text("已获取位置")
+                : BNBUL10n.text("未获取位置"),
+            tint: session.locationStatus == .available
+                ? BNBUTheme.tertiary
+                : BNBUTheme.secondary
+        )
+        .accessibilityIdentifier("checkin.location.status")
+        #else
+        return SessionStatePill(
+            text: BNBUL10n.text("定位功能未开放"),
+            tint: BNBUTheme.secondary
+        )
+        .accessibilityIdentifier("checkin.location.status")
+        #endif
     }
 
     private func sessionStatusTitle(_ session: ExerciseSession) -> String {
@@ -1123,19 +1135,19 @@ struct CheckInView: View {
             sportType: selectedSportType,
             customSportName: customSportType
         ) else { return }
-        // Business rule 5.5: the timer starts immediately; a single location
-        // fix is fetched in the background and attached if it arrives while
-        // the session is still running. Failure just leaves "未获取位置".
-        // UI tests skip the fetch (permission alerts break determinism)
-        // except the dedicated GPS test, which opts back in.
+        // OpenAPI 1.1 publishes GPS routes as stable default-deny contracts.
+        // Keep only the explicit Debug permission fixture until both the
+        // backend gate and the privacy policy are approved.
+        #if BNBU_FIXTURES && DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if !arguments.contains("-ui-testing-reset") || arguments.contains("-ui-testing-location-check") {
+        if arguments.contains("-ui-testing-location-check") {
             Task {
                 if let fix = await ExerciseLocationProvider.shared.requestCurrentLocation() {
                     appState.attachExerciseSessionLocation(latitude: fix.latitude, longitude: fix.longitude)
                 }
             }
         }
+        #endif
     }
 
     private var resolvedSportType: String? {

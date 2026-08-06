@@ -370,8 +370,6 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
     var endTime: Date?
     var status: ExerciseSessionStatus
     var locationStatus: ExerciseLocationStatus
-    var latitude: Double?
-    var longitude: Double?
     var pauses: [ExercisePause]
 
     init(
@@ -385,8 +383,6 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         endTime: Date? = nil,
         status: ExerciseSessionStatus,
         locationStatus: ExerciseLocationStatus,
-        latitude: Double? = nil,
-        longitude: Double? = nil,
         pauses: [ExercisePause] = []
     ) {
         self.id = id
@@ -399,9 +395,21 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         self.endTime = endTime
         self.status = status
         self.locationStatus = locationStatus
-        self.latitude = latitude
-        self.longitude = longitude
         self.pauses = pauses
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case studentID
+        case category
+        case sportType
+        case customSportName
+        case courseID
+        case startTime
+        case endTime
+        case status
+        case locationStatus
+        case pauses
     }
 
     init(from decoder: Decoder) throws {
@@ -415,11 +423,29 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         startTime = try container.decode(Date.self, forKey: .startTime)
         endTime = try container.decodeIfPresent(Date.self, forKey: .endTime)
         status = try container.decode(ExerciseSessionStatus.self, forKey: .status)
-        locationStatus = try container.decode(ExerciseLocationStatus.self, forKey: .locationStatus)
-        latitude = try container.decodeIfPresent(Double.self, forKey: .latitude)
-        longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
+        // OpenAPI 1.1 keeps GPS disabled by default. Older builds persisted raw
+        // coordinates alongside this status; decoding deliberately ignores all
+        // legacy location fields so an upgrade cannot keep using that state.
+        locationStatus = .unavailable
         // Sessions persisted before the pause feature carry no pauses key.
         pauses = try container.decodeIfPresent([ExercisePause].self, forKey: .pauses) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(studentID, forKey: .studentID)
+        try container.encode(category, forKey: .category)
+        try container.encode(sportType, forKey: .sportType)
+        try container.encodeIfPresent(customSportName, forKey: .customSportName)
+        try container.encodeIfPresent(courseID, forKey: .courseID)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encodeIfPresent(endTime, forKey: .endTime)
+        try container.encode(status, forKey: .status)
+        // The debug-only location fixture may mark the in-memory session as
+        // available, but no location state or raw coordinate survives restart.
+        try container.encode(ExerciseLocationStatus.unavailable, forKey: .locationStatus)
+        try container.encode(pauses, forKey: .pauses)
     }
 
     var resolvedSportName: String {

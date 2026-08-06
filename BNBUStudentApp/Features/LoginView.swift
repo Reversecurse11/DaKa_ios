@@ -15,7 +15,7 @@ private enum LoginRoute: Hashable {
 }
 
 enum BNBUPrivacyConsent {
-    static let currentVersion = "2026-07-23"
+    static let currentVersion = "2026-08-06"
     static let defaultsKeyPrefix = "bnbu.privacy.consent.v1."
 
     static func normalizedAccount(_ account: String) -> String {

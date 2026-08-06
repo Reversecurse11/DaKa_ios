@@ -415,11 +415,11 @@ struct MockStudentRepository: StudentRepository {
             ),
             HelpArticle(
                 id: "help-location-denied",
-                title: "为什么获取不到定位？",
+                title: "为什么定位功能未开放？",
                 category: "定位与权限",
-                content: "请在 iPhone“设置 → 隐私与安全性 → 定位服务”中允许本 App 使用定位。定位失败不会阻止计时和提交，记录会显示为“未获取位置”。",
+                content: "当前正式版本不申请定位权限，也不采集或保存原始坐标。后端位置隐私策略和业务门禁获批前，运动计时与提交均不依赖定位。",
                 sortOrder: 30,
-                updatedAt: "2026-07-20T02:00:00Z"
+                updatedAt: "2026-08-06T00:00:00Z"
             ),
             HelpArticle(
                 id: "help-exemption-apply",

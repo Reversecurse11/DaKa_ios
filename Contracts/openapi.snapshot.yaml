@@ -1,16 +1,19 @@
 openapi: 3.1.0
 info:
   title: BNBU Sports Unified API
-  version: 1.0.0-contract
+  version: 1.1.0-contract
   summary: Unified contract for the sports check-in platform
   description: |
-    Stage 6 contract only. It does not prove that a production backend exists.
+    Stage 21 contract. It does not prove that every registered capability is
+    business-enabled or production-ready.
     Business fields come from 02-data-dictionary.md, state transitions from
     03-state-machines.md, rules from 04-business-rules.md, and authorization
     from 05-permission-matrix.md. Foundation authentication/session persistence
     is approved; CourseInvite/Join Capability are contract-and-persistence-design
     only until the Enrollment Gate, while every Export operation is fail-closed
-    and V1 persists no ExportJob.
+    and V1 persists no ExportJob. Client support and GPS capabilities added in
+    Stage 21 are real routed default denials until their business, privacy, and
+    retention gates are approved.
 servers:
   - url: /api/v1
     description: Version 1 relative base path
@@ -19,7 +22,7 @@ security:
 x-authorization-invariants:
   teacherScope: ClassSection.teacherId must equal principal.teacherId; no assignment or inferred multi-teacher relation exists.
   rawAuditLogRead: ADMIN within the same organization only; TEACHER is denied.
-  defaultDeny: Student enrollment withdrawal, submitted-record withdrawal, roster ignore, and archived-score correction are explicit routed denials. Student Course/ClassSection projection remains denied until an ACTIVE Enrollment can be resolved.
+  defaultDeny: Student enrollment withdrawal, submitted-record withdrawal, roster ignore, archived-score correction, Export, client support, exemption, and GPS/location capabilities are explicit routed denials. Student Course/ClassSection projection remains denied until an ACTIVE Enrollment can be resolved.
 tags:
   - name: Health
     description: Public liveness and dependency-aware readiness probes.
@@ -67,6 +70,14 @@ tags:
     description: Registered transport shapes whose operations remain fail-closed; V1 persists no ExportJob.
   - name: Audit Logs
     description: Organization-scoped raw audit events available only to administrators.
+  - name: Client Capabilities
+    description: Contract-first client support capabilities that remain stable default-deny until their business gates are approved.
+  - name: Notifications
+    description: Role-scoped notification inbox and push-device registration contracts.
+  - name: Exemption Applications
+    description: Student applications and responsible-teacher review contracts; no workflow is active yet.
+  - name: Location Evidence
+    description: Consent-bound exercise GPS intake and coarse Record summary contracts; collection is disabled pending privacy and retention approval.
 paths:
   /health/live:
     get:
@@ -3144,6 +3155,894 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /auth/student-sign-in-codes:
+    post:
+      tags: [Authentication, Client Capabilities]
+      operationId: requestStudentSignInCode
+      x-access-policy:
+        policyId: AUTH-STUDENT-CODE-REQUEST
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Request a student sign-in challenge through an approved contact channel
+      description: Stable default-deny. No OTP provider, student recovery identity proof, rate policy, or delivery retention is approved.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: STUDENT_REAUTHENTICATION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentSignInCodeRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/EmptySuccess' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /auth/student-sign-in-codes/verify:
+    post:
+      tags: [Authentication, Client Capabilities]
+      operationId: verifyStudentSignInCode
+      x-access-policy:
+        policyId: AUTH-STUDENT-CODE-VERIFY
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Verify a student sign-in challenge and establish an authenticated session
+      description: Stable default-deny. A successful Session contract is reserved but no verification fact is accepted or persisted.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: STUDENT_REAUTHENTICATION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentSignInCodeVerificationRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AuthSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /auth/account-recovery-requests:
+    post:
+      tags: [Authentication, Client Capabilities]
+      operationId: requestAccountRecovery
+      x-access-policy:
+        policyId: AUTH-ACCOUNT-RECOVERY-REQUEST
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Request an account recovery challenge without disclosing account existence
+      description: Stable default-deny. Responses must remain enumeration-safe when this capability is later approved.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: ACCOUNT_RECOVERY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountRecoveryRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/EmptySuccess' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /auth/account-recovery-requests/complete:
+    post:
+      tags: [Authentication, Client Capabilities]
+      operationId: completeAccountRecovery
+      x-access-policy:
+        policyId: AUTH-ACCOUNT-RECOVERY-COMPLETE
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Complete an approved account recovery challenge
+      description: Stable default-deny. No credential, token version, or AuthSession is changed.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: ACCOUNT_RECOVERY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountRecoveryCompletionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/EmptySuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /notifications:
+    get:
+      tags: [Notifications, Client Capabilities]
+      operationId: listNotifications
+      x-access-policy:
+        policyId: NOTIFICATION-LIST
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: List the authenticated user's notification inbox
+      description: Stable default-deny. No Notification persistence, delivery, or retention model exists.
+      x-enabled-by-default: false
+      x-business-blocker: NOTIFICATION_DELIVERY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: unreadOnly
+          in: query
+          required: false
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/NotificationListSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications, Client Capabilities]
+      operationId: markNotificationRead
+      x-access-policy:
+        policyId: NOTIFICATION-MARK-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: Mark one owned notification as read
+      description: Stable default-deny with no Notification or AuditLog mutation.
+      x-enabled-by-default: false
+      x-business-blocker: NOTIFICATION_DELIVERY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '200': { $ref: '#/components/responses/NotificationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /push-devices:
+    post:
+      tags: [Notifications, Client Capabilities]
+      operationId: registerPushDevice
+      x-access-policy:
+        policyId: PUSH-DEVICE-REGISTER
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: Register a push-delivery token for the current authenticated session
+      description: Stable default-deny. No FCM/APNs provider, token retention, rotation, or consent policy is approved.
+      x-enabled-by-default: false
+      x-business-blocker: PUSH_DELIVERY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushDeviceRegistrationRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/PushDeviceSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /push-devices/{deviceId}:
+    delete:
+      tags: [Notifications, Client Capabilities]
+      operationId: unregisterPushDevice
+      x-access-policy:
+        policyId: PUSH-DEVICE-UNREGISTER
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: Unregister an owned push-delivery token
+      description: Stable default-deny with no device-token mutation.
+      x-enabled-by-default: false
+      x-business-blocker: PUSH_DELIVERY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      responses:
+        '200': { $ref: '#/components/responses/EmptySuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /me/preferences:
+    get:
+      tags: [Current User, Client Capabilities]
+      operationId: getCurrentUserPreferences
+      x-access-policy:
+        policyId: USER-PREFERENCES-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: Get synchronized user interface and communication preferences
+      description: Stable default-deny. Local client language remains separate from any future server preference.
+      x-enabled-by-default: false
+      x-business-blocker: USER_PREFERENCE_SYNC_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/UserPreferencesSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    patch:
+      tags: [Current User, Client Capabilities]
+      operationId: updateCurrentUserPreferences
+      x-access-policy:
+        policyId: USER-PREFERENCES-UPDATE
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: Update synchronized user preferences with optimistic concurrency
+      description: Stable default-deny. No preference, version, AuditLog, or Outbox mutation occurs.
+      x-enabled-by-default: false
+      x-business-blocker: USER_PREFERENCE_SYNC_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserPreferencesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/UserPreferencesSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /help-articles:
+    get:
+      tags: [Client Capabilities]
+      operationId: listHelpArticles
+      x-access-policy:
+        policyId: PUBLIC-HELP-ARTICLE-LIST
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: List approved localized help content
+      description: Stable default-deny. Static client help remains independent until editorial ownership and publishing are approved.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: HELP_CONTENT_GOVERNANCE_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: locale
+          in: query
+          required: false
+          schema: { type: string, enum: [zh-CN, en], default: zh-CN, x-transport-constraint: true }
+        - name: category
+          in: query
+          required: false
+          schema: { type: string, maxLength: 64 }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/HelpArticleListSuccess' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /help-articles/{articleId}:
+    get:
+      tags: [Client Capabilities]
+      operationId: getHelpArticle
+      x-access-policy:
+        policyId: PUBLIC-HELP-ARTICLE-READ
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Get one approved localized help article
+      description: Stable default-deny with no content publication model.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: HELP_CONTENT_GOVERNANCE_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/HelpArticleSuccess' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /feedback:
+    get:
+      tags: [Client Capabilities]
+      operationId: listFeedback
+      x-access-policy:
+        policyId: FEEDBACK-LIST
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ROLE_SCOPED
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: List own feedback or organization governance feedback according to role
+      description: Stable default-deny. ADMIN does not gain access to arbitrary client diagnostics or secrets.
+      x-enabled-by-default: false
+      x-business-blocker: FEEDBACK_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/FeedbackListSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [Client Capabilities]
+      operationId: createFeedback
+      x-access-policy:
+        policyId: FEEDBACK-CREATE
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_USER
+        defaultDeny: true
+      summary: Create a privacy-bounded feedback item
+      description: Stable default-deny. No ticket, attachment, client log, or external support-system side effect is created.
+      x-enabled-by-default: false
+      x-business-blocker: FEEDBACK_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFeedbackRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/FeedbackSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /feedback/{feedbackId}:
+    get:
+      tags: [Client Capabilities]
+      operationId: getFeedback
+      x-access-policy:
+        policyId: FEEDBACK-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ROLE_SCOPED
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Get role-scoped feedback detail
+      description: Stable default-deny. Future implementation must resolve owner or organization scope before returning content.
+      x-enabled-by-default: false
+      x-business-blocker: FEEDBACK_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: feedbackId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/FeedbackSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exemption-applications:
+    get:
+      tags: [Exemption Applications, Client Capabilities]
+      operationId: listExemptionApplications
+      x-access-policy:
+        policyId: EXEMPTION-APPLICATION-LIST
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ROLE_SCOPED
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: List own, responsible-class, or organization-governance exemption applications
+      description: Stable default-deny. Role-specific resource resolution and retention are not yet approved.
+      x-enabled-by-default: false
+      x-business-blocker: EXEMPTION_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        - name: classSectionId
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/ExemptionApplicationListSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [Exemption Applications, Client Capabilities]
+      operationId: createExemptionApplication
+      x-access-policy:
+        policyId: EXEMPTION-APPLICATION-CREATE
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_STUDENT
+        defaultDeny: true
+      summary: Create a student-owned exemption application draft
+      description: Stable default-deny. No application, attachment association, or status event is persisted.
+      x-enabled-by-default: false
+      x-business-blocker: EXEMPTION_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateExemptionApplicationRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/ExemptionApplicationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exemption-applications/{applicationId}:
+    get:
+      tags: [Exemption Applications, Client Capabilities]
+      operationId: getExemptionApplication
+      x-access-policy:
+        policyId: EXEMPTION-APPLICATION-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ROLE_SCOPED
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Get one role-scoped exemption application
+      description: Stable default-deny. Future implementation must resolve student ownership, responsible teacher, or organization governance before projection.
+      x-enabled-by-default: false
+      x-business-blocker: EXEMPTION_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/ExemptionApplicationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    patch:
+      tags: [Exemption Applications, Client Capabilities]
+      operationId: updateExemptionApplication
+      x-access-policy:
+        policyId: EXEMPTION-APPLICATION-UPDATE
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_STUDENT
+        defaultDeny: true
+      summary: Update an owned draft or supplement-requested application
+      description: Stable default-deny with no application or media-association mutation.
+      x-enabled-by-default: false
+      x-business-blocker: EXEMPTION_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateExemptionApplicationRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ExemptionApplicationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exemption-applications/{applicationId}/submit:
+    post:
+      tags: [Exemption Applications, Client Capabilities]
+      operationId: submitExemptionApplication
+      x-access-policy:
+        policyId: EXEMPTION-APPLICATION-SUBMIT
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: PRINCIPAL_STUDENT
+        defaultDeny: true
+      summary: Submit an owned exemption application for responsible-teacher review
+      description: Stable default-deny. No state transition, notification, score, or Enrollment side effect occurs.
+      x-enabled-by-default: false
+      x-business-blocker: EXEMPTION_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionedRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ExemptionApplicationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exemption-applications/{applicationId}/review:
+    post:
+      tags: [Exemption Applications, Client Capabilities]
+      operationId: reviewExemptionApplication
+      x-access-policy:
+        policyId: EXEMPTION-APPLICATION-REVIEW
+        authentication: ACCESS_TOKEN
+        allowedRoles: [TEACHER]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: TEACHER_CLASS_SECTION
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Append a responsible-teacher exemption decision
+      description: Stable default-deny. ADMIN does not substitute for the responsible teacher and no score adjustment is created.
+      x-enabled-by-default: false
+      x-business-blocker: EXEMPTION_WORKFLOW_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/OpaqueId' }
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewExemptionApplicationRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ExemptionApplicationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /app-release-policy:
+    get:
+      tags: [Client Capabilities]
+      operationId: getAppReleasePolicy
+      x-access-policy:
+        policyId: PUBLIC-APP-RELEASE-POLICY-READ
+        authentication: PUBLIC
+        allowedRoles: []
+        organizationScope: NONE
+        resourceScope: NONE
+        resourceResolver: NONE
+        defaultDeny: true
+      summary: Get a signed and platform-specific minimum-version policy
+      description: Stable default-deny. No release channel, signature, rollout, or emergency override is approved.
+      security: []
+      x-enabled-by-default: false
+      x-business-blocker: APP_RELEASE_POLICY_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - name: platform
+          in: query
+          required: true
+          schema: { type: string, enum: [ANDROID, WEB], x-transport-constraint: true }
+        - name: currentVersion
+          in: query
+          required: false
+          schema: { type: string, maxLength: 64 }
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/AppReleasePolicySuccess' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /sport-catalog:
+    get:
+      tags: [Client Capabilities]
+      operationId: getSportCatalog
+      x-access-policy:
+        policyId: SPORT-CATALOG-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ORGANIZATION
+        resourceResolver: PRINCIPAL_ORGANIZATION
+        defaultDeny: true
+      summary: Get the organization-governed sport catalog and OTHER requirements
+      description: Stable default-deny. Android display constants and Web Mock values do not define this catalog.
+      x-enabled-by-default: false
+      x-business-blocker: SPORT_CATALOG_GOVERNANCE_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/SportCatalogSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /activity-conversion-rules:
+    get:
+      tags: [Client Capabilities]
+      operationId: getActivityConversionRules
+      x-access-policy:
+        policyId: ACTIVITY-CONVERSION-RULE-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ORGANIZATION
+        resourceResolver: PRINCIPAL_ORGANIZATION
+        defaultDeny: true
+      summary: Get versioned physical-activity or endurance conversion rules
+      description: Stable default-deny. The accepted Session duration and Score rules remain unchanged and no client-side table becomes authoritative.
+      x-enabled-by-default: false
+      x-business-blocker: ACTIVITY_CONVERSION_RULE_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/ActivityConversionRuleListSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exercise-sessions/{sessionId}/location-track:
+    post:
+      tags: [Location Evidence, Exercise Sessions, Client Capabilities]
+      operationId: startExerciseLocationTrack
+      x-access-policy:
+        policyId: LOCATION-TRACK-START
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: EXERCISE_SESSION_FROM_PATH
+        defaultDeny: true
+      summary: Start consent-bound location evidence for an owned active Session
+      description: Stable default-deny after Session ownership resolution. No permission prompt result, coordinate, consent, or retention fact is persisted.
+      x-enabled-by-default: false
+      x-business-blocker: GPS_PRIVACY_AND_RETENTION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartLocationTrackRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/LocationTrackSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exercise-sessions/{sessionId}/location-samples:
+    post:
+      tags: [Location Evidence, Exercise Sessions, Client Capabilities]
+      operationId: appendExerciseLocationSamples
+      x-access-policy:
+        policyId: LOCATION-SAMPLE-APPEND
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: EXERCISE_SESSION_FROM_PATH
+        defaultDeny: true
+      summary: Append a bounded ordered batch of location samples to an owned Session
+      description: Stable default-deny after Session ownership resolution. Raw coordinates are never written, logged, audited, or forwarded.
+      x-enabled-by-default: false
+      x-business-blocker: GPS_PRIVACY_AND_RETENTION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppendLocationSamplesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/LocationTrackSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exercise-sessions/{sessionId}/location-track/finalize:
+    post:
+      tags: [Location Evidence, Exercise Sessions, Client Capabilities]
+      operationId: finalizeExerciseLocationTrack
+      x-access-policy:
+        policyId: LOCATION-TRACK-FINALIZE
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: SELF
+        resourceResolver: EXERCISE_SESSION_FROM_PATH
+        defaultDeny: true
+      summary: Finalize location evidence for an owned Session
+      description: Stable default-deny. Finalization does not make location authoritative for duration, Review, or Score.
+      x-enabled-by-default: false
+      x-business-blocker: GPS_PRIVACY_AND_RETENTION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinalizeLocationTrackRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/LocationTrackSuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /exercise-records/{recordId}/location-summary:
+    get:
+      tags: [Location Evidence, Exercise Records, Client Capabilities]
+      operationId: getExerciseRecordLocationSummary
+      x-access-policy:
+        policyId: LOCATION-SUMMARY-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ROLE_SCOPED
+        resourceResolver: EXERCISE_RECORD_FROM_PATH
+        defaultDeny: true
+      summary: Get a role-authorized coarse location summary for one ExerciseRecord
+      description: Stable default-deny after Record ownership or responsibility resolution. Future projection is coarse and never returns raw samples or exact endpoints.
+      x-enabled-by-default: false
+      x-business-blocker: GPS_PRIVACY_AND_RETENTION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/LocationSummarySuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /location-privacy-policy:
+    get:
+      tags: [Location Evidence, Client Capabilities]
+      operationId: getLocationPrivacyPolicy
+      x-access-policy:
+        policyId: LOCATION-PRIVACY-POLICY-READ
+        authentication: ACCESS_TOKEN
+        allowedRoles: [STUDENT, TEACHER, ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ORGANIZATION
+        resourceResolver: PRINCIPAL_ORGANIZATION
+        defaultDeny: true
+      summary: Get the organization location collection and projection policy
+      description: Stable default-deny. A policy version must exist before any Android permission prompt can lead to server collection.
+      x-enabled-by-default: false
+      x-business-blocker: GPS_PRIVACY_AND_RETENTION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+      responses:
+        '200': { $ref: '#/components/responses/LocationPrivacyPolicySuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    patch:
+      tags: [Location Evidence, Client Capabilities]
+      operationId: updateLocationPrivacyPolicy
+      x-access-policy:
+        policyId: LOCATION-PRIVACY-POLICY-UPDATE
+        authentication: ACCESS_TOKEN
+        allowedRoles: [ADMIN]
+        organizationScope: PRINCIPAL_ORGANIZATION
+        resourceScope: ORGANIZATION
+        resourceResolver: PRINCIPAL_ORGANIZATION
+        defaultDeny: true
+      summary: Request an organization location policy change
+      description: Stable default-deny. No ADMIN action can enable collection until privacy, purpose, precision, retention, deletion, and incident governance are separately approved.
+      x-enabled-by-default: false
+      x-business-blocker: GPS_PRIVACY_AND_RETENTION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
+      parameters:
+        - $ref: '#/components/parameters/RequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateLocationPrivacyPolicyRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/LocationPrivacyPolicySuccess' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 components:
   securitySchemes:
     bearerAuth:
@@ -3584,6 +4483,86 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/AuditLogListEnvelope' }
+    NotificationSuccess:
+      description: Notification projection
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotificationEnvelope' }
+    NotificationListSuccess:
+      description: Paged role-owned notifications
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotificationListEnvelope' }
+    PushDeviceSuccess:
+      description: Owned push-device registration projection
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PushDeviceEnvelope' }
+    UserPreferencesSuccess:
+      description: Synchronized user-preference projection
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UserPreferencesEnvelope' }
+    HelpArticleSuccess:
+      description: Published localized help article
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HelpArticleEnvelope' }
+    HelpArticleListSuccess:
+      description: Published localized help articles
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/HelpArticleListEnvelope' }
+    FeedbackSuccess:
+      description: Role-safe feedback projection
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/FeedbackEnvelope' }
+    FeedbackListSuccess:
+      description: Paged role-safe feedback projections
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/FeedbackListEnvelope' }
+    ExemptionApplicationSuccess:
+      description: Role-safe exemption application projection
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ExemptionApplicationEnvelope' }
+    ExemptionApplicationListSuccess:
+      description: Paged role-safe exemption application projections
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ExemptionApplicationListEnvelope' }
+    AppReleasePolicySuccess:
+      description: Platform-specific release policy
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AppReleasePolicyEnvelope' }
+    SportCatalogSuccess:
+      description: Organization sport catalog
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SportCatalogEnvelope' }
+    ActivityConversionRuleListSuccess:
+      description: Versioned activity conversion rules
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ActivityConversionRuleListEnvelope' }
+    LocationTrackSuccess:
+      description: Owned location-track intake state without raw sample projection
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LocationTrackEnvelope' }
+    LocationSummarySuccess:
+      description: Coarse role-safe ExerciseRecord location summary
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LocationSummaryEnvelope' }
+    LocationPrivacyPolicySuccess:
+      description: Organization location privacy policy
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/LocationPrivacyPolicyEnvelope' }
     BadRequest:
       $ref: '#/components/responses/Error400'
     Unauthorized:
@@ -5529,3 +6508,372 @@ components:
       type: object
       required: [data, meta]
       properties: { data: { type: array, items: { $ref: '#/components/schemas/AuditLog' } }, meta: { $ref: '#/components/schemas/PagedMeta' } }
+    StudentSignInCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [account, channel, locale]
+      properties:
+        account: { type: string, minLength: 1, maxLength: 254, writeOnly: true }
+        channel: { type: string, enum: [EMAIL, PHONE], x-transport-constraint: true }
+        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+      description: Contract-only input. The response must never reveal whether an account exists.
+    StudentSignInCodeVerificationRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeId, code, deviceId]
+      properties:
+        challengeId: { $ref: '#/components/schemas/OpaqueId' }
+        code: { type: string, pattern: '^\d{4,10}$', writeOnly: true }
+        deviceId: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+    AccountRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [account, requestedRole]
+      properties:
+        account: { type: string, minLength: 1, maxLength: 254, writeOnly: true }
+        requestedRole: { $ref: '#/components/schemas/UserRole' }
+      description: Contract-only enumeration-safe recovery request.
+    AccountRecoveryCompletionRequest:
+      type: object
+      additionalProperties: false
+      required: [recoveryId, verificationCode, newPassword]
+      properties:
+        recoveryId: { $ref: '#/components/schemas/OpaqueId' }
+        verificationCode: { type: string, pattern: '^\d{4,10}$', writeOnly: true }
+        newPassword: { type: string, minLength: 12, maxLength: 256, writeOnly: true }
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, recipientUserId, notificationType, title, body, targetType, targetId, createdAt, readAt]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        recipientUserId: { $ref: '#/components/schemas/OpaqueId' }
+        notificationType: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 2000 }
+        targetType: { type: [string, 'null'], pattern: '^[A-Z][A-Z0-9_]*$' }
+        targetId: { oneOf: [{ $ref: '#/components/schemas/OpaqueId' }, { type: 'null' }] }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: [string, 'null'], format: date-time }
+      description: Role-owned projection only; delivery provider metadata and arbitrary payloads are excluded.
+    PushDeviceRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [platform, registrationToken, appVersion, locale]
+      properties:
+        platform: { type: string, enum: [ANDROID, WEB], x-transport-constraint: true }
+        registrationToken: { type: string, minLength: 16, maxLength: 4096, writeOnly: true }
+        appVersion: { type: string, minLength: 1, maxLength: 64 }
+        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+    PushDevice:
+      type: object
+      additionalProperties: false
+      required: [id, platform, appVersion, locale, status, registeredAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        platform: { type: string, enum: [ANDROID, WEB], x-transport-constraint: true }
+        appVersion: { type: string, minLength: 1, maxLength: 64 }
+        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+        status: { type: string, enum: [ACTIVE, REVOKED], x-transport-constraint: true }
+        registeredAt: { type: string, format: date-time }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+      description: Safe projection; the provider registration token is never returned.
+    UserPreferences:
+      type: object
+      additionalProperties: false
+      required: [locale, pushEnabled, emailEnabled, version]
+      properties:
+        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+        pushEnabled: { type: boolean }
+        emailEnabled: { type: boolean }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+    UpdateUserPreferencesRequest:
+      type: object
+      additionalProperties: false
+      required: [locale, pushEnabled, emailEnabled, expectedVersion]
+      properties:
+        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+        pushEnabled: { type: boolean }
+        emailEnabled: { type: boolean }
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+    HelpArticle:
+      type: object
+      additionalProperties: false
+      required: [id, category, locale, title, bodyMarkdown, publishedAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        category: { type: string, minLength: 1, maxLength: 64 }
+        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        bodyMarkdown: { type: string, minLength: 1, maxLength: 50000 }
+        publishedAt: { type: string, format: date-time }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+      description: Published content only; embedded active HTML, scripts, and arbitrary remote resources are not allowed.
+    Feedback:
+      type: object
+      additionalProperties: false
+      required: [id, category, content, status, publicReply, createdAt, updatedAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        category: { type: string, enum: [BUG, SUGGESTION, ACCESSIBILITY, PRIVACY, OTHER], x-transport-constraint: true }
+        content: { type: string, minLength: 1, maxLength: 2000 }
+        status: { type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED], x-transport-constraint: true }
+        publicReply: { type: [string, 'null'], maxLength: 2000 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+      description: Safe business projection; raw logs, tokens, contacts, device fingerprints, and internal support notes are excluded.
+    CreateFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [category, content]
+      properties:
+        category: { type: string, enum: [BUG, SUGGESTION, ACCESSIBILITY, PRIVACY, OTHER], x-transport-constraint: true }
+        content: { type: string, minLength: 1, maxLength: 2000 }
+        clientContext:
+          type: object
+          additionalProperties: false
+          properties:
+            platform: { type: string, enum: [ANDROID, WEB], x-transport-constraint: true }
+            appVersion: { type: string, maxLength: 64 }
+            osVersion: { type: string, maxLength: 64 }
+          description: Allowlisted diagnostics only; no free-form headers, logs, tokens, contacts, or device identifiers.
+    ExemptionApplication:
+      type: object
+      additionalProperties: false
+      required: [id, studentId, enrollmentId, classSectionId, applicationType, reason, mediaIds, status, publicComment, submittedAt, decidedAt, version]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        studentId: { $ref: '#/components/schemas/OpaqueId' }
+        enrollmentId: { $ref: '#/components/schemas/OpaqueId' }
+        classSectionId: { $ref: '#/components/schemas/OpaqueId' }
+        applicationType: { type: string, enum: [PHYSICAL_TEST, EXERCISE_CHECK_IN, SPECIAL_CIRCUMSTANCE], x-transport-constraint: true }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        mediaIds: { type: array, maxItems: 20, uniqueItems: true, items: { $ref: '#/components/schemas/OpaqueId' } }
+        status: { type: string, enum: [DRAFT, SUBMITTED, SUPPLEMENT_REQUIRED, APPROVED, REJECTED], x-transport-constraint: true }
+        publicComment: { type: [string, 'null'], maxLength: 1000 }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+      description: Role-safe projection. Teacher identity, internalNote, medical details beyond the student's submitted reason, and signed media URLs are excluded.
+    CreateExemptionApplicationRequest:
+      type: object
+      additionalProperties: false
+      required: [enrollmentId, applicationType, reason, mediaIds]
+      properties:
+        enrollmentId: { $ref: '#/components/schemas/OpaqueId' }
+        applicationType: { type: string, enum: [PHYSICAL_TEST, EXERCISE_CHECK_IN, SPECIAL_CIRCUMSTANCE], x-transport-constraint: true }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        mediaIds: { type: array, maxItems: 20, uniqueItems: true, items: { $ref: '#/components/schemas/OpaqueId' } }
+    UpdateExemptionApplicationRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        mediaIds: { type: array, maxItems: 20, uniqueItems: true, items: { $ref: '#/components/schemas/OpaqueId' } }
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+    ReviewExemptionApplicationRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, publicComment, expectedVersion]
+      properties:
+        decision: { type: string, enum: [APPROVE, REJECT, REQUEST_SUPPLEMENT], x-transport-constraint: true }
+        publicComment: { type: string, minLength: 1, maxLength: 1000 }
+        internalNote: { type: [string, 'null'], maxLength: 2000, writeOnly: true }
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+    VersionedRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+    AppReleasePolicy:
+      type: object
+      additionalProperties: false
+      required: [platform, minimumSupportedVersion, latestVersion, enforcement, message, downloadUrl, effectiveAt, expiresAt, policyVersion]
+      properties:
+        platform: { type: string, enum: [ANDROID, WEB], x-transport-constraint: true }
+        minimumSupportedVersion: { type: string, minLength: 1, maxLength: 64 }
+        latestVersion: { type: string, minLength: 1, maxLength: 64 }
+        enforcement: { type: string, enum: [NONE, RECOMMENDED, REQUIRED], x-transport-constraint: true }
+        message: { type: [string, 'null'], maxLength: 1000 }
+        downloadUrl: { type: [string, 'null'], format: uri }
+        effectiveAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+    SportCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [sportType, displayNameKey, active, requiresSportName]
+      properties:
+        sportType: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        displayNameKey: { type: string, minLength: 1, maxLength: 128 }
+        active: { type: boolean }
+        requiresSportName: { type: boolean }
+    ActivityConversionRule:
+      type: object
+      additionalProperties: false
+      required: [id, activityType, inputUnit, outputUnit, ruleVersion, status, effectiveAt]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        activityType: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        inputUnit: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        outputUnit: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        ruleVersion: { type: integer, minimum: 1 }
+        status: { type: string, enum: [ACTIVE, SUPERSEDED], x-transport-constraint: true }
+        effectiveAt: { type: string, format: date-time }
+      description: Formula terms are deliberately absent until approved; clients cannot calculate an authoritative result from this placeholder.
+    StartLocationTrackRequest:
+      type: object
+      additionalProperties: false
+      required: [consentPolicyVersion, clientObservedAt]
+      properties:
+        consentPolicyVersion: { type: string, minLength: 1, maxLength: 64 }
+        clientObservedAt: { type: string, format: date-time }
+    LocationSample:
+      type: object
+      additionalProperties: false
+      required: [sampleId, observedAt, latitude, longitude, accuracyMeters]
+      properties:
+        sampleId: { $ref: '#/components/schemas/OpaqueId' }
+        observedAt: { type: string, format: date-time }
+        latitude: { type: number, minimum: -90, maximum: 90, writeOnly: true }
+        longitude: { type: number, minimum: -180, maximum: 180, writeOnly: true }
+        accuracyMeters: { type: integer, minimum: 0, maximum: 10000, writeOnly: true }
+        altitudeMeters: { type: integer, minimum: -500, maximum: 10000, writeOnly: true }
+        speedMillimetersPerSecond: { type: integer, minimum: 0, maximum: 100000, writeOnly: true }
+      description: Untrusted client observation. Raw samples are write-only and never enter public projections, logs, AuditLog, Outbox, or Score facts.
+    AppendLocationSamplesRequest:
+      type: object
+      additionalProperties: false
+      required: [samples, expectedVersion]
+      properties:
+        samples: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/LocationSample' } }
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+    FinalizeLocationTrackRequest:
+      type: object
+      additionalProperties: false
+      required: [clientObservedAt, expectedVersion]
+      properties:
+        clientObservedAt: { type: string, format: date-time }
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+    LocationTrack:
+      type: object
+      additionalProperties: false
+      required: [id, sessionId, status, acceptedSampleCount, startedAt, finalizedAt, policyVersion, version]
+      properties:
+        id: { $ref: '#/components/schemas/OpaqueId' }
+        sessionId: { $ref: '#/components/schemas/OpaqueId' }
+        status: { type: string, enum: [COLLECTING, FINALIZED, REJECTED, DELETED], x-transport-constraint: true }
+        acceptedSampleCount: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time }
+        finalizedAt: { type: [string, 'null'], format: date-time }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+      description: Intake state only; raw coordinates are never projected.
+    LocationSummary:
+      type: object
+      additionalProperties: false
+      required: [recordId, availability, precision, coarseRoutePolyline, coarseDistanceMeters, observedStartAt, observedEndAt, expiresAt, policyVersion]
+      properties:
+        recordId: { $ref: '#/components/schemas/OpaqueId' }
+        availability: { type: string, enum: [NOT_COLLECTED, PROCESSING, AVAILABLE, EXPIRED, WITHHELD], x-transport-constraint: true }
+        precision: { type: string, const: COARSE }
+        coarseRoutePolyline: { type: [string, 'null'], maxLength: 20000, description: Generalized route with minimum spatial granularity controlled by the approved policy; never an exact raw-sample encoding. }
+        coarseDistanceMeters: { type: [integer, 'null'], minimum: 0 }
+        observedStartAt: { type: [string, 'null'], format: date-time }
+        observedEndAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        policyVersion: { type: [string, 'null'], maxLength: 64 }
+      description: Student, responsible Teacher, and organization ADMIN receive the same coarse projection; no exact coordinate, endpoint, home address inference, or raw sample is returned.
+    LocationPrivacyPolicy:
+      type: object
+      additionalProperties: false
+      required: [organizationId, policyVersion, collectionEnabled, purposeCode, sampleIntervalSeconds, maximumAccuracyMeters, rawRetentionDays, coarseRetentionDays, coarseProjectionMeters, effectiveAt, version]
+      properties:
+        organizationId: { $ref: '#/components/schemas/OpaqueId' }
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+        collectionEnabled: { type: boolean }
+        purposeCode: { type: string, const: EXERCISE_EVIDENCE }
+        sampleIntervalSeconds: { type: [integer, 'null'], minimum: 1 }
+        maximumAccuracyMeters: { type: [integer, 'null'], minimum: 1 }
+        rawRetentionDays: { type: [integer, 'null'], minimum: 0 }
+        coarseRetentionDays: { type: [integer, 'null'], minimum: 0 }
+        coarseProjectionMeters: { type: [integer, 'null'], minimum: 1 }
+        effectiveAt: { type: [string, 'null'], format: date-time }
+        version: { $ref: '#/components/schemas/PositiveVersion' }
+      description: All nullable production parameters remain unapproved; collectionEnabled cannot become true through the current default-deny route.
+    UpdateLocationPrivacyPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [policyVersion, collectionEnabled, expectedVersion]
+      properties:
+        policyVersion: { type: string, minLength: 1, maxLength: 64 }
+        collectionEnabled: { type: boolean }
+        expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
+      description: Contract-only governance request. It cannot select unapproved precision, sampling, retention, or deletion values.
+    NotificationEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/Notification' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    NotificationListEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/Notification' } }, meta: { $ref: '#/components/schemas/PagedMeta' } }
+    PushDeviceEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/PushDevice' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    UserPreferencesEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/UserPreferences' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    HelpArticleEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/HelpArticle' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    HelpArticleListEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/HelpArticle' } }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    FeedbackEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/Feedback' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    FeedbackListEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/Feedback' } }, meta: { $ref: '#/components/schemas/PagedMeta' } }
+    ExemptionApplicationEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/ExemptionApplication' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    ExemptionApplicationListEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/ExemptionApplication' } }, meta: { $ref: '#/components/schemas/PagedMeta' } }
+    AppReleasePolicyEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/AppReleasePolicy' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    SportCatalogEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/SportCatalogItem' } }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    ActivityConversionRuleListEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { type: array, items: { $ref: '#/components/schemas/ActivityConversionRule' } }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    LocationTrackEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/LocationTrack' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    LocationSummaryEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/LocationSummary' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
+    LocationPrivacyPolicyEnvelope:
+      type: object
+      required: [data, meta]
+      properties: { data: { $ref: '#/components/schemas/LocationPrivacyPolicy' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
