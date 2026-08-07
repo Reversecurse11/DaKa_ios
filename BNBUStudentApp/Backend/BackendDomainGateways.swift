@@ -12,6 +12,12 @@ struct EphemeralMediaAccess: Equatable {
 }
 
 actor MediaUploadCoordinator {
+    private struct ConfirmedUpload {
+        let response: APIResponse<APIV1MediaEvidence>
+        let initiateScope: String
+        let confirmScope: String
+    }
+
     private let client: StudentAPIClient
     private let auth: BackendAuthSessionController
     private let intents: IdempotencyIntentRegistry
@@ -31,9 +37,66 @@ actor MediaUploadCoordinator {
         request: APIV1InitiateMediaUploadRequest,
         expectedVersion: Int
     ) async throws -> MediaUploadOutcome {
+        guard MediaUploadContractPolicy.accepts(request),
+              request.businessPurpose == .exerciseRecord,
+              let sessionID = request.sessionId,
+              expectedVersion > 0 else {
+            throw APITransportError.invalidRequest
+        }
+
+        let confirmedUpload = try await uploadAndConfirm(bytes: bytes, request: request)
+        let confirmed = confirmedUpload.response
+
+        let mediaID = try APIPath.component(confirmed.value.id)
+        let bind = APIV1BindMediaRequest(
+            sessionId: sessionID,
+            expectedVersion: expectedVersion
+        )
+        let bindScope = "media:bind:\(mediaID)"
+        let bound: APIResponse<APIV1MediaEvidence> = try await auth.sendAuthorized(APIRequest(
+            operationID: "bindMediaEvidence",
+            method: .post,
+            path: "media/\(mediaID)/bind",
+            body: try APIRequest.jsonBody(bind),
+            idempotencyKey: await intents.key(
+                scope: bindScope,
+                fingerprint: try IntentFingerprint.make(bind)
+            )
+        ))
+        await intents.clear(scope: confirmedUpload.initiateScope)
+        await intents.clear(scope: confirmedUpload.confirmScope)
+        await intents.clear(scope: bindScope)
+        return MediaUploadOutcome(media: bound.value, requestId: bound.requestId)
+    }
+
+    /// Exemption media is scoped to an Enrollment and is associated atomically
+    /// by createExemptionApplication; it must never use the exercise bind route.
+    func uploadForExemption(
+        bytes: Data,
+        request: APIV1InitiateMediaUploadRequest
+    ) async throws -> MediaUploadOutcome {
+        guard MediaUploadContractPolicy.accepts(request),
+              request.businessPurpose == .exemptionApplication else {
+            throw APITransportError.invalidRequest
+        }
+
+        let confirmedUpload = try await uploadAndConfirm(bytes: bytes, request: request)
+        await intents.clear(scope: confirmedUpload.initiateScope)
+        await intents.clear(scope: confirmedUpload.confirmScope)
+        return MediaUploadOutcome(
+            media: confirmedUpload.response.value,
+            requestId: confirmedUpload.response.requestId
+        )
+    }
+
+    private func uploadAndConfirm(
+        bytes: Data,
+        request: APIV1InitiateMediaUploadRequest
+    ) async throws -> ConfirmedUpload {
         guard bytes.count == request.fileSizeBytes else { throw APITransportError.invalidRequest }
 
-        let initiateScope = "media:initiate:\(request.sessionId)"
+        let targetID = request.sessionId ?? request.enrollmentId ?? ""
+        let initiateScope = "media:initiate:\(request.businessPurpose.rawValue):\(targetID)"
         let initiateKey = await intents.key(
             scope: initiateScope,
             fingerprint: try IntentFingerprint.make(request)
@@ -74,27 +137,17 @@ actor MediaUploadCoordinator {
                 fingerprint: try IntentFingerprint.make(confirm)
             )
         ))
+        guard confirmed.value.businessPurpose == request.businessPurpose,
+              confirmed.value.sessionId == request.sessionId,
+              confirmed.value.enrollmentId == request.enrollmentId else {
+            throw APITransportError.invalidResponse
+        }
 
-        let mediaID = try APIPath.component(confirmed.value.id)
-        let bind = APIV1BindMediaRequest(
-            sessionId: request.sessionId,
-            expectedVersion: expectedVersion
+        return ConfirmedUpload(
+            response: confirmed,
+            initiateScope: initiateScope,
+            confirmScope: confirmScope
         )
-        let bindScope = "media:bind:\(mediaID)"
-        let bound: APIResponse<APIV1MediaEvidence> = try await auth.sendAuthorized(APIRequest(
-            operationID: "bindMediaEvidence",
-            method: .post,
-            path: "media/\(mediaID)/bind",
-            body: try APIRequest.jsonBody(bind),
-            idempotencyKey: await intents.key(
-                scope: bindScope,
-                fingerprint: try IntentFingerprint.make(bind)
-            )
-        ))
-        await intents.clear(scope: initiateScope)
-        await intents.clear(scope: confirmScope)
-        await intents.clear(scope: bindScope)
-        return MediaUploadOutcome(media: bound.value, requestId: bound.requestId)
     }
 
     func status(mediaID: String) async throws -> APIResponse<APIV1MediaEvidence> {

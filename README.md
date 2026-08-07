@@ -2,7 +2,7 @@
 
 SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透明化，不包含老师端或管理端功能。
 
-> **现行口径（2026-08-06）**：Local 使用 `http://127.0.0.1:3000/api/v1`；Staging/Production 必须显式注入获批的 HTTPS `/api/v1` 地址，否则构建失败。统一合同固定为 OpenAPI `1.1.0-contract`（122 operations / 271 schemas），SHA-256 为 `fb040b671e3f25c48279ad6b173ced5f633de1b1a1a9db0cc0f23a11e3fde4d1`。本页后半部分按轮次保留的是历史开发记录，旧远程 IP、旧端口、旧路径和历史测试结论不得再作为构建或部署说明。
+> **现行口径（2026-08-07）**：Local 使用 `http://127.0.0.1:3000/api/v1`；Staging/Production 必须显式注入获批的 HTTPS `/api/v1` 地址，否则构建失败。统一合同取自后端 `main` clean commit `8925e92c69cddac2a08cc84877abaef44e1d7f02`，固定为 OpenAPI `1.3.0-contract`（122 operations / 275 schemas），SHA-256 为 `914084874afda2481813a041da4cc01249aa9ea557d9a8bf29baeed4f10e0dc9`。30 项 Client Capabilities 中，后端仅提供 22 项本地集成证据，另外 8 项仍稳定默认拒绝；这不代表 Staging 或生产环境已可用。目前 `STAGING_RUNTIME_READINESS=NO`、`CLIENT_INTEGRATION_EXECUTION_READINESS=NO`。本页后半部分按轮次保留的是历史开发记录，旧远程 IP、旧端口、旧路径和历史测试结论不得再作为构建或部署说明。
 
 > **主线切换（2026-07-19）**：本目录源自负责人 7.18 回传的反馈版源码（`7.18 Feedback/BNBUStudent-iOS-Source-20260717-Aligned-API-Version.zip`），经编译修复、68 项单元测试、UI 冒烟和真实服务器提交/读回闭环验证后升级为主线。旧 3333/96 主线保留在 `../ios-app-legacy-20260715/`，仅作归档不再开发。2026-07-19 验证记录：`test-evidence-20260718/`；Debug 演示图片凭证已携带真实字节，可在真实服务器模式走通上传与提交（演示视频仍为预览占位）。
 
@@ -12,10 +12,10 @@ SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透�
 - `Configurations/` 分离 Local、Staging、Production，正式环境缺少获批 URL 时 fail closed。
 - 单一 `URLSession` transport 处理 `data/meta`、五字段错误 envelope、最终 `requestId` 和安全有界重试。
 - 新会话适配器以二维码 `preview → join-capabilities → join` 为学生主链，Access/Refresh 作为一个原子 Keychain 会话保存并支持轮换、撤销与重启恢复。
-- Media 采用 `initiate → private PUT → confirm → bind`；Session 与 Score 仅消费服务端权威投影。
-- OpenAPI 1.1 新增的 30 个客户端能力生成显式 default-deny operation 集；`SYSTEM_MODE_UNSUPPORTED` 保留 `requestId` 并只呈现“尚未开放”，不会伪造成功。
+- Media 按用途分流：运动材料采用 `initiate → private PUT → confirm → bind`，免测材料按 `enrollmentId` 上传确认后由免测申请原子关联，不调用运动 bind；Session 与 Score 仅消费服务端权威投影。
+- OpenAPI 1.3 的 30 个客户端能力生成 22 项本地集成证据集与 8 项显式 default-deny 集；`SYSTEM_MODE_UNSUPPORTED` 保留 `requestId` 并只呈现“尚未开放”，不会伪造成功，也不会被当成 Staging 可用证据。
 - GPS/位置能力在 Release 与 Staging 不编译、不申请定位权限、不持久化原始坐标；旧版会话中的经纬度会在恢复时迁移清洗。Debug 仅保留显式 `-ui-testing-location-check` 权限测试入口。
-- 当前合同的推送设备与 App 版本策略只允许 `ANDROID/WEB`，iOS 客户端明确阻止注册、注销和版本策略调用，等待后端补充 `IOS`，不伪装其他平台。
+- 当前合同已在推送设备、App 版本策略和反馈上下文中允许 `IOS`；客户端如实发送 `IOS`，并以数字 `CFBundleVersion` 查询版本策略，不伪装其他平台，也不把合同可表达性当成远程环境已开放。
 - 现有 SwiftUI 页面和旧 repository 作为迁移 seam 保留；普通构建不会连接旧路径或自动回退演示数据，后续按业务域逐页接入新 gateway。
 
 ## 范围
@@ -84,9 +84,9 @@ edu.bnbu.student.mvp
 
 ## 当前可证明的验证状态
 
-- 2026-08-06 已通过 OpenAPI 哈希/生成物门禁、iOS 静态合同审计与 plist 校验。
-- iPhone 17 Pro（iOS 26.5 Simulator）已执行 `BNBUStudentTests`：138 passed、0 failed、0 skipped。
-- Debug、Staging 与 Release 模拟器构建均已通过；Staging/Release 使用合规的测试 HTTPS `/api/v1` 地址验证，正式部署域名仍须由学校注入。
+- 2026-08-07 已通过 OpenAPI 哈希/生成物门禁、iOS 静态合同审计与 plist 校验。
+- iPhone 17 Pro（iOS 26.5 Simulator）已执行 `BNBUStudentTests`：141 passed、0 failed。
+- Debug XCTest、Staging 模拟器构建与 Release generic iOS 无签名构建均已通过；Staging/Release 仅注入构建校验用 HTTPS `/api/v1` 地址，正式部署域名仍须由学校提供。
 - 本轮没有把后端 default-deny 路由当作已开放业务，也没有执行 XCUITest、签名 Archive 或 iPhone 真机验收；这些仍属于发布前门禁。
 - 打卡记录学生 UI 已在静态契约中禁止审核筛选、审核状态和教师反馈；真实私有 COS 图片仍需用同一 `recordId` 在 Edge、Android 真机和 iPhone 真机共同读回。
 

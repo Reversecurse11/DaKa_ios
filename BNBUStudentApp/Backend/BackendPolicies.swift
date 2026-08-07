@@ -116,17 +116,112 @@ enum ExportAvailabilityPolicy {
     }
 }
 
-/// The 1.1 contract does not publish IOS as a legal platform value for these
-/// routes. The client must wait for a contract revision instead of pretending
-/// to be ANDROID or WEB.
+/// OpenAPI 1.3 publishes IOS as the truthful wire value on every platform-
+/// bearing client-capability route. This says nothing about remote readiness.
 enum IOSPlatformContractPolicy {
-    static func isRepresentable(_ capability: APIV1DefaultDeniedClientCapability) -> Bool {
+    static let wireValue = "IOS"
+
+    static func supportsIOS(_ capability: APIV1ClientCapability) -> Bool {
         switch capability {
-        case .registerPushDevice, .unregisterPushDevice, .getAppReleasePolicy:
-            return false
-        default:
+        case .registerPushDevice, .unregisterPushDevice, .getAppReleasePolicy, .createFeedback:
             return true
+        default:
+            return false
         }
+    }
+}
+
+/// A local-integration report is weaker than a deployable Staging capability.
+/// Keep the two states distinct so client code cannot treat the 22 routes as
+/// remotely available merely because their default-deny markers were removed.
+enum ClientCapabilityReadinessPolicy {
+    static let stagingExecutionReady = false
+
+    static func hasLocalIntegrationEvidence(_ capability: APIV1ClientCapability) -> Bool {
+        APIV1LocalIntegrationClientCapability.allCases.contains { $0.rawValue == capability.rawValue }
+    }
+
+    static func isExplicitlyDefaultDenied(_ capability: APIV1ClientCapability) -> Bool {
+        APIV1DefaultDeniedClientCapability.allCases.contains { $0.rawValue == capability.rawValue }
+    }
+}
+
+/// The generator intentionally emits a simple Swift struct for OpenAPI oneOf.
+/// Enforce the media-purpose scope and capture-source branches before transport.
+enum MediaUploadContractPolicy {
+    static func accepts(_ request: APIV1InitiateMediaUploadRequest) -> Bool {
+        guard request.fileSizeBytes > 0,
+              !request.mimeType.isEmpty,
+              acceptsDuration(mediaType: request.mediaType, durationSeconds: request.durationSeconds) else {
+            return false
+        }
+
+        switch request.businessPurpose {
+        case .exerciseRecord:
+            return hasValue(request.sessionId) &&
+                request.enrollmentId == nil &&
+                request.captureSource == .inAppCamera
+        case .exemptionApplication:
+            return request.sessionId == nil &&
+                hasValue(request.enrollmentId) &&
+                (request.captureSource == .inAppCamera || request.captureSource == .filePicker)
+        }
+    }
+
+    private static func acceptsDuration(mediaType: APIV1MediaType, durationSeconds: Int?) -> Bool {
+        switch mediaType {
+        case .image:
+            return durationSeconds == nil
+        case .video:
+            return durationSeconds.map { $0 > 0 } == true
+        }
+    }
+
+    private static func hasValue(_ value: String?) -> Bool {
+        value.map { !$0.isEmpty } == true
+    }
+}
+
+struct IOSAppReleasePolicyQuery: Equatable {
+    let platform = IOSPlatformContractPolicy.wireValue
+    let currentVersion: String?
+    let currentBuildNumber: Int
+
+    init?(infoDictionary: [String: Any]) {
+        guard let rawBuildNumber = infoDictionary["CFBundleVersion"] as? String,
+              let buildNumber = Int(rawBuildNumber),
+              (1...Int(Int32.max)).contains(buildNumber) else {
+            return nil
+        }
+        let version = infoDictionary["CFBundleShortVersionString"] as? String
+        currentVersion = version.flatMap { $0.isEmpty ? nil : $0 }
+        currentBuildNumber = buildNumber
+    }
+
+    var queryItems: [URLQueryItem] {
+        var items = [
+            URLQueryItem(name: "platform", value: platform),
+            URLQueryItem(name: "currentBuildNumber", value: String(currentBuildNumber))
+        ]
+        if let currentVersion {
+            items.append(URLQueryItem(name: "currentVersion", value: currentVersion))
+        }
+        return items
+    }
+}
+
+enum IOSAppReleaseContractPolicy {
+    static func accepts(_ policy: APIV1AppReleasePolicy) -> Bool {
+        guard policy.platform == IOSPlatformContractPolicy.wireValue,
+              let minimum = policy.minimumSupportedBuildNumber,
+              let latest = policy.latestBuildNumber,
+              (1...Int(Int32.max)).contains(minimum),
+              (1...Int(Int32.max)).contains(latest),
+              minimum <= latest,
+              ["NONE", "RECOMMENDED", "REQUIRED"].contains(policy.enforcement) else {
+            return false
+        }
+        return true
     }
 }
 

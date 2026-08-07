@@ -6,7 +6,7 @@ require "fileutils"
 require "optparse"
 require "yaml"
 
-EXPECTED_SHA256 = "fb040b671e3f25c48279ad6b173ced5f633de1b1a1a9db0cc0f23a11e3fde4d1"
+EXPECTED_SHA256 = "914084874afda2481813a041da4cc01249aa9ea557d9a8bf29baeed4f10e0dc9"
 ROOT = File.expand_path("..", __dir__)
 DEFAULT_INPUT = File.join(ROOT, "Contracts", "openapi.snapshot.yaml")
 DEFAULT_OUTPUT = File.join(ROOT, "BNBUStudentApp", "Backend", "Generated", "APIV1Models.generated.swift")
@@ -35,11 +35,11 @@ document.fetch("paths").each do |path, path_item|
   end
 end
 
-unless document.dig("info", "version") == "1.1.0-contract" &&
+unless document.dig("info", "version") == "1.3.0-contract" &&
        document.fetch("paths").length == 104 &&
        operations.length == 122 &&
-       schemas.length == 271
-  abort("error: OpenAPI 1.1 structural baseline mismatch")
+       schemas.length == 275
+  abort("error: OpenAPI 1.3 structural baseline mismatch")
 end
 
 client_capability_operations = operations.select do |operation|
@@ -47,11 +47,38 @@ client_capability_operations = operations.select do |operation|
 end
 client_capability_operations.sort_by! { |operation| operation.fetch("operationId") }
 unless client_capability_operations.length == 30 && client_capability_operations.all? { |operation|
-         operation["x-enabled-by-default"] == false &&
-           operation["x-default-deny-error"] == "SYSTEM_MODE_UNSUPPORTED" &&
-           operation.dig("x-access-policy", "defaultDeny") == true
+         operation.dig("x-access-policy", "defaultDeny") == true
        }
-  abort("error: Client capability default-deny invariants changed")
+  abort("error: Client capability access-policy invariants changed")
+end
+
+default_denied_client_capability_operations = client_capability_operations.select do |operation|
+  operation["x-enabled-by-default"] == false &&
+    operation["x-default-deny-error"] == "SYSTEM_MODE_UNSUPPORTED" &&
+    !operation["x-business-blocker"].to_s.empty?
+end
+local_integration_client_capability_operations =
+  client_capability_operations - default_denied_client_capability_operations
+
+expected_default_denied_operation_ids = %w[
+  appendExerciseLocationSamples
+  finalizeExerciseLocationTrack
+  getActivityConversionRules
+  getExerciseRecordLocationSummary
+  getLocationPrivacyPolicy
+  getSportCatalog
+  startExerciseLocationTrack
+  updateLocationPrivacyPolicy
+].freeze
+unless default_denied_client_capability_operations.map { |operation| operation.fetch("operationId") } ==
+       expected_default_denied_operation_ids &&
+       local_integration_client_capability_operations.length == 22 &&
+       local_integration_client_capability_operations.all? { |operation|
+         operation["x-enabled-by-default"].nil? &&
+           operation["x-default-deny-error"].nil? &&
+           operation["x-business-blocker"].nil?
+       }
+  abort("error: OpenAPI 1.3 client capability readiness split changed")
 end
 
 location_sample = schemas.fetch("LocationSample").fetch("properties")
@@ -65,15 +92,25 @@ unless (location_summary_fields & raw_location_fields).empty?
 end
 
 push_platforms = schemas.dig("PushDeviceRegistrationRequest", "properties", "platform", "enum")
+push_projection_platforms = schemas.dig("PushDevice", "properties", "platform", "enum")
 release_policy_platforms = schemas.dig("AppReleasePolicy", "properties", "platform", "enum")
+feedback_platforms = schemas.dig(
+  "CreateFeedbackRequest", "properties", "clientContext", "properties", "platform", "enum"
+)
 release_policy_operation = operations.find { |operation| operation["operationId"] == "getAppReleasePolicy" }
 release_policy_query_platforms = Array(release_policy_operation&.fetch("parameters", []))
   .find { |parameter| parameter["name"] == "platform" }
   &.dig("schema", "enum")
-unless [push_platforms, release_policy_platforms, release_policy_query_platforms].all? { |values|
-         values == %w[ANDROID WEB]
+unless [
+  push_platforms,
+  push_projection_platforms,
+  release_policy_platforms,
+  release_policy_query_platforms,
+  feedback_platforms
+].all? { |values|
+         values == %w[ANDROID WEB IOS]
        }
-  abort("error: Review the iOS platform boundary before accepting new platform enum values")
+  abort("error: IOS must remain a legal platform across every iOS-facing contract surface")
 end
 
 SWIFT_KEYWORDS = %w[
@@ -173,7 +210,9 @@ lines << "    static let apiPrefix = \"/api/v1\""
 lines << "    static let pathCount = #{document.fetch("paths").length}"
 lines << "    static let operationCount = #{operations.length}"
 lines << "    static let schemaCount = #{schemas.length}"
-lines << "    static let defaultDeniedClientCapabilityCount = #{client_capability_operations.length}"
+lines << "    static let clientCapabilityCount = #{client_capability_operations.length}"
+lines << "    static let localIntegrationClientCapabilityCount = #{local_integration_client_capability_operations.length}"
+lines << "    static let defaultDeniedClientCapabilityCount = #{default_denied_client_capability_operations.length}"
 lines << "}"
 lines << ""
 lines << "enum APIV1JSONValue: Codable, Equatable {"
@@ -207,16 +246,34 @@ lines << "        }"
 lines << "    }"
 lines << "}"
 lines << ""
-lines << "/// Operations published as real routes but intentionally unavailable until"
-lines << "/// their backend business gates are approved. A 503 response must never be"
-lines << "/// interpreted as a successful client-side mutation."
-lines << "enum APIV1DefaultDeniedClientCapability: String, CaseIterable {"
-used_client_capability_cases = []
-client_capability_operations.each do |operation|
-  operation_id = operation.fetch("operationId")
-  lines << "    case #{enum_case_name(operation_id, used_client_capability_cases)} = #{operation_id.inspect}"
+[
+  [
+    "All 30 client-capability routes in the 1.3 contract. Membership does not imply remote readiness.",
+    "APIV1ClientCapability",
+    client_capability_operations
+  ],
+  [
+    "Routes with backend local-integration evidence. Staging and production readiness remain separate.",
+    "APIV1LocalIntegrationClientCapability",
+    local_integration_client_capability_operations
+  ],
+  [
+    "Routes that intentionally return SYSTEM_MODE_UNSUPPORTED after earlier request checks pass.",
+    "APIV1DefaultDeniedClientCapability",
+    default_denied_client_capability_operations
+  ]
+].each do |comment, enum_name, enum_operations|
+  lines << "/// #{comment}"
+  lines << "enum #{enum_name}: String, CaseIterable {"
+  used_client_capability_cases = []
+  enum_operations.each do |operation|
+    operation_id = operation.fetch("operationId")
+    lines << "    case #{enum_case_name(operation_id, used_client_capability_cases)} = #{operation_id.inspect}"
+  end
+  lines << "}"
+  lines << ""
 end
-lines << "}"
+lines.pop
 
 schemas.each do |name, schema|
   swift_name = "APIV1#{upper_camel(name)}"

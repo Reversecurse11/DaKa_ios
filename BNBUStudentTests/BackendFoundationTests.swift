@@ -10,15 +10,19 @@ final class BackendFoundationTests: XCTestCase {
     func testContractMetadataAndLocalEnvironmentArePinned() throws {
         XCTAssertEqual(
             APIV1ContractMetadata.sourceSHA256,
-            "fb040b671e3f25c48279ad6b173ced5f633de1b1a1a9db0cc0f23a11e3fde4d1"
+            "914084874afda2481813a041da4cc01249aa9ea557d9a8bf29baeed4f10e0dc9"
         )
-        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.1.0-contract")
+        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.3.0-contract")
         XCTAssertEqual(APIV1ContractMetadata.apiPrefix, "/api/v1")
         XCTAssertEqual(APIV1ContractMetadata.pathCount, 104)
         XCTAssertEqual(APIV1ContractMetadata.operationCount, 122)
-        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 271)
-        XCTAssertEqual(APIV1ContractMetadata.defaultDeniedClientCapabilityCount, 30)
-        XCTAssertEqual(APIV1DefaultDeniedClientCapability.allCases.count, 30)
+        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 275)
+        XCTAssertEqual(APIV1ContractMetadata.clientCapabilityCount, 30)
+        XCTAssertEqual(APIV1ContractMetadata.localIntegrationClientCapabilityCount, 22)
+        XCTAssertEqual(APIV1ContractMetadata.defaultDeniedClientCapabilityCount, 8)
+        XCTAssertEqual(APIV1ClientCapability.allCases.count, 30)
+        XCTAssertEqual(APIV1LocalIntegrationClientCapability.allCases.count, 22)
+        XCTAssertEqual(APIV1DefaultDeniedClientCapability.allCases.count, 8)
 
         let local = try BackendEnvironment.resolve(
             arguments: ["BNBUStudent"],
@@ -210,7 +214,7 @@ final class BackendFoundationTests: XCTestCase {
         ]))
     }
 
-    func testDefaultDeniedCapabilitiesKeep503AndIOSPlatformBoundaries() {
+    func testClientCapabilityReadinessKeepsLocalIntegrationSeparateFromStaging() {
         let error = APITransportError.failure(
             statusCode: 503,
             envelope: APIErrorEnvelope(
@@ -223,9 +227,9 @@ final class BackendFoundationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            DefaultDeniedCapabilityPolicy.unavailableState(for: .listNotifications, from: error),
+            DefaultDeniedCapabilityPolicy.unavailableState(for: .getSportCatalog, from: error),
             DefaultDeniedCapabilityState(
-                operationID: "listNotifications",
+                operationID: "getSportCatalog",
                 message: "该功能尚未开放。",
                 requestId: "req-capability-503"
             )
@@ -234,11 +238,162 @@ final class BackendFoundationTests: XCTestCase {
             DefaultDeniedCapabilityPolicy.unavailableState(for: .startExerciseLocationTrack, from: error)?.requestId,
             "req-capability-503"
         )
-        XCTAssertFalse(IOSPlatformContractPolicy.isRepresentable(.registerPushDevice))
-        XCTAssertFalse(IOSPlatformContractPolicy.isRepresentable(.unregisterPushDevice))
-        XCTAssertFalse(IOSPlatformContractPolicy.isRepresentable(.getAppReleasePolicy))
-        XCTAssertTrue(IOSPlatformContractPolicy.isRepresentable(.requestStudentSignInCode))
-        XCTAssertTrue(IOSPlatformContractPolicy.isRepresentable(.createFeedback))
+        XCTAssertTrue(ClientCapabilityReadinessPolicy.hasLocalIntegrationEvidence(.listNotifications))
+        XCTAssertTrue(ClientCapabilityReadinessPolicy.hasLocalIntegrationEvidence(.requestStudentSignInCode))
+        XCTAssertFalse(ClientCapabilityReadinessPolicy.isExplicitlyDefaultDenied(.listNotifications))
+        XCTAssertTrue(ClientCapabilityReadinessPolicy.isExplicitlyDefaultDenied(.getSportCatalog))
+        XCTAssertTrue(ClientCapabilityReadinessPolicy.isExplicitlyDefaultDenied(.startExerciseLocationTrack))
+        XCTAssertFalse(ClientCapabilityReadinessPolicy.stagingExecutionReady)
+
+        XCTAssertEqual(IOSPlatformContractPolicy.wireValue, "IOS")
+        XCTAssertTrue(IOSPlatformContractPolicy.supportsIOS(.registerPushDevice))
+        XCTAssertTrue(IOSPlatformContractPolicy.supportsIOS(.unregisterPushDevice))
+        XCTAssertTrue(IOSPlatformContractPolicy.supportsIOS(.getAppReleasePolicy))
+        XCTAssertTrue(IOSPlatformContractPolicy.supportsIOS(.createFeedback))
+        XCTAssertFalse(IOSPlatformContractPolicy.supportsIOS(.requestStudentSignInCode))
+    }
+
+    func testIOS13AuthPlatformAndNumericReleasePolicyContracts() throws {
+        let codeRequest = APIV1StudentSignInCodeRequest(
+            organizationCode: "BNBU",
+            account: "student@example.edu",
+            channel: "EMAIL",
+            locale: "zh-CN"
+        )
+        let codeJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(codeRequest)) as? [String: Any]
+        )
+        XCTAssertEqual(codeJSON["organizationCode"] as? String, "BNBU")
+        XCTAssertEqual(codeJSON["account"] as? String, "student@example.edu")
+
+        let accepted = try JSONDecoder().decode(
+            APIV1StudentSignInCodeAcceptedEnvelope.self,
+            from: Data(#"{"data":{"challengeId":"challenge-1","expiresAt":"2026-08-07T09:00:00Z"},"meta":{"requestId":"req-code"}}"#.utf8)
+        )
+        XCTAssertEqual(accepted.data.challengeId, "challenge-1")
+        let acceptedJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(accepted)) as? [String: Any]
+        )
+        let acceptedData = try XCTUnwrap(acceptedJSON["data"] as? [String: Any])
+        XCTAssertNil(acceptedData["account"])
+        XCTAssertNil(acceptedData["accountExists"])
+
+        let recovery = APIV1AccountRecoveryRequest(
+            organizationCode: "BNBU",
+            account: "teacher@example.edu",
+            requestedRole: "TEACHER",
+            channel: "EMAIL",
+            locale: "zh-CN"
+        )
+        let recoveryJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(recovery)) as? [String: Any]
+        )
+        XCTAssertEqual(recoveryJSON["organizationCode"] as? String, "BNBU")
+        XCTAssertEqual(recoveryJSON["requestedRole"] as? String, "TEACHER")
+
+        let push = APIV1PushDeviceRegistrationRequest(
+            platform: IOSPlatformContractPolicy.wireValue,
+            registrationToken: String(repeating: "a", count: 64),
+            appVersion: "1.0.0",
+            locale: "zh-CN"
+        )
+        let pushJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(push)) as? [String: Any]
+        )
+        XCTAssertEqual(pushJSON["platform"] as? String, "IOS")
+
+        let feedback = APIV1CreateFeedbackRequest(
+            category: "BUG",
+            content: "Something went wrong",
+            clientContext: ["platform": .string(IOSPlatformContractPolicy.wireValue)]
+        )
+        let feedbackJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(feedback)) as? [String: Any]
+        )
+        XCTAssertEqual((feedbackJSON["clientContext"] as? [String: Any])?["platform"] as? String, "IOS")
+
+        let query = try XCTUnwrap(IOSAppReleasePolicyQuery(infoDictionary: [
+            "CFBundleVersion": "104",
+            "CFBundleShortVersionString": "1.0.4"
+        ]))
+        XCTAssertEqual(query.platform, "IOS")
+        XCTAssertEqual(query.currentBuildNumber, 104)
+        XCTAssertEqual(
+            Dictionary(uniqueKeysWithValues: query.queryItems.compactMap { item in
+                item.value.map { (item.name, $0) }
+            }),
+            ["platform": "IOS", "currentBuildNumber": "104", "currentVersion": "1.0.4"]
+        )
+        XCTAssertNil(IOSAppReleasePolicyQuery(infoDictionary: ["CFBundleVersion": "1.0.4"]))
+
+        let policy = try JSONDecoder().decode(
+            APIV1AppReleasePolicy.self,
+            from: Data(#"{"platform":"IOS","minimumSupportedVersion":"1.0.0","latestVersion":"1.2.0","minimumSupportedBuildNumber":100,"latestBuildNumber":120,"enforcement":"NONE","message":null,"downloadUrl":null,"effectiveAt":"2026-08-07T00:00:00Z","expiresAt":null,"policyVersion":"ios-policy-1"}"#.utf8)
+        )
+        XCTAssertTrue(IOSAppReleaseContractPolicy.accepts(policy))
+
+        let invalidPolicy = try JSONDecoder().decode(
+            APIV1AppReleasePolicy.self,
+            from: Data(#"{"platform":"IOS","minimumSupportedVersion":"1.0.0","latestVersion":"1.2.0","minimumSupportedBuildNumber":120,"latestBuildNumber":100,"enforcement":"NONE","message":null,"downloadUrl":null,"effectiveAt":"2026-08-07T00:00:00Z","expiresAt":null,"policyVersion":"ios-policy-1"}"#.utf8)
+        )
+        XCTAssertFalse(IOSAppReleaseContractPolicy.accepts(invalidPolicy))
+
+        XCTAssertEqual(APIV1ErrorCode.exemptionApplicationNotFound.rawValue, "EXEMPTION_APPLICATION_NOT_FOUND")
+        XCTAssertEqual(APIV1ErrorCode.exemptionApplicationMediaInvalid.rawValue, "EXEMPTION_APPLICATION_MEDIA_INVALID")
+    }
+
+    func testMediaUploadPurposeScopeRejectsInvalidOneOfCombinations() {
+        let exercise = APIV1InitiateMediaUploadRequest(
+            sessionId: "session-1",
+            enrollmentId: nil,
+            businessPurpose: .exerciseRecord,
+            mediaType: .image,
+            mimeType: "image/jpeg",
+            fileSizeBytes: 4,
+            captureSource: .inAppCamera,
+            declaredContentSha256: nil,
+            durationSeconds: nil
+        )
+        XCTAssertTrue(MediaUploadContractPolicy.accepts(exercise))
+
+        let exemption = APIV1InitiateMediaUploadRequest(
+            sessionId: nil,
+            enrollmentId: "enrollment-1",
+            businessPurpose: .exemptionApplication,
+            mediaType: .image,
+            mimeType: "image/jpeg",
+            fileSizeBytes: 4,
+            captureSource: .filePicker,
+            declaredContentSha256: nil,
+            durationSeconds: nil
+        )
+        XCTAssertTrue(MediaUploadContractPolicy.accepts(exemption))
+
+        let crossScoped = APIV1InitiateMediaUploadRequest(
+            sessionId: "session-1",
+            enrollmentId: "enrollment-1",
+            businessPurpose: .exemptionApplication,
+            mediaType: .image,
+            mimeType: "image/jpeg",
+            fileSizeBytes: 4,
+            captureSource: .filePicker,
+            declaredContentSha256: nil,
+            durationSeconds: nil
+        )
+        XCTAssertFalse(MediaUploadContractPolicy.accepts(crossScoped))
+
+        let exerciseFromPicker = APIV1InitiateMediaUploadRequest(
+            sessionId: "session-1",
+            enrollmentId: nil,
+            businessPurpose: .exerciseRecord,
+            mediaType: .image,
+            mimeType: "image/jpeg",
+            fileSizeBytes: 4,
+            captureSource: .filePicker,
+            declaredContentSha256: nil,
+            durationSeconds: nil
+        )
+        XCTAssertFalse(MediaUploadContractPolicy.accepts(exerciseFromPicker))
     }
 
     func testLocationPrivacyGateFailsClosedUntilEveryGovernanceValueIsApproved() {
@@ -549,6 +704,7 @@ final class BackendFoundationTests: XCTestCase {
             bytes: bytes,
             request: APIV1InitiateMediaUploadRequest(
                 sessionId: "exercise-session-1",
+                enrollmentId: nil,
                 businessPurpose: .exerciseRecord,
                 mediaType: .image,
                 mimeType: "image/jpeg",
@@ -568,6 +724,69 @@ final class BackendFoundationTests: XCTestCase {
             "PUT /private/upload",
             "POST /api/v1/media-uploads/upload-session-1/confirm",
             "POST /api/v1/media/media-1/bind"
+        ])
+    }
+
+    func testExemptionMediaPipelineStopsAfterConfirmWithoutExerciseBind() async throws {
+        let store = MemoryAuthSessionStore(session: Self.authSession(access: "media-access", refresh: "media-refresh"))
+        let lock = NSLock()
+        var operations: [String] = []
+        let session = makeSession { request in
+            lock.lock()
+            operations.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")")
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/media-uploads":
+                let body = String(data: Self.bodyData(from: request), encoding: .utf8) ?? ""
+                XCTAssertTrue(body.contains(#""businessPurpose":"EXEMPTION_APPLICATION""#))
+                XCTAssertTrue(body.contains(#""enrollmentId":"enrollment-1""#))
+                XCTAssertFalse(body.contains("sessionId"))
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-exemption-media-init"],
+                    body: #"{"data":{"uploadSessionId":"exemption-upload-1","mediaId":"exemption-media-1","uploadUrl":"https://private-upload.example.test/private/exemption","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2026-08-07T10:00:00Z"},"meta":{"requestId":"req-exemption-media-init"}}"#
+                )
+            case "/private/exemption":
+                return .json(status: 200, headers: ["ETag": "etag-exemption-1"], body: "{}")
+            case "/api/v1/media-uploads/exemption-upload-1/confirm":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exemption-media-confirm"],
+                    body: Self.exemptionMediaEnvelopeJSON(requestID: "req-exemption-media-confirm")
+                )
+            default:
+                XCTFail("Exemption upload must not call the exercise bind route: \(request.url?.path ?? "")")
+                return .json(status: 404, headers: ["X-Request-ID": "req-404"], body: Self.errorJSON(code: "MEDIA_NOT_FOUND", requestID: "req-404"))
+            }
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let coordinator = MediaUploadCoordinator(client: client, auth: auth)
+        let bytes = Data([0xff, 0xd8, 0xff, 0xd9])
+        let outcome = try await coordinator.uploadForExemption(
+            bytes: bytes,
+            request: APIV1InitiateMediaUploadRequest(
+                sessionId: nil,
+                enrollmentId: "enrollment-1",
+                businessPurpose: .exemptionApplication,
+                mediaType: .image,
+                mimeType: "image/jpeg",
+                fileSizeBytes: bytes.count,
+                captureSource: .filePicker,
+                declaredContentSha256: nil,
+                durationSeconds: nil
+            )
+        )
+
+        XCTAssertEqual(outcome.media.businessPurpose, .exemptionApplication)
+        XCTAssertEqual(outcome.media.enrollmentId, "enrollment-1")
+        XCTAssertNil(outcome.media.sessionId)
+        XCTAssertEqual(outcome.requestId, "req-exemption-media-confirm")
+        XCTAssertEqual(operations, [
+            "POST /api/v1/media-uploads",
+            "PUT /private/exemption",
+            "POST /api/v1/media-uploads/exemption-upload-1/confirm"
         ])
     }
 
@@ -652,7 +871,13 @@ final class BackendFoundationTests: XCTestCase {
 
     private static func mediaEnvelopeJSON(status: String, requestID: String) -> String {
         """
-        {"data":{"id":"media-1","organizationId":"org-1","ownerStudentId":"student-1","sessionId":"exercise-session-1","recordId":null,"businessPurpose":"EXERCISE_RECORD","mediaType":"IMAGE","declaredMimeType":"image/jpeg","verifiedMimeType":"image/jpeg","declaredFileSizeBytes":4,"verifiedFileSizeBytes":4,"captureSource":"IN_APP_CAMERA","uploadStatus":"\(status)","uploadedAt":"2026-08-06T00:00:00Z","boundAt":null,"declaredContentSha256":null,"verifiedContentSha256":null,"declaredDurationSeconds":null,"verifiedDurationSeconds":null,"version":1},"meta":{"requestId":"\(requestID)"}}
+        {"data":{"id":"media-1","organizationId":"org-1","ownerStudentId":"student-1","sessionId":"exercise-session-1","enrollmentId":null,"recordId":null,"businessPurpose":"EXERCISE_RECORD","mediaType":"IMAGE","declaredMimeType":"image/jpeg","verifiedMimeType":"image/jpeg","declaredFileSizeBytes":4,"verifiedFileSizeBytes":4,"captureSource":"IN_APP_CAMERA","uploadStatus":"\(status)","uploadedAt":"2026-08-06T00:00:00Z","boundAt":null,"declaredContentSha256":null,"verifiedContentSha256":null,"declaredDurationSeconds":null,"verifiedDurationSeconds":null,"version":1},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func exemptionMediaEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":{"id":"exemption-media-1","organizationId":"org-1","ownerStudentId":"student-1","sessionId":null,"enrollmentId":"enrollment-1","recordId":null,"businessPurpose":"EXEMPTION_APPLICATION","mediaType":"IMAGE","declaredMimeType":"image/jpeg","verifiedMimeType":"image/jpeg","declaredFileSizeBytes":4,"verifiedFileSizeBytes":4,"captureSource":"FILE_PICKER","uploadStatus":"UPLOADED","uploadedAt":"2026-08-07T00:00:00Z","boundAt":null,"declaredContentSha256":null,"verifiedContentSha256":null,"declaredDurationSeconds":null,"verifiedDurationSeconds":null,"version":1},"meta":{"requestId":"\(requestID)"}}
         """
     }
 

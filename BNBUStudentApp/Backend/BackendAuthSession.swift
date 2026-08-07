@@ -201,7 +201,7 @@ actor BackendAuthSessionController {
         }
         session = current
         let requestBody = APIV1RefreshRequest(refreshToken: current.refreshToken)
-        let scope = "auth:refresh:\(current.sessionId)"
+        let scope = "auth:refresh:\(current.sessionId ?? current.user.id)"
         let fingerprint = try IntentFingerprint.make(requestBody)
         let key: String
         if let refreshIntent, refreshIntent.fingerprint == fingerprint {
@@ -246,7 +246,7 @@ actor BackendAuthSessionController {
             return
         }
         let body = APIV1LogoutRequest(refreshToken: current.refreshToken)
-        let scope = "auth:logout:\(current.sessionId)"
+        let scope = "auth:logout:\(current.sessionId ?? current.user.id)"
         let key = await intents.key(scope: scope, fingerprint: try IntentFingerprint.make(body))
         do {
             let _: APIResponse<APIV1JSONValue> = try await client.send(APIRequest(
