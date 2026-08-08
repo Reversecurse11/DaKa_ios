@@ -10,13 +10,18 @@ final class BackendFoundationTests: XCTestCase {
     func testContractMetadataAndLocalEnvironmentArePinned() throws {
         XCTAssertEqual(
             APIV1ContractMetadata.sourceSHA256,
-            "914084874afda2481813a041da4cc01249aa9ea557d9a8bf29baeed4f10e0dc9"
+            "c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b"
         )
-        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.3.0-contract")
+        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.4.0-contract")
         XCTAssertEqual(APIV1ContractMetadata.apiPrefix, "/api/v1")
         XCTAssertEqual(APIV1ContractMetadata.pathCount, 104)
         XCTAssertEqual(APIV1ContractMetadata.operationCount, 122)
         XCTAssertEqual(APIV1ContractMetadata.schemaCount, 275)
+        XCTAssertEqual(APIV1ContractMetadata.implementedOperationCount, 104)
+        XCTAssertEqual(APIV1ContractMetadata.intentionallyDisabledOperationCount, 18)
+        XCTAssertEqual(APIV1ContractMetadata.systemModeUnsupportedOperationCount, 14)
+        XCTAssertEqual(APIV1IntentionallyDisabledOperation.allCases.count, 18)
+        XCTAssertEqual(APIV1SystemModeUnsupportedOperation.allCases.count, 14)
         XCTAssertEqual(APIV1ContractMetadata.clientCapabilityCount, 30)
         XCTAssertEqual(APIV1ContractMetadata.localIntegrationClientCapabilityCount, 22)
         XCTAssertEqual(APIV1ContractMetadata.defaultDeniedClientCapabilityCount, 8)
@@ -238,6 +243,13 @@ final class BackendFoundationTests: XCTestCase {
             DefaultDeniedCapabilityPolicy.unavailableState(for: .startExerciseLocationTrack, from: error)?.requestId,
             "req-capability-503"
         )
+        XCTAssertEqual(
+            DefaultDeniedCapabilityPolicy.unavailableState(
+                forSystemModeOperation: .listExports,
+                from: error
+            )?.operationID,
+            "listExports"
+        )
         XCTAssertTrue(ClientCapabilityReadinessPolicy.hasLocalIntegrationEvidence(.listNotifications))
         XCTAssertTrue(ClientCapabilityReadinessPolicy.hasLocalIntegrationEvidence(.requestStudentSignInCode))
         XCTAssertFalse(ClientCapabilityReadinessPolicy.isExplicitlyDefaultDenied(.listNotifications))
@@ -253,7 +265,54 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertFalse(IOSPlatformContractPolicy.supportsIOS(.requestStudentSignInCode))
     }
 
-    func testIOS13AuthPlatformAndNumericReleasePolicyContracts() throws {
+    func testContract14RuntimeQueryErrataAndWallTimeCompatibility() throws {
+        XCTAssertEqual(
+            APIV1ListExerciseRecordsSortRuntimeValue.allCases.map(\.rawValue),
+            ["businessDate", "-businessDate"]
+        )
+        XCTAssertEqual(
+            APIV1ListClassSectionsStatusRuntimeValue.allCases.map(\.rawValue),
+            ["UPCOMING", "ACTIVE", "CLOSED", "ARCHIVED"]
+        )
+        XCTAssertEqual(APIV1ListStudentsSortRuntimeValue.allCases.count, 6)
+        XCTAssertEqual(APIV1ListAuditLogsSortRuntimeValue.allCases.count, 2)
+
+        XCTAssertEqual(APIV1RuntimeUnsupportedQueryParameter.allCases.count, 3)
+        for parameter in APIV1RuntimeUnsupportedQueryParameter.allCases {
+            XCTAssertTrue(RuntimeQueryContractPolicy.mustOmit(parameter))
+        }
+        let scoreQuery = RuntimeQueryContractPolicy.studentScoreQueryItems(status: .published)
+        XCTAssertEqual(scoreQuery, [URLQueryItem(name: "status", value: "PUBLISHED")])
+        XCTAssertFalse(scoreQuery.contains { $0.name == "sort" })
+
+        XCTAssertEqual(
+            APIV1InitiateMediaUploadCaptureSource.allCases.map(\.rawValue),
+            ["IN_APP_CAMERA", "FILE_PICKER"]
+        )
+        XCTAssertEqual(APIV1MediaAccessPurpose.allCases.map(\.rawValue), ["VIEW_ORIGINAL"])
+
+        for (start, end) in [
+            ("08:30", "10:30"),
+            ("08:30:00", "10:30:00"),
+            ("08:30:00+08:00", "10:30:00+08:00")
+        ] {
+            let section = try JSONDecoder().decode(
+                APIV1ClassSection.self,
+                from: Data(Self.classSectionJSON(dailyStartTime: start, dailyEndTime: end).utf8)
+            )
+            XCTAssertEqual(section.dailyStartTime, start)
+            XCTAssertEqual(section.dailyEndTime, end)
+        }
+
+        let update = try JSONDecoder().decode(
+            APIV1UpdateClassSectionRequest.self,
+            from: Data(#"{"dailyStartTime":"08:30","dailyEndTime":null,"expectedVersion":2}"#.utf8)
+        )
+        XCTAssertEqual(update.dailyStartTime, "08:30")
+        XCTAssertNil(update.dailyEndTime)
+    }
+
+    func testIOSAuthPlatformAndNumericReleasePolicyContracts() throws {
         let codeRequest = APIV1StudentSignInCodeRequest(
             organizationCode: "BNBU",
             account: "student@example.edu",
@@ -790,6 +849,32 @@ final class BackendFoundationTests: XCTestCase {
         ])
     }
 
+    func testMediaAccessUsesOnlyContract14ViewOriginalPurpose() async throws {
+        let store = MemoryAuthSessionStore(session: Self.authSession(access: "media-access", refresh: "media-refresh"))
+        let session = makeSession { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/v1/media/media-1/access-url")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer media-access")
+            let body = String(data: Self.bodyData(from: request), encoding: .utf8) ?? ""
+            XCTAssertTrue(body.contains(#""purpose":"VIEW_ORIGINAL""#))
+            return .json(
+                status: 200,
+                headers: ["X-Request-ID": "req-media-access"],
+                body: #"{"data":{"mediaId":"media-1","accessUrl":"https://private-media.example.test/object","expiresAt":"2026-08-08T10:00:00Z"},"meta":{"requestId":"req-media-access"}}"#
+            )
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let coordinator = MediaUploadCoordinator(client: client, auth: auth)
+
+        let access = try await coordinator.ephemeralAccess(mediaID: "media-1")
+
+        XCTAssertEqual(access.mediaID, "media-1")
+        XCTAssertEqual(access.url.absoluteString, "https://private-media.example.test/object")
+        XCTAssertEqual(access.expiresAt, "2026-08-08T10:00:00Z")
+    }
+
     func testGeneratedReviewVersionsDecimalScoreServerClockAndExport503() throws {
         let review = try JSONDecoder().decode(
             APIV1CreateReviewRequest.self,
@@ -878,6 +963,12 @@ final class BackendFoundationTests: XCTestCase {
     private static func exemptionMediaEnvelopeJSON(requestID: String) -> String {
         """
         {"data":{"id":"exemption-media-1","organizationId":"org-1","ownerStudentId":"student-1","sessionId":null,"enrollmentId":"enrollment-1","recordId":null,"businessPurpose":"EXEMPTION_APPLICATION","mediaType":"IMAGE","declaredMimeType":"image/jpeg","verifiedMimeType":"image/jpeg","declaredFileSizeBytes":4,"verifiedFileSizeBytes":4,"captureSource":"FILE_PICKER","uploadStatus":"UPLOADED","uploadedAt":"2026-08-07T00:00:00Z","boundAt":null,"declaredContentSha256":null,"verifiedContentSha256":null,"declaredDurationSeconds":null,"verifiedDurationSeconds":null,"version":1},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func classSectionJSON(dailyStartTime: String, dailyEndTime: String) -> String {
+        """
+        {"id":"class-section-1","organizationId":"org-1","courseId":"course-1","semesterId":"semester-1","teacherId":"teacher-1","classCode":"001","displayName":"Section 1","status":"ACTIVE","isEnrollmentOpen":true,"checkInWindowMode":"AVAILABLE","checkInStartDate":null,"checkInEndDate":null,"dailyStartTime":"\(dailyStartTime)","dailyEndTime":"\(dailyEndTime)","submissionDeadlineAt":null,"excludedDates":[],"createdAt":"2026-08-08T00:00:00Z","updatedAt":"2026-08-08T00:00:00Z","version":1}
         """
     }
 

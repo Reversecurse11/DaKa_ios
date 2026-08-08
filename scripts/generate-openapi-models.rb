@@ -6,7 +6,7 @@ require "fileutils"
 require "optparse"
 require "yaml"
 
-EXPECTED_SHA256 = "914084874afda2481813a041da4cc01249aa9ea557d9a8bf29baeed4f10e0dc9"
+EXPECTED_SHA256 = "c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b"
 ROOT = File.expand_path("..", __dir__)
 DEFAULT_INPUT = File.join(ROOT, "Contracts", "openapi.snapshot.yaml")
 DEFAULT_OUTPUT = File.join(ROOT, "BNBUStudentApp", "Backend", "Generated", "APIV1Models.generated.swift")
@@ -35,11 +35,44 @@ document.fetch("paths").each do |path, path_item|
   end
 end
 
-unless document.dig("info", "version") == "1.3.0-contract" &&
+unless document.dig("info", "version") == "1.4.0-contract" &&
        document.fetch("paths").length == 104 &&
        operations.length == 122 &&
        schemas.length == 275
-  abort("error: OpenAPI 1.3 structural baseline mismatch")
+  abort("error: OpenAPI 1.4 structural baseline mismatch")
+end
+
+intentionally_disabled_operations = operations
+  .select { |operation| operation["x-enabled-by-default"] == false }
+  .sort_by { |operation| operation.fetch("operationId") }
+system_mode_unsupported_operations = intentionally_disabled_operations.select do |operation|
+  operation["x-default-deny-error"] == "SYSTEM_MODE_UNSUPPORTED"
+end
+expected_intentionally_disabled_operation_ids = %w[
+  appendExerciseLocationSamples
+  createExport
+  createExportDownloadUrl
+  finalizeExerciseLocationTrack
+  getActivityConversionRules
+  getExerciseRecordLocationSummary
+  getExport
+  getLocationPrivacyPolicy
+  getSportCatalog
+  ignoreRosterAlignmentResult
+  listExports
+  openStudentScoreCorrection
+  startExerciseLocationTrack
+  updateCurrentUserProfile
+  updateLocationPrivacyPolicy
+  updateStudent
+  withdrawEnrollment
+  withdrawExerciseRecord
+].freeze
+unless intentionally_disabled_operations.map { |operation| operation.fetch("operationId") } ==
+       expected_intentionally_disabled_operation_ids &&
+       system_mode_unsupported_operations.length == 14 &&
+       operations.length - intentionally_disabled_operations.length == 104
+  abort("error: OpenAPI 1.4 operation completion matrix changed")
 end
 
 client_capability_operations = operations.select do |operation|
@@ -78,7 +111,81 @@ unless default_denied_client_capability_operations.map { |operation| operation.f
            operation["x-default-deny-error"].nil? &&
            operation["x-business-blocker"].nil?
        }
-  abort("error: OpenAPI 1.3 client capability readiness split changed")
+  abort("error: OpenAPI 1.4 client capability readiness split changed")
+end
+
+runtime_query_parameters = {}
+runtime_unsupported_query_parameters = []
+operations.each do |operation|
+  Array(operation["parameters"]).each do |parameter|
+    next unless parameter.is_a?(Hash) && parameter["name"]
+
+    key = "#{operation.fetch("operationId")}.#{parameter.fetch("name")}"
+    runtime_query_parameters[key] = parameter.fetch("x-runtime-enum") if parameter["x-runtime-enum"]
+    if parameter["x-runtime-unsupported"] == true
+      runtime_unsupported_query_parameters << key
+      unless parameter["deprecated"] == true
+        abort("error: Runtime-unsupported query parameter must remain deprecated: #{key}")
+      end
+    end
+  end
+end
+expected_runtime_query_parameters = {
+  "listAuditLogs.sort" => %w[occurredAt -occurredAt],
+  "listClassSections.status" => %w[UPCOMING ACTIVE CLOSED ARCHIVED],
+  "listEnrollments.sort" => %w[joinedAt -joinedAt],
+  "listExerciseRecordReviews.sort" => %w[reviewVersion -reviewVersion],
+  "listExerciseRecords.sort" => %w[businessDate -businessDate],
+  "listExports.sort" => %w[requestedAt -requestedAt],
+  "listRosterAlignmentResults.sort" => %w[createdAt -createdAt],
+  "listRosterEntries.sort" => %w[sourceRowNumber -sourceRowNumber],
+  "listRosterImports.sort" => %w[versionNumber -versionNumber],
+  "listStudents.sort" => %w[fullName -fullName studentNumber -studentNumber createdAt -createdAt]
+}.freeze
+expected_runtime_unsupported_query_parameters = %w[
+  listScoreAdjustments.sort
+  listScoreRules.sort
+  listStudentScores.sort
+].freeze
+unless runtime_query_parameters == expected_runtime_query_parameters &&
+       runtime_unsupported_query_parameters.sort == expected_runtime_unsupported_query_parameters
+  abort("error: OpenAPI 1.4 query errata constraints changed")
+end
+
+runtime_property_enums = {
+  ["InitiateMediaUploadRequest", "captureSource"] =>
+    schemas.dig("InitiateMediaUploadRequest", "properties", "captureSource", "x-runtime-enum"),
+  ["MediaAccessRequest", "purpose"] =>
+    schemas.dig("MediaAccessRequest", "properties", "purpose", "x-runtime-enum")
+}.freeze
+unless runtime_property_enums == {
+  ["InitiateMediaUploadRequest", "captureSource"] => %w[IN_APP_CAMERA FILE_PICKER],
+  ["MediaAccessRequest", "purpose"] => %w[VIEW_ORIGINAL]
+}
+  abort("error: OpenAPI 1.4 media runtime constraints changed")
+end
+runtime_property_type_names = {
+  ["InitiateMediaUploadRequest", "captureSource"] => "APIV1InitiateMediaUploadCaptureSource",
+  ["MediaAccessRequest", "purpose"] => "APIV1MediaAccessPurpose"
+}.freeze
+
+wall_time_properties = %w[ClassSection UpdateClassSectionRequest].product(%w[dailyStartTime dailyEndTime])
+unless wall_time_properties.all? { |schema_name, property_name|
+         choices = schemas.dig(schema_name, "properties", property_name, "oneOf")
+         Array(choices).length == 3 &&
+           choices.any? { |choice| choice["type"] == "null" } &&
+           choices.any? { |choice| choice["type"] == "string" && choice["format"] == "time" } &&
+           choices.any? { |choice| choice["type"] == "string" && choice["pattern"] }
+       }
+  abort("error: OpenAPI 1.4 organization-local wall-time compatibility changed")
+end
+
+student_score_status_parameter = operations
+  .find { |operation| operation["operationId"] == "listStudentScores" }
+  &.fetch("parameters", [])
+  &.find { |parameter| parameter["name"] == "status" }
+unless student_score_status_parameter&.fetch("description", "")&.include?("Mutually exclusive")
+  abort("error: OpenAPI 1.4 StudentScore status precedence is missing")
 end
 
 location_sample = schemas.fetch("LocationSample").fetch("properties")
@@ -151,7 +258,8 @@ def swift_type(schema)
 
   if schema["oneOf"]
     choices = schema["oneOf"].reject { |entry| entry["type"] == "null" }
-    return swift_type(choices.first) if choices.length == 1
+    choice_types = choices.map { |choice| swift_type(choice) }.uniq
+    return choice_types.first if choice_types.length == 1
     return "APIV1JSONValue"
   end
 
@@ -196,6 +304,26 @@ def enum_case_name(raw_value, used)
   candidate
 end
 
+def runtime_query_enum_name(key)
+  operation_id, parameter_name = key.split(".", 2)
+  "APIV1#{upper_camel(operation_id)}#{upper_camel(parameter_name)}RuntimeValue"
+end
+
+def runtime_query_case_name(raw_value, directional, used)
+  base = lower_camel(raw_value.to_s.delete_prefix("-"))
+  if directional
+    base = "#{base}#{raw_value.to_s.start_with?("-") ? "Descending" : "Ascending"}"
+  end
+  candidate = base
+  suffix = 2
+  while used.include?(candidate)
+    candidate = "#{base}#{suffix}"
+    suffix += 1
+  end
+  used << candidate
+  candidate
+end
+
 lines = []
 lines << "// Generated by scripts/generate-openapi-models.rb. DO NOT EDIT."
 lines << "// Source SHA-256: #{EXPECTED_SHA256}"
@@ -210,6 +338,9 @@ lines << "    static let apiPrefix = \"/api/v1\""
 lines << "    static let pathCount = #{document.fetch("paths").length}"
 lines << "    static let operationCount = #{operations.length}"
 lines << "    static let schemaCount = #{schemas.length}"
+lines << "    static let implementedOperationCount = #{operations.length - intentionally_disabled_operations.length}"
+lines << "    static let intentionallyDisabledOperationCount = #{intentionally_disabled_operations.length}"
+lines << "    static let systemModeUnsupportedOperationCount = #{system_mode_unsupported_operations.length}"
 lines << "    static let clientCapabilityCount = #{client_capability_operations.length}"
 lines << "    static let localIntegrationClientCapabilityCount = #{local_integration_client_capability_operations.length}"
 lines << "    static let defaultDeniedClientCapabilityCount = #{default_denied_client_capability_operations.length}"
@@ -248,7 +379,17 @@ lines << "}"
 lines << ""
 [
   [
-    "All 30 client-capability routes in the 1.3 contract. Membership does not imply remote readiness.",
+    "All operations formally classified as intentionally disabled in the 1.4 release.",
+    "APIV1IntentionallyDisabledOperation",
+    intentionally_disabled_operations
+  ],
+  [
+    "Disabled operations whose stable fail-closed error is SYSTEM_MODE_UNSUPPORTED.",
+    "APIV1SystemModeUnsupportedOperation",
+    system_mode_unsupported_operations
+  ],
+  [
+    "All 30 client-capability routes in the 1.4 contract. Membership does not imply remote readiness.",
     "APIV1ClientCapability",
     client_capability_operations
   ],
@@ -274,6 +415,37 @@ lines << ""
   lines << ""
 end
 lines.pop
+
+runtime_query_parameters.sort.each do |key, values|
+  lines << ""
+  lines << "/// Runtime-accepted values for #{key}; the OpenAPI string remains broad for 1.3 compatibility."
+  lines << "enum #{runtime_query_enum_name(key)}: String, Codable, CaseIterable {"
+  used = []
+  directional = values.any? { |value| value.start_with?("-") }
+  values.each do |raw_value|
+    lines << "    case #{runtime_query_case_name(raw_value, directional, used)} = #{raw_value.inspect}"
+  end
+  lines << "}"
+end
+
+lines << ""
+lines << "/// Query parameters retained only for 1.3 wire compatibility; clients must omit them."
+lines << "enum APIV1RuntimeUnsupportedQueryParameter: String, CaseIterable {"
+used_runtime_unsupported_cases = []
+runtime_unsupported_query_parameters.sort.each do |key|
+  lines << "    case #{enum_case_name(key, used_runtime_unsupported_cases)} = #{key.inspect}"
+end
+lines << "}"
+
+runtime_property_enums.each do |key, values|
+  lines << ""
+  lines << "enum #{runtime_property_type_names.fetch(key)}: String, Codable, CaseIterable {"
+  used = []
+  values.each do |raw_value|
+    lines << "    case #{enum_case_name(raw_value, used)} = #{raw_value.inspect}"
+  end
+  lines << "}"
+end
 
 schemas.each do |name, schema|
   swift_name = "APIV1#{upper_camel(name)}"
@@ -307,7 +479,7 @@ schemas.each do |name, schema|
     lines << "    init() {}"
   else
     properties.each do |property_name, property_schema|
-      type = swift_type(property_schema)
+      type = runtime_property_type_names.fetch([name, property_name]) { swift_type(property_schema) }
       optional = !required.include?(property_name) || nullable?(property_schema)
       lines << "    let #{swift_property_name(property_name)}: #{type}#{optional ? "?" : ""}"
     end

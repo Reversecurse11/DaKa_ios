@@ -79,6 +79,13 @@ struct DefaultDeniedCapabilityState: Equatable {
 
 enum DefaultDeniedCapabilityPolicy {
     static func unavailableState(
+        forSystemModeOperation operation: APIV1SystemModeUnsupportedOperation,
+        from error: APITransportError
+    ) -> DefaultDeniedCapabilityState? {
+        unavailableState(operationID: operation.rawValue, from: error)
+    }
+
+    static func unavailableState(
         for capability: APIV1DefaultDeniedClientCapability,
         from error: APITransportError
     ) -> DefaultDeniedCapabilityState? {
@@ -116,7 +123,7 @@ enum ExportAvailabilityPolicy {
     }
 }
 
-/// OpenAPI 1.3 publishes IOS as the truthful wire value on every platform-
+/// OpenAPI 1.4 publishes IOS as the truthful wire value on every platform-
 /// bearing client-capability route. This says nothing about remote readiness.
 enum IOSPlatformContractPolicy {
     static let wireValue = "IOS"
@@ -143,6 +150,22 @@ enum ClientCapabilityReadinessPolicy {
 
     static func isExplicitlyDefaultDenied(_ capability: APIV1ClientCapability) -> Bool {
         APIV1DefaultDeniedClientCapability.allCases.contains { $0.rawValue == capability.rawValue }
+    }
+}
+
+/// Contract 1.4 keeps three score sort strings only for 1.3 wire
+/// compatibility. Their runtime order is fixed, so new clients always omit
+/// those parameters instead of suggesting that the value has an effect.
+enum RuntimeQueryContractPolicy {
+    static func mustOmit(_ parameter: APIV1RuntimeUnsupportedQueryParameter) -> Bool {
+        switch parameter {
+        case .listScoreAdjustmentsSort, .listScoreRulesSort, .listStudentScoresSort:
+            return true
+        }
+    }
+
+    static func studentScoreQueryItems(status: APIV1ScoreStatus?) -> [URLQueryItem] {
+        status.map { [URLQueryItem(name: "status", value: $0.rawValue)] } ?? []
     }
 }
 

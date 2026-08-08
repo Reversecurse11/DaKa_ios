@@ -1,10 +1,14 @@
 openapi: 3.1.0
 info:
   title: BNBU Sports Unified API
-  version: 1.3.0-contract
+  version: 1.4.0-contract
   summary: Unified contract for the sports check-in platform
+  license:
+    name: UNLICENSED
+    identifier: LicenseRef-UNLICENSED
   description: |
-    Stage 21B contract. It does not prove that every registered capability is
+    Production-closure candidate derived from the immutable published 1.3.0
+    snapshot. It does not prove that every registered capability is
     business-enabled or production-ready.
     Business fields come from 02-data-dictionary.md, state transitions from
     03-state-machines.md, rules from 04-business-rules.md, and authorization
@@ -255,6 +259,8 @@ paths:
                   requestId: req_01JABC123
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -263,6 +269,8 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /auth/refresh:
     post:
       tags: [Authentication]
@@ -297,6 +305,8 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /auth/logout:
     post:
       tags: [Authentication]
@@ -326,10 +336,14 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /me:
     get:
       tags: [Current User]
@@ -407,7 +421,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [fullName, -fullName, studentNumber, -studentNumber, createdAt, -createdAt]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/ClassSectionFilter'
         - name: status
@@ -616,6 +634,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /courses/{courseId}:
     parameters:
       - $ref: '#/components/parameters/CourseId'
@@ -675,6 +695,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections:
     get:
       tags: [Class Sections]
@@ -702,6 +724,7 @@ paths:
           schema: { $ref: '#/components/schemas/OpaqueId' }
         - name: status
           in: query
+          x-runtime-enum: [UPCOMING, ACTIVE, CLOSED, ARCHIVED]
           schema: { type: string }
       responses:
         '200':
@@ -746,6 +769,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections/{classSectionId}:
     parameters:
       - $ref: '#/components/parameters/ClassSectionId'
@@ -804,6 +829,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections/{classSectionId}/close:
     post:
       tags: [Class Sections]
@@ -838,6 +865,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /enrollments:
     get:
       tags: [Enrollments]
@@ -855,7 +884,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [joinedAt, -joinedAt]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - $ref: '#/components/parameters/ClassSectionFilter'
         - name: studentId
           in: query
@@ -911,6 +944,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /enrollments/{enrollmentId}:
     get:
       tags: [Enrollments]
@@ -974,6 +1009,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /enrollments/{enrollmentId}/remove:
     post:
       tags: [Enrollments]
@@ -1008,6 +1045,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /enrollments/{enrollmentId}/restore:
     post:
       tags: [Enrollments]
@@ -1042,6 +1081,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections/{classSectionId}/course-invites:
     post:
       tags: [QR Course Joining]
@@ -1077,6 +1118,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /course-invites/{inviteToken}/preview:
     get:
       tags: [QR Course Joining]
@@ -1145,6 +1188,8 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /course-invites/{inviteToken}/join:
     post:
       tags: [QR Course Joining, Enrollments]
@@ -1178,6 +1223,8 @@ paths:
           $ref: '#/components/responses/Gone'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections/{classSectionId}/roster-imports:
     get:
       tags: [Official Roster Imports]
@@ -1196,7 +1243,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [versionNumber, -versionNumber]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/RosterImportStatus' }
@@ -1247,10 +1298,14 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections/{classSectionId}/roster-imports/current:
     get:
       tags: [Official Roster Imports]
@@ -1337,6 +1392,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /roster-imports/{rosterImportId}/entries:
     get:
       tags: [Official Roster Imports]
@@ -1355,7 +1412,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [sourceRowNumber, -sourceRowNumber]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - $ref: '#/components/parameters/Search'
         - name: rowValidationStatus
           in: query
@@ -1409,6 +1470,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /roster-alignment-results:
     get:
       tags: [Roster Alignment]
@@ -1426,7 +1489,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [createdAt, -createdAt]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/ClassSectionFilter'
         - name: rosterImportId
@@ -1510,6 +1577,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /roster-alignment-results/{alignmentResultId}/resolve:
     post:
       tags: [Roster Alignment]
@@ -1546,6 +1615,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /roster-alignment-results/{alignmentResultId}/ignore:
     post:
       tags: [Roster Alignment]
@@ -1580,6 +1651,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /roster-alignment-results/{alignmentResultId}/reopen:
     post:
       tags: [Roster Alignment]
@@ -1610,6 +1683,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-sessions:
     post:
       tags: [Exercise Sessions]
@@ -1646,6 +1721,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-sessions/active:
     get:
       tags: [Exercise Sessions]
@@ -1726,6 +1803,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-sessions/{sessionId}/resume:
     post:
       tags: [Exercise Sessions]
@@ -1756,6 +1835,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-sessions/{sessionId}/finish:
     post:
       tags: [Exercise Sessions]
@@ -1788,6 +1869,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-sessions/{sessionId}/cancel:
     post:
       tags: [Exercise Sessions]
@@ -1818,6 +1901,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-sessions/{sessionId}/reconcile:
     post:
       tags: [Exercise Sessions]
@@ -1855,6 +1940,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records:
     get:
       tags: [Exercise Records]
@@ -1872,7 +1959,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [businessDate, -businessDate]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - $ref: '#/components/parameters/Search'
         - $ref: '#/components/parameters/ClassSectionFilter'
         - name: enrollmentId
@@ -1972,6 +2063,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records/{recordId}:
     get:
       tags: [Exercise Records]
@@ -2032,6 +2125,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records/{recordId}/submit:
     post:
       tags: [Exercise Records]
@@ -2071,6 +2166,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records/{recordId}/discard:
     post:
       tags: [Exercise Records]
@@ -2101,6 +2198,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records/{recordId}/withdraw:
     post:
       tags: [Exercise Records]
@@ -2135,6 +2234,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /media-uploads:
     post:
       tags: [Media Uploads]
@@ -2184,6 +2285,8 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /media-uploads/{uploadSessionId}/confirm:
     post:
       tags: [Media Uploads]
@@ -2220,6 +2323,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /media/{mediaId}:
     get:
       tags: [Media Uploads]
@@ -2282,6 +2387,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /media/{mediaId}/access-url:
     post:
       tags: [Media Uploads]
@@ -2316,6 +2423,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records/{recordId}/reviews:
     get:
       tags: [Exercise Reviews]
@@ -2334,7 +2443,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [reviewVersion, -reviewVersion]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
       responses:
         '200':
           $ref: '#/components/responses/ReviewListSuccess'
@@ -2386,6 +2499,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-records/{recordId}/reviews/reopen:
     post:
       tags: [Exercise Reviews]
@@ -2422,6 +2537,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exercise-reviews/batch:
     post:
       tags: [Exercise Reviews]
@@ -2460,6 +2577,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /class-sections/{classSectionId}/score-rules:
     get:
       tags: [Score Rules]
@@ -2478,7 +2597,12 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          deprecated: true
+          x-runtime-unsupported: true
+          schema: { type: string, maxLength: 200 }
+          description: Compatibility-only Contract 1.3 field; V1 applies a fixed deterministic order and rejects no request solely for this field.
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/ScoreRuleStatus' }
@@ -2529,6 +2653,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /score-rules/{scoreRuleId}:
     get:
       tags: [Score Rules]
@@ -2590,6 +2716,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /score-rules/{scoreRuleId}/approve:
     post:
       tags: [Score Rules]
@@ -2620,6 +2748,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /score-rules/{scoreRuleId}/reject:
     post:
       tags: [Score Rules]
@@ -2645,6 +2775,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /student-scores:
     get:
       tags: [Student Scores]
@@ -2662,13 +2794,23 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          deprecated: true
+          x-runtime-unsupported: true
+          schema: { type: string, maxLength: 200 }
+          description: Compatibility-only Contract 1.3 field; V1 applies a fixed deterministic order and rejects no request solely for this field.
         - $ref: '#/components/parameters/ClassSectionFilter'
         - name: enrollmentId
           in: query
           schema: { $ref: '#/components/schemas/OpaqueId' }
         - name: status
           in: query
+          description: >-
+            Mutually exclusive public StudentScore aggregate state. NOT_CALCULATED means no
+            working revision; CALCULATED or ADJUSTED means the current working revision has
+            not been published; PUBLISHED means working and published revision pointers match;
+            LOCKED is reserved and currently yields no rows because V1 has no lock transition.
           schema: { $ref: '#/components/schemas/ScoreStatus' }
       responses:
         '200':
@@ -2743,6 +2885,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /student-scores/{studentScoreId}/publish:
     post:
       tags: [Student Scores]
@@ -2779,6 +2923,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /student-scores/{studentScoreId}/open-correction:
     post:
       tags: [Student Scores]
@@ -2811,6 +2957,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /student-scores/{studentScoreId}/adjustments:
     get:
       tags: [Score Adjustments]
@@ -2830,7 +2978,12 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          deprecated: true
+          x-runtime-unsupported: true
+          schema: { type: string, maxLength: 200 }
+          description: Compatibility-only Contract 1.3 field; V1 applies a fixed deterministic order and rejects no request solely for this field.
       responses:
         '200':
           $ref: '#/components/responses/ScoreAdjustmentListSuccess'
@@ -2880,6 +3033,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /score-adjustments/{scoreAdjustmentId}/approve:
     post:
       tags: [Score Adjustments]
@@ -2909,6 +3064,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /score-adjustments/{scoreAdjustmentId}/reject:
     post:
       tags: [Score Adjustments]
@@ -2934,6 +3091,8 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exports:
     get:
       tags: [Exports]
@@ -2954,7 +3113,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [requestedAt, -requestedAt]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - name: exportType
           in: query
           schema: { $ref: '#/components/schemas/ExportType' }
@@ -2972,6 +3135,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     post:
       tags: [Exports]
       operationId: createExport
@@ -3037,6 +3202,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /exports/{exportId}/download-url:
     post:
       tags: [Exports]
@@ -3081,6 +3248,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /audit-logs:
     get:
       tags: [Audit Logs]
@@ -3101,7 +3270,11 @@ paths:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Sort'
+        - name: sort
+          in: query
+          x-runtime-enum: [occurredAt, -occurredAt]
+          schema: { type: string, maxLength: 200 }
+          description: Open Contract 1.3 string retained for input compatibility; runtime accepts only x-runtime-enum values.
         - $ref: '#/components/parameters/Search'
         - name: actorUserId
           in: query
@@ -5409,8 +5582,18 @@ components:
         checkInWindowMode: { $ref: '#/components/schemas/CheckInWindowMode' }
         checkInStartDate: { type: [string, 'null'], format: date }
         checkInEndDate: { type: [string, 'null'], format: date }
-        dailyStartTime: { type: [string, 'null'], format: time }
-        dailyEndTime: { type: [string, 'null'], format: time }
+        dailyStartTime:
+          oneOf:
+            - { type: 'null' }
+            - { type: string, format: time }
+            - { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$' }
+          description: Organization-local wall time; RFC3339 time remains a deprecated compatibility input.
+        dailyEndTime:
+          oneOf:
+            - { type: 'null' }
+            - { type: string, format: time }
+            - { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$' }
+          description: Organization-local wall time; RFC3339 time remains a deprecated compatibility input.
         submissionDeadlineAt: { type: [string, 'null'], format: date-time }
         excludedDates:
           type: array
@@ -5994,8 +6177,16 @@ components:
         checkInWindowMode: { $ref: '#/components/schemas/CheckInWindowMode' }
         checkInStartDate: { type: [string, 'null'], format: date }
         checkInEndDate: { type: [string, 'null'], format: date }
-        dailyStartTime: { type: [string, 'null'], format: time }
-        dailyEndTime: { type: [string, 'null'], format: time }
+        dailyStartTime:
+          oneOf:
+            - { type: 'null' }
+            - { type: string, format: time }
+            - { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$' }
+        dailyEndTime:
+          oneOf:
+            - { type: 'null' }
+            - { type: string, format: time }
+            - { type: string, pattern: '^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$' }
         submissionDeadlineAt: { type: [string, 'null'], format: date-time }
         excludedDates: { type: array, uniqueItems: true, items: { type: string, format: date } }
         expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
@@ -6154,7 +6345,7 @@ components:
         mediaType: { $ref: '#/components/schemas/MediaType' }
         mimeType: { type: string, minLength: 1, maxLength: 127 }
         fileSizeBytes: { type: integer, minimum: 1 }
-        captureSource: { $ref: '#/components/schemas/CaptureSource', description: EXERCISE_RECORD requires IN_APP_CAMERA. EXEMPTION_APPLICATION permits IN_APP_CAMERA or FILE_PICKER; SYSTEM_IMPORT is not accepted by this student endpoint. }
+        captureSource: { $ref: '#/components/schemas/CaptureSource', x-runtime-enum: [IN_APP_CAMERA, FILE_PICKER], description: EXERCISE_RECORD requires IN_APP_CAMERA. EXEMPTION_APPLICATION permits IN_APP_CAMERA or FILE_PICKER; SYSTEM_IMPORT is not accepted by this student endpoint. }
         declaredContentSha256: { oneOf: [{ $ref: '#/components/schemas/Sha256' }, { type: 'null' }], description: Optional and untrusted client declaration; it is not an integrity fact. }
         durationSeconds: { type: [integer, 'null'], minimum: 1, description: Required and positive for VIDEO; omit or null for IMAGE. Runtime validation enforces the media-type condition. }
       oneOf:
@@ -6188,7 +6379,7 @@ components:
       additionalProperties: false
       required: [purpose]
       properties:
-        purpose: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        purpose: { type: string, pattern: '^[A-Z][A-Z0-9_]*$', x-runtime-enum: [VIEW_ORIGINAL] }
     CreateReviewRequest:
       type: object
       additionalProperties: false

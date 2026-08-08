@@ -139,7 +139,8 @@ actor MediaUploadCoordinator {
         ))
         guard confirmed.value.businessPurpose == request.businessPurpose,
               confirmed.value.sessionId == request.sessionId,
-              confirmed.value.enrollmentId == request.enrollmentId else {
+              confirmed.value.enrollmentId == request.enrollmentId,
+              confirmed.value.captureSource.rawValue == request.captureSource.rawValue else {
             throw APITransportError.invalidResponse
         }
 
@@ -159,7 +160,10 @@ actor MediaUploadCoordinator {
         ))
     }
 
-    func ephemeralAccess(mediaID: String, purpose: String) async throws -> EphemeralMediaAccess {
+    func ephemeralAccess(
+        mediaID: String,
+        purpose: APIV1MediaAccessPurpose = .viewOriginal
+    ) async throws -> EphemeralMediaAccess {
         let mediaID = try APIPath.component(mediaID)
         let request = APIV1MediaAccessRequest(purpose: purpose)
         let scope = "media:access:\(mediaID)"
