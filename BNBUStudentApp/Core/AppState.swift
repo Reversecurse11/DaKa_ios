@@ -903,10 +903,8 @@ final class AppState: ObservableObject {
             exerciseMediaDrafts = []
             return
         }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         let (kept, dropped) = stored.partitioned {
-            $0.studentID == studentID && calendar.isDate($0.capturedAt, inSameDayAs: date)
+            $0.studentID == studentID && CheckInTimeWindowRule.isSameBusinessDate($0.capturedAt, date)
         }
         if !dropped.isEmpty {
             _ = localStore.saveExerciseMediaDrafts(kept)
@@ -1085,21 +1083,25 @@ final class AppState: ObservableObject {
 
     func hasSubmittedCheckInToday(at date: Date = Date()) -> Bool {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        calendar.timeZone = CheckInTimeWindowRule.businessTimeZone
+        let targetBusinessDate = CheckInTimeWindowRule.businessDateString(for: date)
         let exerciseSubmissionDates = localStore.readExerciseSubmissionDates().value ?? [:]
-        let fractionalISOFormatter = ISO8601DateFormatter()
-        fractionalISOFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let standardISOFormatter = ISO8601DateFormatter()
         return workspace.records.contains { record in
             guard record.creditType != .organizationOffset else { return false }
+            if let serverBusinessDate = record.businessDate?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !serverBusinessDate.isEmpty {
+                // `businessDate` is already the server-frozen Beijing date;
+                // never pass it through UTC or the student's display timezone.
+                return serverBusinessDate == targetBusinessDate
+            }
             if let exerciseStartDate = exerciseSubmissionDates[record.id] {
-                return calendar.isDate(exerciseStartDate, inSameDayAs: date)
+                return CheckInTimeWindowRule.isSameBusinessDate(exerciseStartDate, date)
             }
             let value = record.submittedAt.trimmingCharacters(in: .whitespacesAndNewlines)
             if RecentTimestamp.isJustNow(value) { return true }
 
-            if let parsed = fractionalISOFormatter.date(from: value) ?? standardISOFormatter.date(from: value) {
-                return calendar.isDate(parsed, inSameDayAs: date)
+            if let parsed = StudentRecordTimeDisplay.instant(from: value) {
+                return CheckInTimeWindowRule.isSameBusinessDate(parsed, date)
             }
 
             for format in ["yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"] {
@@ -1108,7 +1110,8 @@ final class AppState: ObservableObject {
                 formatter.timeZone = calendar.timeZone
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.dateFormat = format
-                if let parsed = formatter.date(from: value), calendar.isDate(parsed, inSameDayAs: date) {
+                if let parsed = formatter.date(from: value),
+                   CheckInTimeWindowRule.isSameBusinessDate(parsed, date) {
                     return true
                 }
             }

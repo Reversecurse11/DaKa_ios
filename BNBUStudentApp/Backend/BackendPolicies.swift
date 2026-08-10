@@ -169,6 +169,38 @@ enum RuntimeQueryContractPolicy {
     }
 }
 
+/// Stable, student-facing denials returned while creating an authoritative
+/// exercise session. The server remains the final judge: qualification is
+/// calculated from each record's latest VALID review, and window eligibility
+/// is evaluated in Asia/Shanghai when the start request reaches the backend.
+enum ExerciseSessionAdmissionError: Error, LocalizedError, Equatable {
+    case qualificationReached(requestId: String)
+    case outsideBeijingWindow(requestId: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .qualificationReached:
+            return "已达到合格时长，无需继续打卡。"
+        case .outsideBeijingWindow:
+            return "当前不在每日打卡开放时段（北京时间 06:00–22:00），暂时不能开始运动。"
+        }
+    }
+}
+
+enum ExerciseSessionAdmissionPolicy {
+    static func startError(from error: APITransportError) -> ExerciseSessionAdmissionError? {
+        guard case .failure(409, let envelope) = error else { return nil }
+        switch envelope.knownCode {
+        case .sessionAlreadyCompleted:
+            return .qualificationReached(requestId: envelope.requestId)
+        case .sessionOutsideTimeWindow, .courseCheckinWindowClosed:
+            return .outsideBeijingWindow(requestId: envelope.requestId)
+        default:
+            return nil
+        }
+    }
+}
+
 /// The generator intentionally emits a simple Swift struct for OpenAPI oneOf.
 /// Enforce the media-purpose scope and capture-source branches before transport.
 enum MediaUploadContractPolicy {

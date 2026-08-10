@@ -67,6 +67,45 @@ struct APIRawResponse {
     let requestId: String?
 }
 
+/// Actual bytes written by an OpenAPI V1 private signed upload. Ordinary
+/// multipart uploads use the same URLSession delegate signal, so neither path
+/// needs timer-based or estimated progress.
+struct APIUploadProgress: Equatable, Sendable {
+    let bytesSent: Int64
+    let totalBytes: Int64
+
+    var fraction: Double {
+        guard totalBytes > 0 else { return 0 }
+        return min(max(Double(bytesSent) / Double(totalBytes), 0), 1)
+    }
+
+    var percentage: Int {
+        min(max(Int(fraction * 100), 0), 100)
+    }
+}
+
+private final class APIUploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let progressHandler: @Sendable (APIUploadProgress) -> Void
+
+    init(progressHandler: @escaping @Sendable (APIUploadProgress) -> Void) {
+        self.progressHandler = progressHandler
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        progressHandler(APIUploadProgress(
+            bytesSent: min(max(totalBytesSent, 0), totalBytesExpectedToSend),
+            totalBytes: totalBytesExpectedToSend
+        ))
+    }
+}
+
 enum APITransportError: Error, LocalizedError, Equatable {
     case invalidRequest
     case invalidResponse
@@ -250,25 +289,31 @@ struct StudentAPIClient: @unchecked Sendable {
         to signedURL: URL,
         data: Data,
         method: HTTPMethod,
-        requiredHeaders: [String: String]
+        requiredHeaders: [String: String],
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
     ) async throws -> HTTPURLResponse {
         guard method == .put || method == .post,
               signedURL.scheme?.lowercased() == "https",
               signedURL.user == nil,
-              signedURL.password == nil else {
+              signedURL.password == nil,
+              !data.isEmpty else {
             throw APITransportError.invalidRequest
         }
         var request = URLRequest(url: signedURL, timeoutInterval: requestTimeout)
         request.httpMethod = method.rawValue
         requiredHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let totalBytes = Int64(data.count)
+        progressHandler(APIUploadProgress(bytesSent: 0, totalBytes: totalBytes))
+        let delegate = APIUploadProgressDelegate(progressHandler: progressHandler)
         do {
-            let (_, response) = try await urlSession.upload(for: request, from: data)
+            let (_, response) = try await urlSession.upload(for: request, from: data, delegate: delegate)
             guard let response = response as? HTTPURLResponse else {
                 throw APITransportError.invalidResponse
             }
             guard (200...299).contains(response.statusCode) else {
                 throw APITransportError.undecodableFailure(statusCode: response.statusCode, requestId: nil)
             }
+            progressHandler(APIUploadProgress(bytesSent: totalBytes, totalBytes: totalBytes))
             return response
         } catch let error as URLError {
             throw APITransportError.network(error.code)

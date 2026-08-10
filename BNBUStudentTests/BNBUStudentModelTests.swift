@@ -420,17 +420,38 @@ final class BNBUStudentModelTests: XCTestCase {
     func testExerciseCanOnlyStartInsideDailyOpenWindow() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        func shanghai(_ hour: Int, _ minute: Int) throws -> Date {
+        func shanghai(_ hour: Int, _ minute: Int, _ second: Int = 0) throws -> Date {
             try XCTUnwrap(calendar.date(from: DateComponents(
-                year: 2026, month: 7, day: 21, hour: hour, minute: minute
+                year: 2026, month: 7, day: 21, hour: hour, minute: minute, second: second
             )))
         }
 
         XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(5, 59)))
         XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(6, 0)))
         XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(21, 59)))
-        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0)))
+        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0, 0)))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0, 1)))
         XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(23, 30)))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(7, 29, 59),
+            dailyStartTime: "07:30:00",
+            dailyEndTime: "21:30:00"
+        ))
+        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(21, 30, 0),
+            dailyStartTime: "07:30",
+            dailyEndTime: "21:30"
+        ))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(5, 0),
+            dailyStartTime: "00:00:00",
+            dailyEndTime: "23:59:59"
+        ))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(12, 0),
+            dailyStartTime: "invalid",
+            dailyEndTime: "21:30:00"
+        ))
 
         let appState = AppState(
             repository: MockStudentRepository(),
@@ -454,6 +475,35 @@ final class BNBUStudentModelTests: XCTestCase {
         ))
         XCTAssertTrue(appState.endExerciseSession(at: try shanghai(22, 30)))
         XCTAssertEqual(appState.exerciseSession?.creditedHours(), 1)
+    }
+
+    func testBeijingBusinessDateStaysFrozenWhileRecordTimesUseDeviceTimezone() throws {
+        let instant = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-10T00:30:00Z"))
+        XCTAssertEqual(CheckInTimeWindowRule.businessDateString(for: instant), "2026-08-10")
+
+        let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        XCTAssertEqual(
+            StudentRecordTimeDisplay.dateTime(
+                "2026-08-10T00:30:00Z",
+                timeZone: losAngeles,
+                locale: Locale(identifier: "en_US_POSIX")
+            ),
+            "2026-08-09 17:30"
+        )
+
+        let record = try JSONDecoder().decode(CheckInRecord.self, from: Data(
+            """
+            {"id":"record-business-date","courseId":"course-1","taskTitle":"跑步","creditType":"GENERAL","hours":1,"businessDate":"2026-08-10","submittedAt":"2026-08-09T16:30:00Z","validity":"VALID","proofSummary":"1 张图片","proofPhotoCount":1,"proofVideoCount":0,"proofFiles":[],"note":"","startedAt":"2026-08-09T15:00:00Z","endedAt":"2026-08-09T16:00:00Z"}
+            """.utf8
+        ))
+        XCTAssertEqual(record.businessDate, "2026-08-10")
+
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.workspace.records = [record]
+        XCTAssertTrue(appState.hasSubmittedCheckInToday(at: instant))
     }
 
     // MARK: - Course join application (business rule 4.2)

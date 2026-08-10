@@ -146,6 +146,9 @@ const remote = read("BNBUStudentApp/Core/RemoteStudentRepository.swift");
 const models = read("BNBUStudentApp/Core/Models.swift");
 const theme = read("BNBUStudentApp/Core/Theme.swift");
 const appState = read("BNBUStudentApp/Core/AppState.swift");
+const studentAPIClient = read("BNBUStudentApp/Core/StudentAPIClient.swift");
+const backendPolicies = read("BNBUStudentApp/Backend/BackendPolicies.swift");
+const backendGateways = read("BNBUStudentApp/Backend/BackendDomainGateways.swift");
 const localStore = read("BNBUStudentApp/Core/AppLocalStore.swift");
 const credentialStore = read("BNBUStudentApp/Core/SecureCredentialStore.swift");
 const components = read("BNBUStudentApp/Features/Components.swift");
@@ -241,8 +244,9 @@ rejectText(coursesView, "currentSemesterKey", "Course scope no longer depends on
 
 rejectText(appState, "max(hours, 0.5)", "Submission hours cannot produce backend-invalid 0.5h values");
 requireText(appState, "hours == 1 || hours == 2", "Submission hours are restricted to the 1h/2h API enum");
-requireText(appState, 'TimeZone(identifier: "Asia/Shanghai")', "Daily submission guard uses the backend business timezone");
-requireText(appState, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
+requireText(models, 'static let businessTimeZone = TimeZone(identifier: "Asia/Shanghai")!', "The check-in policy owns the backend business timezone");
+requireText(appState, "CheckInTimeWindowRule.businessDateString", "Daily submission guard uses the centralized Beijing business date");
+requireText(models, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
 requireText(models, "static let maxRequestBytes = 120_000_000", "Check-in proof batch enforces the 120MB request limit");
 requireText(models, "enum ExemptionProofRule", "Physical exemptions have a dedicated proof rule");
 requireText(models, "static let maxAttachmentCount = 5", "Physical exemptions enforce the five-proof API limit");
@@ -315,6 +319,15 @@ requireText(models, "var validUntilText", "Membership expiry prints as a written
 
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
+requireText(models, "localSecond <= effectiveEnd", "The 22:00:00 start boundary is inclusive at second precision");
+requireText(models, "max(defaultStartSecond, configuredStart)", "Class windows can only narrow the Beijing start boundary");
+requireText(models, "min(defaultEndSecond, configuredEnd)", "Class windows can only narrow the Beijing end boundary");
+requireText(appState, "serverBusinessDate == targetBusinessDate", "Server businessDate is consumed without device-timezone conversion");
+requireText(detailViews, "record.studentLocalSubmittedAt", "Student record timestamps use the device display timezone");
+requireText(studentAPIClient, "APIUploadProgressDelegate", "V1 signed uploads report actual network progress");
+requireText(backendGateways, "progressHandler: progressHandler", "Media gateways forward signed upload progress");
+requireText(backendPolicies, ".sessionAlreadyCompleted", "Qualified session denial has a stable client mapping");
+requireText(backendPolicies, "已达到合格时长，无需继续打卡。", "Qualified students receive the confirmed stop-checking-in message");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
 
 // Course join application (business rule 4.2)

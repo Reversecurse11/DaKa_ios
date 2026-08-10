@@ -35,7 +35,8 @@ actor MediaUploadCoordinator {
     func uploadAndBind(
         bytes: Data,
         request: APIV1InitiateMediaUploadRequest,
-        expectedVersion: Int
+        expectedVersion: Int,
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
     ) async throws -> MediaUploadOutcome {
         guard MediaUploadContractPolicy.accepts(request),
               request.businessPurpose == .exerciseRecord,
@@ -44,7 +45,11 @@ actor MediaUploadCoordinator {
             throw APITransportError.invalidRequest
         }
 
-        let confirmedUpload = try await uploadAndConfirm(bytes: bytes, request: request)
+        let confirmedUpload = try await uploadAndConfirm(
+            bytes: bytes,
+            request: request,
+            progressHandler: progressHandler
+        )
         let confirmed = confirmedUpload.response
 
         let mediaID = try APIPath.component(confirmed.value.id)
@@ -73,14 +78,19 @@ actor MediaUploadCoordinator {
     /// by createExemptionApplication; it must never use the exercise bind route.
     func uploadForExemption(
         bytes: Data,
-        request: APIV1InitiateMediaUploadRequest
+        request: APIV1InitiateMediaUploadRequest,
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
     ) async throws -> MediaUploadOutcome {
         guard MediaUploadContractPolicy.accepts(request),
               request.businessPurpose == .exemptionApplication else {
             throw APITransportError.invalidRequest
         }
 
-        let confirmedUpload = try await uploadAndConfirm(bytes: bytes, request: request)
+        let confirmedUpload = try await uploadAndConfirm(
+            bytes: bytes,
+            request: request,
+            progressHandler: progressHandler
+        )
         await intents.clear(scope: confirmedUpload.initiateScope)
         await intents.clear(scope: confirmedUpload.confirmScope)
         return MediaUploadOutcome(
@@ -91,7 +101,8 @@ actor MediaUploadCoordinator {
 
     private func uploadAndConfirm(
         bytes: Data,
-        request: APIV1InitiateMediaUploadRequest
+        request: APIV1InitiateMediaUploadRequest,
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void
     ) async throws -> ConfirmedUpload {
         guard bytes.count == request.fileSizeBytes else { throw APITransportError.invalidRequest }
 
@@ -118,7 +129,8 @@ actor MediaUploadCoordinator {
             to: uploadURL,
             data: bytes,
             method: uploadMethod,
-            requiredHeaders: initiated.value.requiredHeaders
+            requiredHeaders: initiated.value.requiredHeaders,
+            progressHandler: progressHandler
         )
         guard let etag = uploadResponse.value(forHTTPHeaderField: "ETag"), !etag.isEmpty else {
             throw APITransportError.invalidResponse
@@ -213,12 +225,23 @@ actor AuthoritativeExerciseSessionGateway {
     }
 
     func start(_ request: APIV1StartSessionRequest) async throws -> APIResponse<APIV1ExerciseSession> {
-        try await mutate(
-            operationID: "startExerciseSession",
-            path: "exercise-sessions",
-            scope: "session:start:\(request.enrollmentId)",
-            body: request
-        )
+        let scope = "session:start:\(request.enrollmentId)"
+        do {
+            return try await mutate(
+                operationID: "startExerciseSession",
+                path: "exercise-sessions",
+                scope: scope,
+                body: request
+            )
+        } catch let error as APITransportError {
+            guard let admissionError = ExerciseSessionAdmissionPolicy.startError(from: error) else {
+                throw error
+            }
+            // These denials are deterministic for this attempt. A later retry
+            // must re-read server state and use a fresh idempotency key.
+            await intents.clear(scope: scope)
+            throw admissionError
+        }
     }
 
     func pause(sessionID: String, request: APIV1SessionControlRequest) async throws -> APIResponse<APIV1ExerciseSession> {

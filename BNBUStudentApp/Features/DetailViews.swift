@@ -147,7 +147,7 @@ struct RecordDetailView: View {
                                 Text(record.hours.localizedHourText)
                                     .font(BNBUFont.headlineSmall)
                             }
-                            DetailFactRow(label: "提交时间", value: record.submittedAt)
+                            DetailFactRow(label: "提交时间", value: record.studentLocalSubmittedAt)
                             if let sportType = record.sportType, !sportType.isEmpty {
                                 DetailFactRow(label: "运动项目", value: sportType.bnbuSportTypeTitle)
                             }
@@ -317,8 +317,8 @@ struct RecordCard: View {
                     alignment: .leading,
                     spacing: 12
                 ) {
-                    RecordFact(systemImage: "calendar", label: "开始时间", value: record.startedAt)
-                    RecordFact(systemImage: "stopwatch", label: "结束时间", value: record.endedAt)
+                    RecordFact(systemImage: "calendar", label: "开始时间", value: record.studentLocalStartedAt)
+                    RecordFact(systemImage: "stopwatch", label: "结束时间", value: record.studentLocalEndedAt)
                     RecordFact(systemImage: "stopwatch", label: "实际运动时长", value: record.activeDuration)
                     RecordFact(
                         systemImage: "checkmark.circle",
@@ -344,7 +344,7 @@ struct RecordCard: View {
 
     private var sportAndDate: String {
         let sport = record.sportType?.bnbuSportTypeTitle ?? ""
-        return [sport, record.submittedAt]
+        return [sport, record.studentLocalSubmittedAt]
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }

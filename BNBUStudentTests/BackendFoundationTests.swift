@@ -719,6 +719,7 @@ final class BackendFoundationTests: XCTestCase {
         let lock = NSLock()
         var operations: [String] = []
         var uploadedBytes = Data()
+        let uploadProgress = UploadProgressRecorder()
         let session = makeSession { request in
             lock.lock()
             operations.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")")
@@ -772,18 +773,78 @@ final class BackendFoundationTests: XCTestCase {
                 declaredContentSha256: nil,
                 durationSeconds: nil
             ),
-            expectedVersion: 3
+            expectedVersion: 3,
+            progressHandler: { uploadProgress.record($0) }
         )
 
         XCTAssertEqual(outcome.media.uploadStatus, .available)
         XCTAssertEqual(outcome.requestId, "req-media-bind")
         XCTAssertEqual(uploadedBytes, bytes)
+        XCTAssertEqual(uploadProgress.values.first, APIUploadProgress(bytesSent: 0, totalBytes: 4))
+        XCTAssertEqual(uploadProgress.values.last, APIUploadProgress(bytesSent: 4, totalBytes: 4))
+        XCTAssertEqual(uploadProgress.values.last?.percentage, 100)
         XCTAssertEqual(operations, [
             "POST /api/v1/media-uploads",
             "PUT /private/upload",
             "POST /api/v1/media-uploads/upload-session-1/confirm",
             "POST /api/v1/media/media-1/bind"
         ])
+    }
+
+    func testSessionStartMapsQualificationAndBeijingWindowDenials() async throws {
+        let store = MemoryAuthSessionStore(session: Self.authSession(access: "session-access", refresh: "session-refresh"))
+        let lock = NSLock()
+        var idempotencyKeys: [String] = []
+        let session = makeSession { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/v1/exercise-sessions")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer session-access")
+            lock.lock()
+            idempotencyKeys.append(request.value(forHTTPHeaderField: "Idempotency-Key") ?? "")
+            lock.unlock()
+            return .json(
+                status: 409,
+                headers: ["X-Request-ID": "req-qualified"],
+                body: Self.errorJSON(code: "SESSION_ALREADY_COMPLETED", requestID: "req-qualified")
+            )
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let gateway = AuthoritativeExerciseSessionGateway(auth: auth)
+        let request = APIV1StartSessionRequest(
+            enrollmentId: "enrollment-1",
+            clientObservedAt: "2026-08-10T10:00:00Z"
+        )
+
+        for _ in 0..<2 {
+            do {
+                _ = try await gateway.start(request)
+                XCTFail("Qualified students must not receive a new session")
+            } catch let error as ExerciseSessionAdmissionError {
+                XCTAssertEqual(error, .qualificationReached(requestId: "req-qualified"))
+                XCTAssertEqual(error.localizedDescription, "已达到合格时长，无需继续打卡。")
+            }
+        }
+
+        XCTAssertEqual(idempotencyKeys.count, 2)
+        XCTAssertFalse(idempotencyKeys.contains(where: \.isEmpty))
+        XCTAssertNotEqual(idempotencyKeys[0], idempotencyKeys[1])
+
+        let windowError = APITransportError.failure(
+            statusCode: 409,
+            envelope: APIErrorEnvelope(
+                code: "SESSION_OUTSIDE_TIME_WINDOW",
+                message: "closed",
+                details: .object([:]),
+                requestId: "req-window",
+                timestamp: "2026-08-10T14:00:01Z"
+            )
+        )
+        XCTAssertEqual(
+            ExerciseSessionAdmissionPolicy.startError(from: windowError),
+            .outsideBeijingWindow(requestId: "req-window")
+        )
     }
 
     func testExemptionMediaPipelineStopsAfterConfirmWithoutExerciseBind() async throws {
@@ -994,6 +1055,23 @@ private struct StubHTTPResponse {
 
     static func json(status: Int, headers: [String: String], body: String) -> StubHTTPResponse {
         StubHTTPResponse(status: status, headers: headers.merging(["Content-Type": "application/json"]) { first, _ in first }, data: Data(body.utf8))
+    }
+}
+
+private final class UploadProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [APIUploadProgress] = []
+
+    var values: [APIUploadProgress] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func record(_ progress: APIUploadProgress) {
+        lock.lock()
+        storage.append(progress)
+        lock.unlock()
     }
 }
 
