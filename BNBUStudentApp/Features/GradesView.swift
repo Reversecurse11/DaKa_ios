@@ -772,7 +772,7 @@ struct ExemptionApplicationSheet: View {
             && proofAttachments.count <= ExemptionProofRule.maxAttachmentCount
             && proofAttachments.allSatisfy(isLiveCameraPhoto)
             && proofAttachments.allSatisfy(\.isValidForUpload)
-        return appState.isRemoteMode
+        return appState.canSubmitExemptions
             && appState.isWriteAllowed
             && !hasPendingSameType
             && !needsOrganization
@@ -786,10 +786,10 @@ struct ExemptionApplicationSheet: View {
                 ? BNBUL10n.text("系统当前处于维护模式，暂不能提交或修改内容。")
                 : BNBUL10n.text("系统当前处于只读模式，暂不能提交或修改内容。")
         }
-        guard appState.isRemoteMode else {
+        guard appState.canSubmitExemptions else {
             return exemptionText(
-                "演示账号仅用于查看界面，不能提交免测申请或补充材料。",
-                "The demo account is for interface preview only and cannot submit exemption requests or supplements."
+                "当前账号不能提交免测申请或补充材料。请使用 Mock 运行方案或已连接服务器的账号。",
+                "This account cannot submit exemption requests or supplements. Use the Mock scheme or a server-connected account."
             )
         }
         if let recoveryNotice {

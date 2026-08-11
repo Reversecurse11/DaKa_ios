@@ -15,7 +15,7 @@ private enum LoginRoute: Hashable {
 }
 
 enum BNBUPrivacyConsent {
-    static let currentVersion = "2026-07-23"
+    static let currentVersion = "2026-08-06"
     static let defaultsKeyPrefix = "bnbu.privacy.consent.v1."
 
     static func normalizedAccount(_ account: String) -> String {
@@ -92,7 +92,7 @@ struct LoginView: View {
                     onPhone: { route = .phoneVerification },
                     onJoin: { showCourseJoin = true },
                     onRecovery: { route = .recovery },
-                    onMockLogin: { appState.demoLogin() }
+                    onMockLogin: { appState.mockAccountLogin() }
                 )
             case .emailVerification:
                 VerificationLoginView(
@@ -210,6 +210,7 @@ private struct LoginMethodChooser: View {
                             )
                             .accessibilityIdentifier("login.courseJoin")
 
+#if BNBU_FIXTURES && DEBUG
                             LoginMethodRow(
                                 title: copy("使用 Mock 用户", "Use Mock user"),
                                 subtitle: copy("仅用于本地演示与调试", "Local demo and debugging only"),
@@ -217,6 +218,7 @@ private struct LoginMethodChooser: View {
                                 action: onMockLogin
                             )
                             .accessibilityIdentifier("login.mockUser")
+#endif
                         }
                     }
 
@@ -328,6 +330,40 @@ private struct VerificationLoginView: View {
                         Text(subtitle)
                             .font(BNBUFont.bodyLarge)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    }
+
+                    if let account = appState.mockTestAccount {
+                        SwissPanel {
+                            VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                                Text(copy("Mock 测试账号", "Mock test account"))
+                                    .font(BNBUFont.labelMedium)
+                                    .foregroundStyle(BNBUTheme.primary)
+                                Text(verbatim: method == .email ? account.email : account.phone)
+                                    .font(BNBUFont.titleSmall)
+                                    .textSelection(.enabled)
+                                Text(verbatim: copy(
+                                    "固定验证码：\(account.verificationCode)",
+                                    "Fixed code: \(account.verificationCode)"
+                                ))
+                                    .font(BNBUFont.bodySmall)
+                                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                Button {
+                                    contact = method == .email ? account.email : account.phone
+                                    code = account.verificationCode
+                                    notice = nil
+                                } label: {
+                                    Label(
+                                        copy("填入测试账号", "Fill test account"),
+                                        systemImage: "square.and.pencil"
+                                    )
+                                    .font(BNBUFont.labelLarge)
+                                    .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
+                                }
+                                .buttonStyle(BNBUPressStyle())
+                                .foregroundStyle(BNBUTheme.primary)
+                                .accessibilityIdentifier("verification.fillMockAccount")
+                            }
+                        }
                     }
 
                     SwissPanel {
@@ -447,12 +483,12 @@ private struct VerificationLoginView: View {
                 .keyboardType(method == .email ? .emailAddress : .phonePad)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .accessibilityIdentifier("verification.contact")
             }
             .padding(.horizontal, BNBUSpacing.space16)
             .frame(height: 56)
             .background(BNBUTheme.surfaceContainerHigh)
             .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .accessibilityIdentifier("verification.contact")
         }
     }
 
@@ -467,6 +503,7 @@ private struct VerificationLoginView: View {
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 TextField(copy("6 位数字", "6 digits"), text: $code)
                     .keyboardType(.numberPad)
+                    .accessibilityIdentifier("verification.code")
                     .onChange(of: code) { _, value in
                         code = String(value.filter(\.isNumber).prefix(6))
                     }
@@ -481,7 +518,6 @@ private struct VerificationLoginView: View {
             .frame(height: 56)
             .background(BNBUTheme.surfaceContainerHigh)
             .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .accessibilityIdentifier("verification.code")
         }
     }
 

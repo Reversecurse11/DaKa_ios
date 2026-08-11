@@ -84,7 +84,7 @@ final class AppState: ObservableObject {
     @Published private(set) var helpArticlesError: String?
     @Published private(set) var isShowingCachedHelpArticles = false
 
-    private let repository: StudentRepository
+    private var repository: StudentRepository
     private let localStore: AppLocalStore
     private let apiClient = StudentAPIClient()
     private let remoteRepo: RemoteStudentRepository
@@ -96,6 +96,21 @@ final class AppState: ObservableObject {
     /// Hour targets follow the server (rule 4.4) and fall back to the standard
     /// 10 + 10 rule until a course publishes its own.
     var hourRule: SportHourRule { workspace.hourRule }
+    /// The full-feature local account exists only in the explicit Mock scheme.
+    /// UI can use these capabilities without treating every non-remote state as
+    /// a writable demo workspace.
+    var mockTestAccount: MockTestAccountCredentials? { repository.mockTestAccount }
+    var isFullFeatureMockMode: Bool { !isRemoteMode && mockTestAccount != nil }
+    var canSubmitExemptions: Bool { isRemoteMode || isFullFeatureMockMode }
+    var canUseEnduranceCalculator: Bool { isRemoteMode || isFullFeatureMockMode }
+#if BNBU_FIXTURES && DEBUG
+    var isMockTestAccountSession: Bool {
+        guard let account = mockTestAccount else { return false }
+        return isAuthenticated
+            && !isRemoteMode
+            && workspace.student.email.caseInsensitiveCompare(account.email) == .orderedSame
+    }
+#endif
     /// Business rule 3.3 gate on starting a session. Production keeps this
     /// on; UI tests disable it so flow tests are not wall-clock sensitive.
     var enforcesCheckInTimeWindow = true
@@ -131,7 +146,14 @@ final class AppState: ObservableObject {
 
         self.workspace = workspace
         self.draft = restoredDraft
-        self.exerciseSession = exerciseSessionRead.value?.reconciled()
+        let restoredExerciseSession = exerciseSessionRead.value?.reconciled()
+        self.exerciseSession = restoredExerciseSession
+        // Rewrite the decoded value once so files from older builds lose any
+        // latitude/longitude keys that the 1.1 default-deny contract forbids us
+        // from retaining.
+        if let restoredExerciseSession {
+            _ = localStore.saveExerciseSession(restoredExerciseSession)
+        }
         var restoredMutations = pendingMutationRead.value ?? [:]
         if let draftAttempt = restoredDraft?.pendingRemoteMutation {
             restoredMutations[draftAttempt.scope] = draftAttempt
@@ -269,6 +291,14 @@ final class AppState: ObservableObject {
             errorMessage = validationMessage
             return false
         }
+        guard let account = mockTestAccount else {
+            errorMessage = BNBUL10n.text("登录验证码接口尚未发布，请使用 Mock 运行方案或等待服务端上线。")
+            return false
+        }
+        guard account.matches(contact: value, channel: channel) else {
+            errorMessage = BNBUL10n.text("未找到该测试账号，请使用登录页显示的 Mock 邮箱或手机号。")
+            return false
+        }
         errorMessage = nil
         return true
     }
@@ -287,8 +317,17 @@ final class AppState: ObservableObject {
             errorMessage = ContactBindingRule.validationMessage(contact, for: channel)
             return false
         }
-        errorMessage = nil
-        demoLogin()
+        guard let account = mockTestAccount,
+              account.matches(contact: contact, channel: channel),
+              code == account.verificationCode else {
+            errorMessage = BNBUL10n.text("测试账号或验证码不正确，请使用登录页显示的信息。")
+            return false
+        }
+        guard let accountWorkspace = repository.loadMockTestAccountWorkspace() else {
+            errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+            return false
+        }
+        startLocalSession(initialWorkspace: accountWorkspace)
         return true
     }
 
@@ -598,8 +637,7 @@ final class AppState: ObservableObject {
         category: ExerciseCategory,
         sportType: ExerciseSportType?,
         customSportName: String,
-        at startTime: Date = Date(),
-        location: (latitude: Double, longitude: Double)? = nil
+        at startTime: Date = Date()
     ) -> Bool {
         guard exerciseSession == nil else {
             errorMessage = BNBUL10n.text("已有进行中或待提交的运动，请先完成当前记录。")
@@ -638,9 +676,7 @@ final class AppState: ObservableObject {
             startTime: startTime,
             endTime: nil,
             status: .active,
-            locationStatus: location == nil ? .unavailable : .available,
-            latitude: location?.latitude,
-            longitude: location?.longitude
+            locationStatus: .unavailable
         )
         guard localStore.saveExerciseSession(session) else {
             errorMessage = BNBUL10n.text("无法安全保存运动开始时间，请确认设备存储空间后重试。")
@@ -651,19 +687,49 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Business rule 5.5: location is fetched once, best-effort, after the
-    /// timer starts. A late fix attaches to the still-running session;
-    /// failures leave the record marked "未获取位置" and never block anything.
-    func attachExerciseSessionLocation(latitude: Double, longitude: Double) {
+    #if BNBU_FIXTURES && DEBUG
+    /// Debug-only permission-flow fixture. Production and staging builds do
+    /// not compile the location provider or this attachment path.
+    func attachExerciseSessionLocation(latitude _: Double, longitude _: Double) {
         guard var session = exerciseSession,
               session.status == .active,
               session.locationStatus == .unavailable else { return }
         session.locationStatus = .available
-        session.latitude = latitude
-        session.longitude = longitude
         guard localStore.saveExerciseSession(session) else { return }
         exerciseSession = session
     }
+
+    /// Advances only the active Mock session clock. Progress and records are
+    /// untouched until the user ends and submits this exercise normally.
+    @discardableResult
+    func addOneHourToMockExercise(at date: Date = Date()) -> Bool {
+        guard isMockTestAccountSession,
+              let session = exerciseSession,
+              session.status == .active,
+              session.elapsed(at: date) < ExerciseSession.oneHour else { return false }
+
+        let advanced = ExerciseSession(
+            id: session.id,
+            studentID: session.studentID,
+            category: session.category,
+            sportType: session.sportType,
+            customSportName: session.customSportName,
+            courseID: session.courseID,
+            startTime: session.startTime.addingTimeInterval(-ExerciseSession.oneHour),
+            endTime: session.endTime,
+            status: session.status,
+            locationStatus: session.locationStatus,
+            pauses: session.pauses
+        )
+        guard localStore.saveExerciseSession(advanced) else {
+            errorMessage = BNBUL10n.text("无法保存测试运动时长，请检查设备存储空间后重试。")
+            return false
+        }
+        exerciseSession = advanced
+        errorMessage = nil
+        return true
+    }
+    #endif
 
     func reconcileExerciseSession(at date: Date = Date()) {
         guard let session = exerciseSession else { return }
@@ -900,10 +966,8 @@ final class AppState: ObservableObject {
             exerciseMediaDrafts = []
             return
         }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         let (kept, dropped) = stored.partitioned {
-            $0.studentID == studentID && calendar.isDate($0.capturedAt, inSameDayAs: date)
+            $0.studentID == studentID && CheckInTimeWindowRule.isSameBusinessDate($0.capturedAt, date)
         }
         if !dropped.isEmpty {
             _ = localStore.saveExerciseMediaDrafts(kept)
@@ -1082,21 +1146,25 @@ final class AppState: ObservableObject {
 
     func hasSubmittedCheckInToday(at date: Date = Date()) -> Bool {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        calendar.timeZone = CheckInTimeWindowRule.businessTimeZone
+        let targetBusinessDate = CheckInTimeWindowRule.businessDateString(for: date)
         let exerciseSubmissionDates = localStore.readExerciseSubmissionDates().value ?? [:]
-        let fractionalISOFormatter = ISO8601DateFormatter()
-        fractionalISOFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let standardISOFormatter = ISO8601DateFormatter()
         return workspace.records.contains { record in
             guard record.creditType != .organizationOffset else { return false }
+            if let serverBusinessDate = record.businessDate?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !serverBusinessDate.isEmpty {
+                // `businessDate` is already the server-frozen Beijing date;
+                // never pass it through UTC or the student's display timezone.
+                return serverBusinessDate == targetBusinessDate
+            }
             if let exerciseStartDate = exerciseSubmissionDates[record.id] {
-                return calendar.isDate(exerciseStartDate, inSameDayAs: date)
+                return CheckInTimeWindowRule.isSameBusinessDate(exerciseStartDate, date)
             }
             let value = record.submittedAt.trimmingCharacters(in: .whitespacesAndNewlines)
             if RecentTimestamp.isJustNow(value) { return true }
 
-            if let parsed = fractionalISOFormatter.date(from: value) ?? standardISOFormatter.date(from: value) {
-                return calendar.isDate(parsed, inSameDayAs: date)
+            if let parsed = StudentRecordTimeDisplay.instant(from: value) {
+                return CheckInTimeWindowRule.isSameBusinessDate(parsed, date)
             }
 
             for format in ["yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"] {
@@ -1105,7 +1173,8 @@ final class AppState: ObservableObject {
                 formatter.timeZone = calendar.timeZone
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.dateFormat = format
-                if let parsed = formatter.date(from: value), calendar.isDate(parsed, inSameDayAs: date) {
+                if let parsed = formatter.date(from: value),
+                   CheckInTimeWindowRule.isSameBusinessDate(parsed, date) {
                     return true
                 }
             }
@@ -1180,11 +1249,47 @@ final class AppState: ObservableObject {
     }
 
     func demoLogin() {
+        startLocalSession(initialWorkspace: repository.loadWorkspace())
+    }
+
+    /// Opens the fully populated test identity behind the visible Mock shortcut.
+    /// The same identity also remains available through verification-code login.
+    @discardableResult
+    func mockAccountLogin() -> Bool {
+        var accountWorkspace = repository.loadMockTestAccountWorkspace()
+#if BNBU_FIXTURES && DEBUG
+        // The normal Debug scheme starts in the unauthenticated repository.
+        // Tapping the visible Mock shortcut is the user's explicit opt-in to
+        // switch this session to the fixture repository.
+        if accountWorkspace == nil {
+            let mockRepository = MockStudentRepository()
+            repository = mockRepository
+            accountWorkspace = mockRepository.loadMockTestAccountWorkspace()
+        }
+#endif
+        guard let accountWorkspace else {
+            errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+            return false
+        }
+        startLocalSession(initialWorkspace: accountWorkspace)
+        return true
+    }
+
+    /// Matching local state is restored for the selected identity, while
+    /// switching identities always starts from that identity's fixture.
+    private func startLocalSession(initialWorkspace: StudentWorkspace) {
         sessionEpoch &+= 1
         mutationGate.removeAll()
         errorMessage = nil
         let journalCleared = clearAllPendingRemoteMutations()
-        let localWorkspace = localStore.readWorkspace().value ?? repository.loadWorkspace()
+        let storedWorkspace = localStore.readWorkspace().value
+        let localWorkspace: StudentWorkspace
+        if let storedWorkspace,
+           storedWorkspace.student.id == initialWorkspace.student.id {
+            localWorkspace = storedWorkspace
+        } else {
+            localWorkspace = initialWorkspace
+        }
         workspace = localWorkspace
         restoreExerciseSession(for: workspace.student.id)
         restoreExerciseMediaDrafts(for: workspace.student.id)
@@ -1522,13 +1627,6 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("请填写校队或社团名称")
             return false
         }
-        guard isRemoteMode else {
-            errorMessage = exemptionCopy(
-                "演示账户仅供界面预览，不能提交免测申请。",
-                "The demo account is for interface preview only and cannot submit exemption requests."
-            )
-            return false
-        }
         guard ExemptionProofRule.accepts(proofAttachments) else {
             errorMessage = liveExemptionProofError
             return false
@@ -1537,6 +1635,54 @@ final class AppState: ObservableObject {
                 acceptsPersistedLiveExemptionProofs(proofAttachments) else {
             errorMessage = liveExemptionProofError
             return false
+        }
+
+        if !isRemoteMode {
+            guard isFullFeatureMockMode else {
+                errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+                return false
+            }
+            guard !hasPendingExemption(for: item) else {
+                errorMessage = BNBUL10n.text("同一类型已有待审核申请，请等待处理后再提交。")
+                return false
+            }
+
+            let timestamp = RecentTimestamp.justNow
+            let application = ExemptionApplication(
+                id: "mock-exemption-\(UUID().uuidString)",
+                studentId: workspace.student.id,
+                item: item,
+                reason: normalizedReason,
+                detail: normalizedDetail,
+                organization: normalizedOrganization,
+                submittedAt: timestamp,
+                status: .pending,
+                proofFiles: proofAttachments,
+                teacherFeedback: "",
+                reviewer: nil,
+                updatedAt: timestamp
+            )
+            upsertExemption(application)
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("免测申请已提交"),
+                    message: BNBUL10n.text("\(item.rawValue) 已进入 Mock 审核队列。"),
+                    time: timestamp,
+                    category: .review,
+                    isUnread: true
+                ),
+                at: 0
+            )
+            enqueueSyncOperation(
+                .submitExemption,
+                title: "提交免测申请",
+                detail: "\(item.rawValue) · Mock 本地完成",
+                status: .localOnly
+            )
+            saveWorkspace(event: "Mock 免测申请已保存")
+            errorMessage = nil
+            return true
         }
 
         return await submitExemptionRemote(
@@ -1580,17 +1726,56 @@ final class AppState: ObservableObject {
         guard application.status.canSupplement else {
             return false
         }
-        guard isRemoteMode else {
-            errorMessage = exemptionCopy(
-                "演示账户仅供界面预览，不能补交免测材料。",
-                "The demo account is for interface preview only and cannot submit exemption supplements."
-            )
+        guard ExemptionProofRule.accepts(proofAttachments) else {
+            errorMessage = liveExemptionProofError
             return false
         }
         guard acceptsLiveExemptionProofs(proofAttachments) ||
                 acceptsPersistedLiveExemptionProofs(proofAttachments) else {
             errorMessage = liveExemptionProofError
             return false
+        }
+
+        if !isRemoteMode {
+            guard isFullFeatureMockMode else {
+                errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+                return false
+            }
+            guard let index = workspace.exemptions.firstIndex(where: {
+                $0.id == application.id && $0.status.canSupplement
+            }) else {
+                errorMessage = BNBUL10n.text("该申请当前不能补充材料。")
+                return false
+            }
+
+            let timestamp = RecentTimestamp.justNow
+            workspace.exemptions[index].reason = normalizedReason
+            workspace.exemptions[index].detail = normalizedDetail
+            workspace.exemptions[index].proofFiles.append(contentsOf: proofAttachments)
+            workspace.exemptions[index].status = .pending
+            workspace.exemptions[index].teacherFeedback = ""
+            workspace.exemptions[index].reviewer = nil
+            workspace.exemptions[index].updatedAt = timestamp
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("免测补充材料已提交"),
+                    message: BNBUL10n.text("\(application.item.rawValue) 的材料已进入 Mock 复审队列。"),
+                    time: timestamp,
+                    category: .review,
+                    isUnread: true
+                ),
+                at: 0
+            )
+            enqueueSyncOperation(
+                .supplementExemption,
+                title: "提交免测补充材料",
+                detail: "\(application.item.rawValue) · Mock 本地完成",
+                status: .localOnly
+            )
+            saveWorkspace(event: "Mock 免测补充材料已保存")
+            errorMessage = nil
+            return true
         }
 
         return await supplementExemptionRemote(
@@ -1929,10 +2114,6 @@ final class AppState: ObservableObject {
     }
 
     func convertEndurance(timeSeconds: Int) async -> EnduranceScoreResult? {
-        guard isRemoteMode else {
-            errorMessage = BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
-            return nil
-        }
         guard let gender = workspace.student.gender.apiValue else {
             errorMessage = BNBUL10n.text("学生性别尚未同步，暂时无法匹配耐力跑项目。")
             return nil
@@ -1940,6 +2121,20 @@ final class AppState: ObservableObject {
         guard let gradeLevel = workspace.student.gradeLevel, !gradeLevel.isEmpty else {
             errorMessage = BNBUL10n.text("学生年级尚未同步，暂时无法匹配评分组别。")
             return nil
+        }
+
+        if !isRemoteMode {
+            guard isFullFeatureMockMode,
+                  let result = repository.previewEnduranceScore(
+                    timeSeconds: timeSeconds,
+                    gender: gender,
+                    gradeLevel: gradeLevel
+                  ) else {
+                errorMessage = BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
+                return nil
+            }
+            errorMessage = nil
+            return result
         }
 
         let conversionEpoch = sessionEpoch
@@ -2625,9 +2820,8 @@ final class AppState: ObservableObject {
 
         let reconciledSession = storedSession.reconciled()
         exerciseSession = reconciledSession
-        if reconciledSession != storedSession {
-            _ = localStore.saveExerciseSession(reconciledSession)
-        }
+        // Always rewrite to scrub raw coordinates left by a pre-1.1 build.
+        _ = localStore.saveExerciseSession(reconciledSession)
     }
 
     private func upsertExemption(_ application: ExemptionApplication) {
@@ -2650,6 +2844,7 @@ final class AppState: ObservableObject {
         guard hours > 0 else { return }
         switch creditType {
         case .courseRelated:
+            workspace.progress.rawCourse += hours
             workspace.progress.course = min(workspace.progress.course + hours, hourRule.courseRequired)
         case .general:
             workspace.progress.rawGeneral += hours

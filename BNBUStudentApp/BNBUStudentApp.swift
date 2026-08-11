@@ -36,7 +36,18 @@ struct BNBUStudentApp: App {
         }
         _languageSettings = StateObject(wrappedValue: BNBULanguageSettings())
         _systemLocaleIdentifier = State(initialValue: Self.preferredSystemLocaleIdentifier)
-        let repository: StudentRepository = arguments.contains("-ui-testing-empty-state") ? EmptyStudentRepository() : MockStudentRepository()
+        let repository: StudentRepository
+#if BNBU_FIXTURES && DEBUG
+        if FixturePolicy.isEnabled(arguments: arguments) {
+            repository = arguments.contains("-ui-testing-empty-state")
+                ? EmptyStudentRepository()
+                : MockStudentRepository()
+        } else {
+            repository = UnauthenticatedStudentRepository()
+        }
+#else
+        repository = UnauthenticatedStudentRepository()
+#endif
         let state = AppState(repository: repository)
         if arguments.contains("-ui-testing-reset") {
             // Flow tests must not depend on the wall clock.
@@ -49,9 +60,11 @@ struct BNBUStudentApp: App {
             state.enforcesCheckInTimeWindow = false
         }
 #endif
-        if arguments.contains("-ui-testing-authenticated") {
-            state.demoLogin()
+#if BNBU_FIXTURES && DEBUG
+        if FixturePolicy.isEnabled(arguments: arguments), arguments.contains("-ui-testing-authenticated") {
+            state.mockAccountLogin()
         }
+#endif
 #if DEBUG
         if arguments.contains("-ui-testing-completed-exercise") {
             state.installCompletedExerciseSessionForUITesting()

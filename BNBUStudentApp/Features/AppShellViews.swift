@@ -85,31 +85,54 @@ struct AppShellView: View {
     @Binding var stage: AppShellStage
 
     @State private var presentsCourseJoin = false
+    @State private var showsStartupArtwork: Bool
+
+    private let keepsStartupArtworkVisibleForUITesting: Bool
+
+    init(isUITesting: Bool, stage: Binding<AppShellStage>) {
+        self.isUITesting = isUITesting
+        _stage = stage
+        let keepsArtworkVisible = ProcessInfo.processInfo.arguments
+            .contains("-ui-testing-loading-page")
+        keepsStartupArtworkVisibleForUITesting = keepsArtworkVisible
+        _showsStartupArtwork = State(
+            initialValue: !isUITesting || keepsArtworkVisible
+        )
+    }
 
     private var showsStartupGatesInUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains("-ui-testing-startup-gates")
     }
 
     var body: some View {
-        Group {
-            switch appState.systemMode {
-            case .maintenance:
-                MaintenancePageView(status: appState.systemModeStatus)
-            case .normal, .readOnly:
-                VStack(spacing: 0) {
-                    if appState.systemMode == .readOnly {
-                        SystemModeBanner(kind: .readOnly, message: appState.systemModeStatus.message)
-                    } else if let plannedAt = appState.systemModeStatus.plannedMaintenanceAt {
-                        SystemModeBanner(
-                            kind: .plannedMaintenance(plannedAt),
-                            message: appState.systemModeStatus.message
-                        )
+        ZStack {
+            Group {
+                switch appState.systemMode {
+                case .maintenance:
+                    MaintenancePageView(status: appState.systemModeStatus)
+                case .normal, .readOnly:
+                    VStack(spacing: 0) {
+                        if appState.systemMode == .readOnly {
+                            SystemModeBanner(kind: .readOnly, message: appState.systemModeStatus.message)
+                        } else if let plannedAt = appState.systemModeStatus.plannedMaintenanceAt {
+                            SystemModeBanner(
+                                kind: .plannedMaintenance(plannedAt),
+                                message: appState.systemModeStatus.message
+                            )
+                        }
+                        stagedContent
                     }
-                    stagedContent
                 }
+            }
+
+            if showsStartupArtwork {
+                StartupSplashView()
+                    .transition(.opacity)
+                    .zIndex(10)
             }
         }
         .task { await appState.refreshSystemStatus() }
+        .task { await dismissStartupArtworkWhenReady() }
         .overlay {
             if let requirement = appState.updateRequirement {
                 UpdateRequiredOverlay(requirement: requirement)
@@ -178,6 +201,18 @@ struct AppShellView: View {
 
     private func advanceFromConsent() {
         stage = BNBUPreLoginGuide.hasSeen() ? .login : .preLoginGuide
+    }
+
+    private func dismissStartupArtworkWhenReady() async {
+        guard showsStartupArtwork else { return }
+        let duration: UInt64 = keepsStartupArtworkVisibleForUITesting
+            ? 10_000_000_000
+            : 1_000_000_000
+        try? await Task.sleep(nanoseconds: duration)
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: BNBUMotion.standard)) {
+            showsStartupArtwork = false
+        }
     }
 }
 
@@ -387,23 +422,22 @@ private struct UpdateRequiredOverlay: View {
 
 // MARK: - Startup
 
-/// Android's `StartupSplashScreen`: brand lockup, spinner, and a single status
-/// line while the stored session is restored.
+/// Full-screen launch artwork shown while the app restores its local session
+/// and resolves the first destination underneath it.
 struct StartupSplashView: View {
     var body: some View {
-        ZStack {
-            BNBUPageBackground()
-            VStack(spacing: 28) {
-                BNBUBrandLockup()
-                VStack(spacing: BNBUSpacing.space12) {
-                    ProgressView()
-                        .controlSize(.regular)
-                    Text("正在恢复登录状态…")
-                        .font(BNBUFont.bodyMedium)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                }
+        GeometryReader { proxy in
+            ZStack {
+                Color(red: 0.965, green: 0.976, blue: 0.996)
+                Image("sport_loading")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .accessibilityLabel("BNBU SPORT")
+                    .accessibilityIdentifier("startup.sportArtwork")
             }
         }
+        .ignoresSafeArea()
         .accessibilityIdentifier("screen.startup")
     }
 }
@@ -512,7 +546,7 @@ struct PrivacyConsentView: View {
                 // build declares NSMicrophoneUsageDescription for in-app video and
                 // has no remote push registration yet, so the disclosure has to
                 // describe what iOS actually does.
-                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频，并在前台单次获取位置。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
+                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(BNBUFont.LineSpacing.bodyMedium)

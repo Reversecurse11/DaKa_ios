@@ -5,10 +5,6 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const iosRoot = path.resolve(scriptDirectory, "..");
-const workspaceRoot = path.resolve(iosRoot, "..", "..");
-const backendRoot = process.env.BNBU_BACKEND_ROOT
-  ? path.resolve(process.env.BNBU_BACKEND_ROOT)
-  : path.join(workspaceRoot, "BNBU-Sports-Android", "backend");
 
 function read(relativePath) {
   return fs.readFileSync(path.join(iosRoot, relativePath), "utf8");
@@ -150,6 +146,9 @@ const remote = read("BNBUStudentApp/Core/RemoteStudentRepository.swift");
 const models = read("BNBUStudentApp/Core/Models.swift");
 const theme = read("BNBUStudentApp/Core/Theme.swift");
 const appState = read("BNBUStudentApp/Core/AppState.swift");
+const studentAPIClient = read("BNBUStudentApp/Core/StudentAPIClient.swift");
+const backendPolicies = read("BNBUStudentApp/Backend/BackendPolicies.swift");
+const backendGateways = read("BNBUStudentApp/Backend/BackendDomainGateways.swift");
 const localStore = read("BNBUStudentApp/Core/AppLocalStore.swift");
 const credentialStore = read("BNBUStudentApp/Core/SecureCredentialStore.swift");
 const components = read("BNBUStudentApp/Features/Components.swift");
@@ -158,6 +157,7 @@ const profileView = read("BNBUStudentApp/Features/ProfileView.swift");
 const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
 const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
 const checkinView = read("BNBUStudentApp/Features/CheckInView.swift");
+const locationProvider = read("BNBUStudentApp/Core/ExerciseLocationProvider.swift");
 const gradesView = read("BNBUStudentApp/Features/GradesView.swift");
 const dashboardView = read("BNBUStudentApp/Features/DashboardView.swift");
 const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
@@ -167,13 +167,18 @@ const releaseValidator = read("scripts/validate-release-config.sh");
 const macReleaseGate = read("scripts/run-macos-release-gate.sh");
 const modelTests = read("BNBUStudentTests/BNBUStudentModelTests.swift");
 const project = read("BNBUStudent.xcodeproj/project.pbxproj");
+const backendEnvironment = read("BNBUStudentApp/Backend/BackendEnvironment.swift");
+const backendAuth = read("BNBUStudentApp/Backend/BackendAuthSession.swift");
+const generatedModels = read("BNBUStudentApp/Backend/Generated/APIV1Models.generated.swift");
+const productionConfiguration = read("Configurations/Production.xcconfig");
+const stagingConfiguration = read("Configurations/Staging.xcconfig");
 const appSources = swiftFiles(path.join(iosRoot, "BNBUStudentApp"))
   .map((file) => fs.readFileSync(file, "utf8"))
   .join("\n");
-const openapiPath = path.join(backendRoot, "openapi", "openapi.yaml");
+const openapiPath = path.join(iosRoot, "Contracts", "openapi.snapshot.yaml");
 
 if (!fs.existsSync(openapiPath)) {
-  throw new Error(`Backend OpenAPI not found: ${openapiPath}`);
+  throw new Error(`Pinned OpenAPI snapshot not found: ${openapiPath}`);
 }
 const openapi = fs.readFileSync(openapiPath, "utf8");
 
@@ -182,8 +187,10 @@ for (const swiftFile of swiftFiles(path.join(iosRoot, "BNBUStudentApp")).concat(
 }
 console.log("PASS Swift source delimiters are structurally balanced");
 
-requireText(remote, 'http://123.207.5.70:82/api/v1', "Debug targets the current IP:82 /api/v1 server");
-rejectText(remote, "123.207.5.70:3333", "Obsolete iOS API port is absent from runtime source");
+requireText(backendEnvironment, 'http://127.0.0.1:3000/api/v1', "Local builds target the contract Docker API");
+rejectText(remote, "123.207.5.70", "Legacy remote IP is absent from the compatibility repository");
+requireText(backendEnvironment, 'host != "123.207.5.70"', "Environment validation explicitly rejects the legacy host");
+requireText(generatedModels, "APIV1ContractMetadata", "Generated models carry pinned contract metadata");
 requireText(remote, '"role": "student"', "Student login explicitly requests the student role");
 requireText(remote, '"clientType": "mobile"', "Student login identifies the mobile client");
 
@@ -205,11 +212,9 @@ for (const endpoint of workspaceEndpoints) {
     [`get("${endpoint}")`, `getIfBusinessReady("${endpoint}")`],
     `Workspace requests ${endpoint}`
   );
-  requireText(openapi, `/${endpoint}:`, `OpenAPI publishes ${endpoint}`);
 }
-
-for (const endpoint of ["/auth/login:", "/scoring/convert-endurance:", "/upload/proof:"]) {
-  requireText(openapi, endpoint, `OpenAPI publishes ${endpoint.slice(1, -1)}`);
+for (const endpoint of ["/auth/refresh:", "/auth/logout:", "/course-invites/{inviteToken}/join:", "/media-uploads:"]) {
+  requireText(openapi, endpoint, `Pinned OpenAPI publishes ${endpoint.slice(1, -1)}`);
 }
 
 requireText(remote, "StudentCoursesPayload", "Course-list response has a dedicated decoder");
@@ -239,8 +244,9 @@ rejectText(coursesView, "currentSemesterKey", "Course scope no longer depends on
 
 rejectText(appState, "max(hours, 0.5)", "Submission hours cannot produce backend-invalid 0.5h values");
 requireText(appState, "hours == 1 || hours == 2", "Submission hours are restricted to the 1h/2h API enum");
-requireText(appState, 'TimeZone(identifier: "Asia/Shanghai")', "Daily submission guard uses the backend business timezone");
-requireText(appState, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
+requireText(models, 'static let businessTimeZone = TimeZone(identifier: "Asia/Shanghai")!', "The check-in policy owns the backend business timezone");
+requireText(appState, "CheckInTimeWindowRule.businessDateString", "Daily submission guard uses the centralized Beijing business date");
+requireText(models, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
 requireText(models, "static let maxRequestBytes = 120_000_000", "Check-in proof batch enforces the 120MB request limit");
 requireText(models, "enum ExemptionProofRule", "Physical exemptions have a dedicated proof rule");
 requireText(models, "static let maxAttachmentCount = 5", "Physical exemptions enforce the five-proof API limit");
@@ -313,6 +319,15 @@ requireText(models, "var validUntilText", "Membership expiry prints as a written
 
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
+requireText(models, "localSecond <= effectiveEnd", "The 22:00:00 start boundary is inclusive at second precision");
+requireText(models, "max(defaultStartSecond, configuredStart)", "Class windows can only narrow the Beijing start boundary");
+requireText(models, "min(defaultEndSecond, configuredEnd)", "Class windows can only narrow the Beijing end boundary");
+requireText(appState, "serverBusinessDate == targetBusinessDate", "Server businessDate is consumed without device-timezone conversion");
+requireText(detailViews, "record.studentLocalSubmittedAt", "Student record timestamps use the device display timezone");
+requireText(studentAPIClient, "APIUploadProgressDelegate", "V1 signed uploads report actual network progress");
+requireText(backendGateways, "progressHandler: progressHandler", "Media gateways forward signed upload progress");
+requireText(backendPolicies, ".sessionAlreadyCompleted", "Qualified session denial has a stable client mapping");
+requireText(backendPolicies, "已达到合格时长，无需继续打卡。", "Qualified students receive the confirmed stop-checking-in message");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
 
 // Course join application (business rule 4.2)
@@ -440,7 +455,14 @@ requireText(dashboardView, "if hasActiveEnrollment {", "Today's check-in panel n
 requireText(dashboardView, "CheckInTimeWindowRule.canStartExercise(at: date)", "The dashboard reuses the check-in window rule rather than its own copy");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
-requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");
+rejectText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build does not request default-denied location access");
+requireText(locationProvider, "#if BNBU_FIXTURES && DEBUG", "Core Location exists only in the explicit Debug fixture build");
+requireText(productionConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Production excludes the location provider source");
+requireText(stagingConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Staging excludes the location provider source");
+requireText(checkinView, 'arguments.contains("-ui-testing-location-check")', "Only the dedicated UI fixture can start a location request");
+requireText(checkinView, 'BNBUL10n.text("定位功能未开放")', "Formal builds label the default-denied location state accurately");
+rejectText(models, "var latitude: Double?", "Legacy exercise sessions cannot retain raw latitude");
+rejectText(models, "var longitude: Double?", "Legacy exercise sessions cannot retain raw longitude");
 rejectText(debugInfoPlist + releaseInfoPlist, "NSLocationAlwaysAndWhenInUseUsageDescription", "Background location is never requested");
 requireText(gradesView, "maxAttachmentCount: ExemptionProofRule.maxAttachmentCount", "Exemption picker stops at five proofs");
 requireText(appState, "guard ExemptionProofRule.accepts(proofAttachments)", "Exemption submission revalidates its proof contract");
@@ -457,10 +479,10 @@ rejectText(remote, "UserDefaults.standard.set(accessToken", "Access tokens are n
 requireText(remote, "credentialStore.set(Data(accessToken.utf8)", "Access tokens are persisted through secure storage");
 requireText(remote, "legacyAccessTokenDefaultsKey", "Legacy plaintext token storage is migrated");
 
-rejectText(remote, 'url(for: "auth/logout")', "Frozen v1 logout performs no unsupported network call");
-rejectText(remote, 'url(for: "auth/refresh")', "Frozen v1 performs no unsupported token refresh");
-rejectText(openapi, "/auth/logout:", "OpenAPI confirms there is no server logout endpoint");
-rejectText(openapi, "/auth/refresh:", "OpenAPI confirms there is no refresh endpoint");
+requireText(backendAuth, 'path: "auth/logout"', "Foundation logout revokes the server session");
+requireText(backendAuth, 'path: "auth/refresh"', "Foundation rotates access and refresh tokens");
+requireText(openapi, "/auth/logout:", "OpenAPI publishes server logout");
+requireText(openapi, "/auth/refresh:", "OpenAPI publishes token rotation");
 requireText(remote, "func logout() -> Bool", "Repository logout is deterministic local cleanup");
 requireText(remote, "authenticationEpoch &+= 1", "Authentication responses are generation-guarded");
 requireText(remote, "guard loginEpoch == authenticationEpoch", "A late login response cannot restore a logged-out session");
@@ -560,7 +582,6 @@ requireText(remote, "[408, 425, 429].contains(statusCode)", "Timeout, Too Early 
 requireText(remote, 'request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")', "Repository sends the stable Idempotency-Key header");
 requireText(remote, '"student/physical-test-exemptions"', "Exemptions use the canonical physical-test route");
 requireText(remote, '"student/physical-test-exemptions/\\(application.id)/supplements"', "Exemption supplements use the canonical route");
-requireText(openapi, "/student/physical-test-exemptions/{id}/supplements:", "OpenAPI publishes canonical exemption supplements");
 rejectText(remote, 'post("student/exemptions"', "iOS no longer writes through the deprecated exemption route");
 rejectText(remote, 'get("student/exemptions")', "iOS no longer lists through the deprecated exemption route");
 requireText(models, "case supplementRequired", "Supplement-required exemption state remains distinct");
@@ -594,7 +615,7 @@ requireText(models, "values.isExcludedFromBackup = true", "Transient proof files
 
 requireText(debugInfoPlist, "<key>NSAllowsArbitraryLoads</key>\n\t\t<false/>", "Debug ATS arbitrary network access is disabled");
 requireText(debugInfoPlist, "<key>NSAllowsLocalNetworking</key>\n\t\t<true/>", "Debug keeps local simulator networking");
-requireText(debugInfoPlist, "<key>123.207.5.70</key>", "Debug has a narrow temporary HTTP test-host exception");
+requireText(debugInfoPlist, "<key>127.0.0.1</key>", "Debug has a narrow loopback HTTP exception");
 requireText(releaseInfoPlist, "<key>NSAllowsArbitraryLoads</key>\n\t\t<false/>", "Release ATS arbitrary network access is disabled");
 rejectText(releaseInfoPlist, "NSAllowsLocalNetworking", "Release does not allow local networking");
 rejectText(releaseInfoPlist, "NSExceptionDomains", "Release contains no insecure HTTP exception");
@@ -609,9 +630,10 @@ requireText(components, ".photosPicker(", "Photo evidence uses the system privac
 requireText(privacyManifest, "<key>NSPrivacyTracking</key>\n\t<false/>", "Privacy manifest declares no tracking");
 requireText(privacyManifest, "NSPrivacyAccessedAPICategoryUserDefaults", "Privacy manifest declares UserDefaults required-reason API");
 requireText(privacyManifest, "CA92.1", "UserDefaults access has the app-only required reason");
-for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo", "PreciseLocation"]) {
+for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo"]) {
   requireText(privacyManifest, `NSPrivacyCollectedDataType${dataType}`, `Privacy manifest declares ${dataType}`);
 }
+rejectText(privacyManifest, "NSPrivacyCollectedDataTypePreciseLocation", "Release privacy manifest does not claim disabled precise-location collection");
 
 rejectText(debugInfoPlist + releaseInfoPlist, "CFBundleURLTypes", "No custom URL-scheme deep-link surface is registered");
 rejectText(project, "com.apple.developer.associated-domains", "No unreviewed universal-link entitlement is enabled");
@@ -625,9 +647,9 @@ requireText(theme, 'ofType: "lproj"', "The language helper loads the language-sp
 
 requireText(project, 'INFOPLIST_FILE = "BNBUStudentApp/Resources/Info-Debug.plist";', "Debug uses the debug-only ATS plist");
 requireText(project, "INFOPLIST_FILE = BNBUStudentApp/Resources/Info.plist;", "Release uses the hardened plist");
-requireText(project, 'BNBU_API_BASE_URL = "https://configuration-required.invalid/api/v1";', "Release starts with an explicit non-shippable API placeholder");
+requireText(productionConfiguration, "https:/$()/configuration-required.invalid/api/v1", "Release starts with an explicit non-shippable API placeholder");
 requireText(project, "Validate Release Configuration", "Xcode runs the Release configuration gate");
-requireText(releaseValidator, 'if [ "${CONFIGURATION:-}" != "Release" ]', "Release validator leaves Debug builds untouched");
+requireText(releaseValidator, 'BNBU_REQUIRE_APPROVED_API_URL', "Configuration validator applies only to formal builds");
 requireText(releaseValidator, "configuration-required.invalid", "Release validator rejects the placeholder host");
 requireText(releaseValidator, "*/api/v1", "Release validator enforces the frozen API prefix");
 requireText(macReleaseGate, "set -Eeuo pipefail", "Mac Release gate fails closed on shell errors");
@@ -742,6 +764,7 @@ requireText(
 // names Firebase and promises no microphone, neither of which is true here.
 rejectText(appShellViews, "Firebase", "The iOS consent summary does not claim Firebase messaging");
 requireText(appShellViews, "麦克风记录声音", "The iOS consent summary discloses microphone use during video capture");
+requireText(appShellViews, "当前正式版本不申请定位权限，也不采集原始坐标", "The consent summary discloses the default-denied location state");
 requireText(
   appState,
   "localStore.saveCourseJoinRequest(request)",

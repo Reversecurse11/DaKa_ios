@@ -2,9 +2,23 @@
 
 SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透明化，不包含老师端或管理端功能。
 
-> **现行口径（2026-07-16）**：Debug 使用 `http://123.207.5.70:82/api/v1`；Release 必须由学校确认的 HTTPS 域名提供 `/api/v1`。本页后半部分按轮次保留的是历史开发记录，其中的 3333/96 端口、`/api` 前缀、旧上传路径和历史测试结论不得再作为构建或部署说明。当前执行入口以 [`IOS_QA_RUNBOOK.md`](IOS_QA_RUNBOOK.md)、`scripts/ios-contract-audit.mjs` 和 `scripts/run-macos-release-gate.sh` 为准。
+> **现行口径（2026-08-08）**：Local 使用 `http://127.0.0.1:3000/api/v1`；Staging/Production 必须显式注入获批的 HTTPS `/api/v1` 地址，否则构建失败。统一合同来自正式 tag `1.4.0-contract`（tag commit `9dd0654d5947cc8ec7d57e7e6d4f029e88ca3740`，合同源 commit `d368aea5671f7507ca7b1cf61bfa05173855db68`），固定为 122 operations / 275 schemas，SHA-256 为 `c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b`。正式矩阵为 104 项已实现并符合合同、18 项有真实路由但故意关闭、0 项未实现；合同发布不等于具名 Staging 已部署，目前仍没有可供 iOS 联调的正式 HTTPS Base URL。本页后半部分按轮次保留的是历史开发记录，旧远程 IP、旧端口、旧路径和历史测试结论不得再作为构建或部署说明。
 
 > **主线切换（2026-07-19）**：本目录源自负责人 7.18 回传的反馈版源码（`7.18 Feedback/BNBUStudent-iOS-Source-20260717-Aligned-API-Version.zip`），经编译修复、68 项单元测试、UI 冒烟和真实服务器提交/读回闭环验证后升级为主线。旧 3333/96 主线保留在 `../ios-app-legacy-20260715/`，仅作归档不再开发。2026-07-19 验证记录：`test-evidence-20260718/`；Debug 演示图片凭证已携带真实字节，可在真实服务器模式走通上传与提交（演示视频仍为预览占位）。
+
+## 后端集成基础层
+
+- `APIV1` 模型由固定 OpenAPI 快照生成；构建阶段验证哈希和生成物可重复性。
+- `Configurations/` 分离 Local、Staging、Production，正式环境缺少获批 URL 时 fail closed。
+- 单一 `URLSession` transport 处理 `data/meta`、五字段错误 envelope、最终 `requestId` 和安全有界重试。
+- 新会话适配器以二维码 `preview → join-capabilities → join` 为学生主链，Access/Refresh 作为一个原子 Keychain 会话保存并支持轮换、撤销与重启恢复。
+- Media 按用途分流：运动材料采用 `initiate → private PUT → confirm → bind`，免测材料按 `enrollmentId` 上传确认后由免测申请原子关联，不调用运动 bind；Session 与 Score 仅消费服务端权威投影。
+- OpenAPI 1.4 将 122 项 operation 生成为 104 项已实现与 18 项故意关闭的正式矩阵；其中 14 项以 `SYSTEM_MODE_UNSUPPORTED` 失败，Client Capabilities 仍为 22 项启用、8 项关闭。关闭响应保留 `requestId`，不会伪造成功，也不会被当成 Staging 可用证据。
+- Contract 1.4 的 16 项勘误生成查询字段运行时闭集；成绩规则、学生成绩和成绩调整的 `sort` 仅为 1.3 兼容字段，iOS 必须省略。教学班本地时间继续按可空字符串解码，兼容 `HH:mm`、`HH:mm:ss` 与旧 RFC3339 time 表示。
+- 2026-08-10 同步后端 PR #6/#7 与 Android PR #11/#12：普通文件和 V1 私有签名上传均报告真实网络进度；新 Session 只允许在北京时间 `06:00:00–22:00:00`（含边界）开始，班级窗口只能收窄；服务端 `businessDate` 保持北京业务日期，学生看到的开始、结束和提交时间按设备时区显示。后端返回 `SESSION_ALREADY_COMPLETED` 时提示已达合格时长且不创建本地假 Session。
+- GPS/位置能力在 Release 与 Staging 不编译、不申请定位权限、不持久化原始坐标；旧版会话中的经纬度会在恢复时迁移清洗。Debug 仅保留显式 `-ui-testing-location-check` 权限测试入口。
+- 当前合同已在推送设备、App 版本策略和反馈上下文中允许 `IOS`；客户端如实发送 `IOS`，并以数字 `CFBundleVersion` 查询版本策略，不伪装其他平台，也不把合同可表达性当成远程环境已开放。
+- 现有 SwiftUI 页面和旧 repository 作为迁移 seam 保留；普通构建不会连接旧路径或自动回退演示数据，后续按业务域逐页接入新 gateway。
 
 ## 范围
 
@@ -22,7 +36,7 @@ SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透�
 
 ## 数据与后端对齐
 
-App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测试服，Release 必须显式注入正式 HTTPS 地址；本地 Mock 仅用于自动化测试。模型命名与字段语义以三端共用 OpenAPI 为准：
+新集成代码以固定 OpenAPI 快照为唯一合同输入。Local 默认连接本机 Docker API；Mock 仅在 Debug 测试编译且带显式 `-ui-testing-*` 参数时可达，Release 不包含 fixture 实现。以下名称属于现有 UI 迁移层，后续将按业务域替换为生成的 `APIV1` 投影：
 
 - `Course`
 - `StudentProgress`
@@ -33,9 +47,9 @@ App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测�
 - `ProofAttachment`
 - `CheckInDraft`
 
-登录 Token 只由 Keychain 保存；工作台缓存和打卡草稿由 `Core/AppLocalStore.swift` 写入应用私有、完整文件保护且排除云备份的存储，并按 API Base URL 与学生账号隔离。退出或鉴权失效会清除当前账号的 Token、缓存和未提交草稿。
+Access/Refresh Token 作为一个会话 blob 只由 Keychain 保存；工作台缓存和打卡草稿由 `Core/AppLocalStore.swift` 写入应用私有、完整文件保护且排除云备份的存储，并按 API Base URL 与学生账号隔离。退出或鉴权失效会清除当前账号的 Token、缓存和未提交草稿。
 
-`Core/RemoteStudentRepository.swift` 已接入学生登录、体育总览、课程、打卡记录、凭证上传、免测申请、运动身份和通知接口。远程提交只有在服务器确认成功后才展示成功状态；断网、超时、服务器错误、字段变化与 token 失效均有学生可理解的反馈。
+`Core/RemoteStudentRepository.swift` 是旧 UI 的测试兼容适配器，普通运行 fail closed；新后端链路位于 `Backend/` 并复用 `Core/StudentAPIClient.swift` 的统一 transport。
 
 ## 构建与门禁
 
@@ -72,9 +86,10 @@ edu.bnbu.student.mvp
 
 ## 当前可证明的验证状态
 
-- Windows 静态契约审计已覆盖 API、任务 fail-closed、缓存隔离、Keychain、ATS、隐私清单、上传临时文件、Release 配置及 XCTest 回归点。
-- 当前源码包含 48 个 XCTest 方法和 5 个 UI Test 方法；**它们尚未在本轮当前源码上通过 Mac/Xcode 实际执行，因此不能写成已通过**。
-- Debug clean build、XCTest、XCUITest、无签名 Release build/analyze 必须由 `run-macos-release-gate.sh` 七步全部 PASS 才算完成；签名 Archive 与 iPhone 真机仍需另行验收。
+- 2026-08-10 已通过 OpenAPI 哈希/生成物门禁、iOS 静态合同审计与 plist 校验。
+- iPhone 17 Pro（iOS 26.5 Simulator）已执行 `BNBUStudentTests`：145 passed、0 failed。
+- Debug XCTest、Staging 模拟器构建与 Release generic iOS 无签名构建均已通过；Staging/Release 仅注入构建校验用 HTTPS `/api/v1` 地址，正式部署域名仍须由学校提供。
+- 本轮没有把后端 default-deny 路由当作已开放业务，也没有执行 XCUITest、签名 Archive 或 iPhone 真机验收；这些仍属于发布前门禁。
 - 打卡记录学生 UI 已在静态契约中禁止审核筛选、审核状态和教师反馈；真实私有 COS 图片仍需用同一 `recordId` 在 Edge、Android 真机和 iPhone 真机共同读回。
 
 ## 2026-07-15 当前前端口径

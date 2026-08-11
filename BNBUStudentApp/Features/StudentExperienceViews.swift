@@ -229,9 +229,9 @@ struct HelpCenterView: View {
         ),
         HelpEntry(
             category: "定位",
-            question: "为什么获取不到定位？",
-            answer: "请在 iPhone“设置 → 隐私与安全性 → 定位服务”中允许本 App 使用定位。定位失败不会阻止计时和提交，记录会显示为“未获取位置”。",
-            keywords: ["GPS", "权限", "室内", "位置", "location"]
+            question: "为什么定位功能未开放？",
+            answer: "当前正式版本不申请定位权限，也不采集或保存原始坐标。后端位置隐私策略和业务门禁获批前，运动计时与提交均不依赖定位。",
+            keywords: ["GPS", "权限", "位置", "隐私", "location"]
         ),
         HelpEntry(
             category: "凭证上传",

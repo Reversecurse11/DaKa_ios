@@ -4,6 +4,8 @@
 <dict>
 	<key>BNBUAPIBaseURL</key>
 	<string>$(BNBU_API_BASE_URL)</string>
+	<key>BNBUEnvironment</key>
+	<string>$(BNBU_ENVIRONMENT)</string>
 	<key>CFBundleDisplayName</key>
 	<string>BNBU Student</string>
 	<key>CFBundleExecutable</key>
@@ -30,10 +32,19 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>123.207.5.70</key>
+			<key>127.0.0.1</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
 			</dict>
 		</dict>
 	</dict>

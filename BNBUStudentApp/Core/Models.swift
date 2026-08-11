@@ -370,8 +370,6 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
     var endTime: Date?
     var status: ExerciseSessionStatus
     var locationStatus: ExerciseLocationStatus
-    var latitude: Double?
-    var longitude: Double?
     var pauses: [ExercisePause]
 
     init(
@@ -385,8 +383,6 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         endTime: Date? = nil,
         status: ExerciseSessionStatus,
         locationStatus: ExerciseLocationStatus,
-        latitude: Double? = nil,
-        longitude: Double? = nil,
         pauses: [ExercisePause] = []
     ) {
         self.id = id
@@ -399,9 +395,21 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         self.endTime = endTime
         self.status = status
         self.locationStatus = locationStatus
-        self.latitude = latitude
-        self.longitude = longitude
         self.pauses = pauses
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case studentID
+        case category
+        case sportType
+        case customSportName
+        case courseID
+        case startTime
+        case endTime
+        case status
+        case locationStatus
+        case pauses
     }
 
     init(from decoder: Decoder) throws {
@@ -415,11 +423,29 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         startTime = try container.decode(Date.self, forKey: .startTime)
         endTime = try container.decodeIfPresent(Date.self, forKey: .endTime)
         status = try container.decode(ExerciseSessionStatus.self, forKey: .status)
-        locationStatus = try container.decode(ExerciseLocationStatus.self, forKey: .locationStatus)
-        latitude = try container.decodeIfPresent(Double.self, forKey: .latitude)
-        longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
+        // OpenAPI 1.1 keeps GPS disabled by default. Older builds persisted raw
+        // coordinates alongside this status; decoding deliberately ignores all
+        // legacy location fields so an upgrade cannot keep using that state.
+        locationStatus = .unavailable
         // Sessions persisted before the pause feature carry no pauses key.
         pauses = try container.decodeIfPresent([ExercisePause].self, forKey: .pauses) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(studentID, forKey: .studentID)
+        try container.encode(category, forKey: .category)
+        try container.encode(sportType, forKey: .sportType)
+        try container.encodeIfPresent(customSportName, forKey: .customSportName)
+        try container.encodeIfPresent(courseID, forKey: .courseID)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encodeIfPresent(endTime, forKey: .endTime)
+        try container.encode(status, forKey: .status)
+        // The debug-only location fixture may mark the in-memory session as
+        // available, but no location state or raw coordinate survives restart.
+        try container.encode(ExerciseLocationStatus.unavailable, forKey: .locationStatus)
+        try container.encode(pauses, forKey: .pauses)
     }
 
     var resolvedSportName: String {
@@ -559,20 +585,113 @@ enum ExerciseSessionInputRule {
 enum CheckInTimeWindowRule {
     static let dailyStartHour = 6
     static let dailyEndHour = 22
+    static let businessTimeZone = TimeZone(identifier: "Asia/Shanghai")!
+
+    private static let defaultStartSecond = dailyStartHour * 3_600
+    private static let defaultEndSecond = dailyEndHour * 3_600
 
     static var displayText: String {
         String(format: "%02d:00–%02d:00", dailyStartHour, dailyEndHour)
     }
 
-    static func canStartExercise(at date: Date) -> Bool {
+    /// The outer Beijing window is inclusive at second precision. A class
+    /// section may narrow it, but can never widen it. Nil values use the outer
+    /// default; malformed values fail closed rather than opening an unapproved
+    /// interval.
+    static func canStartExercise(
+        at date: Date,
+        dailyStartTime: String? = nil,
+        dailyEndTime: String? = nil
+    ) -> Bool {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        let hour = calendar.component(.hour, from: date)
-        return hour >= dailyStartHour && hour < dailyEndHour
+        calendar.timeZone = businessTimeZone
+        let components = calendar.dateComponents([.hour, .minute, .second], from: date)
+        guard let hour = components.hour,
+              let minute = components.minute,
+              let second = components.second else {
+            return false
+        }
+        let localSecond = hour * 3_600 + minute * 60 + second
+        guard let configuredStart = parsedWallTime(dailyStartTime, fallback: defaultStartSecond),
+              let configuredEnd = parsedWallTime(dailyEndTime, fallback: defaultEndSecond) else {
+            return false
+        }
+        let effectiveStart = max(defaultStartSecond, configuredStart)
+        let effectiveEnd = min(defaultEndSecond, configuredEnd)
+        return effectiveStart <= effectiveEnd &&
+            localSecond >= effectiveStart &&
+            localSecond <= effectiveEnd
+    }
+
+    static func businessDateString(for date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = businessTimeZone
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d",
+            locale: Locale(identifier: "en_US_POSIX"),
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0
+        )
+    }
+
+    static func isSameBusinessDate(_ lhs: Date, _ rhs: Date) -> Bool {
+        businessDateString(for: lhs) == businessDateString(for: rhs)
+    }
+
+    private static func parsedWallTime(_ value: String?, fallback: Int) -> Int? {
+        guard let value else { return fallback }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let time = trimmed.contains("T") ? String(trimmed.split(separator: "T").last ?? "") : trimmed
+        let clock = time.prefix(8).split(separator: ":", omittingEmptySubsequences: false)
+        guard clock.count == 2 || clock.count == 3,
+              let hour = Int(clock[0]),
+              let minute = Int(clock[1]),
+              let second = clock.count == 3 ? Int(clock[2]) : 0,
+              (0...23).contains(hour),
+              (0...59).contains(minute),
+              (0...59).contains(second) else {
+            return nil
+        }
+        return hour * 3_600 + minute * 60 + second
     }
 
     static var startBlockedMessage: String {
         BNBUL10n.text("当前不在每日打卡开放时段（\(displayText)），暂时不能开始运动。")
+    }
+}
+
+/// RFC3339 values are absolute instants. Student-facing screens render them in
+/// the device timezone; this does not alter the server-frozen Beijing
+/// `businessDate` used for daily admission and uniqueness.
+enum StudentRecordTimeDisplay {
+    static func dateTime(
+        _ value: String?,
+        timeZone: TimeZone = .autoupdatingCurrent,
+        locale: Locale = BNBUL10n.locale
+    ) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        guard !RecentTimestamp.isJustNow(value), let instant = instant(from: value) else {
+            return value
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: instant)
+    }
+
+    static func instant(from value: String) -> Date? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: trimmed) ?? ISO8601DateFormatter().date(from: trimmed)
     }
 }
 
@@ -1370,6 +1489,9 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
     var proofFiles: [ProofAttachment]
     var note: String
     var sportType: String?
+    /// Server-frozen Beijing business date. It is a calendar date, not an
+    /// instant, and must never be converted through the device timezone.
+    var businessDate: String?
     /// Session timings ship with the OpenAPI document. Until then the server
     /// omits them and both clients show 未提供, as the Android baseline does.
     var startedAt: String?
@@ -1395,6 +1517,7 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         proofFiles: [ProofAttachment],
         note: String,
         sportType: String? = nil,
+        businessDate: String? = nil,
         startedAt: String? = nil,
         endedAt: String? = nil,
         activeDuration: String? = nil
@@ -1413,6 +1536,7 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         self.proofFiles = proofFiles
         self.note = note
         self.sportType = sportType
+        self.businessDate = businessDate
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.activeDuration = activeDuration
@@ -1425,6 +1549,7 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         case taskTitle
         case title
         case sportType
+        case businessDate
         case creditType
         case type
         case hours
@@ -1501,6 +1626,7 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent(String.self, forKey: .description)
             ?? ""
         sportType = try container.decodeIfPresent(String.self, forKey: .sportType)
+        businessDate = try container.decodeIfPresent(String.self, forKey: .businessDate)
         startedAt = try container.decodeIfPresent(String.self, forKey: .startedAt)
             ?? container.decodeIfPresent(String.self, forKey: .startTime)
         endedAt = try container.decodeIfPresent(String.self, forKey: .endedAt)
@@ -1526,9 +1652,22 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         try container.encode(proofFiles, forKey: .proofFiles)
         try container.encode(note, forKey: .note)
         try container.encodeIfPresent(sportType, forKey: .sportType)
+        try container.encodeIfPresent(businessDate, forKey: .businessDate)
         try container.encodeIfPresent(startedAt, forKey: .startedAt)
         try container.encodeIfPresent(endedAt, forKey: .endedAt)
         try container.encodeIfPresent(activeDuration, forKey: .activeDuration)
+    }
+
+    var studentLocalSubmittedAt: String {
+        StudentRecordTimeDisplay.dateTime(submittedAt) ?? submittedAt
+    }
+
+    var studentLocalStartedAt: String? {
+        StudentRecordTimeDisplay.dateTime(startedAt)
+    }
+
+    var studentLocalEndedAt: String? {
+        StudentRecordTimeDisplay.dateTime(endedAt)
     }
 
     private static func proofSummary(for proofFiles: [ProofAttachment]) -> String {
