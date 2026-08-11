@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024"
+     height="1024"
+     viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#F5F7FC"/>
+  <image x="174"
+         y="174"
+         width="676"
+         height="676"
+         href="../bnbu_emblem.imageset/bnbu_emblem.svg"
+         xlink:href="../bnbu_emblem.imageset/bnbu_emblem.svg"
+         preserveAspectRatio="xMidYMid meet"/>
+</svg>

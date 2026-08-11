@@ -480,7 +480,7 @@ private struct ExemptionCenterSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: appState.isRemoteMode
                         ? exemptionCenterText("申请说明", "Application information")
-                        : exemptionCenterText("演示数据", "Demo data"))
+                        : exemptionCenterText("Mock 本地申请", "Local Mock application"))
                         .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.primary)
                     Text(verbatim: exemptionCenterText(
@@ -497,10 +497,18 @@ private struct ExemptionCenterSheet: View {
                         .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !appState.isRemoteMode {
+                    if appState.isFullFeatureMockMode {
                         Text(verbatim: exemptionCenterText(
-                            "演示账号可查看申请状态，但不会伪造提交结果。正式提交请使用已连接服务器的学生账号。",
-                            "The demo account can preview application states but does not fake submissions. Use a server-connected student account to submit."
+                            "测试账号可以提交和补充材料，结果只保存在本机 Mock 数据中，不会写入真实审核队列。",
+                            "The test account can submit requests and supplements. Results stay in local Mock data and are not sent to a real review queue."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !appState.canSubmitExemptions {
+                        Text(verbatim: exemptionCenterText(
+                            "当前账号不能提交申请，请使用 Mock 运行方案或已连接服务器的学生账号。",
+                            "This account cannot submit. Use the Mock scheme or a server-connected student account."
                         ))
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -790,10 +798,19 @@ private struct EnduranceScoringSheet: View {
                                     .font(BNBUFont.bodySmall)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     .fixedSize(horizontal: false, vertical: true)
-                                if isPreview {
+                                if appState.isFullFeatureMockMode {
                                     Text(verbatim: enduranceText(
-                                        "演示账号仅用于查看界面，不能执行成绩换算。请使用已连接校园体育服务器的正式账号。",
-                                        "The demo account is for interface preview only and cannot calculate a score. Sign in with a server-connected student account."
+                                        "Mock 账号使用本地固定测试曲线，结果仅用于验证界面和流程，不代表正式评分标准。",
+                                        "The Mock account uses a fixed local test curve. Results validate the UI and flow only, not the official grading standard."
+                                    ))
+                                        .font(BNBUFont.bodySmall)
+                                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("endurance.mock.message")
+                                } else if isPreview {
+                                    Text(verbatim: enduranceText(
+                                        "当前账号不能执行成绩换算。请使用 Mock 运行方案或已连接校园体育服务器的正式账号。",
+                                        "This account cannot calculate a score. Use the Mock scheme or a server-connected student account."
                                     ))
                                         .font(BNBUFont.bodySmall)
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -892,7 +909,7 @@ private struct EnduranceScoringSheet: View {
     }
 
     private var isPreview: Bool {
-        !appState.isRemoteMode
+        !appState.canUseEnduranceCalculator
     }
 
     private var studentDemographic: String {

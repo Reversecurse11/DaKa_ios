@@ -203,6 +203,7 @@ final class BackendFoundationTests: XCTestCase {
         )))
 
         XCTAssertFalse(FixturePolicy.isEnabled(arguments: ["BNBUStudent"]))
+        XCTAssertTrue(FixturePolicy.isEnabled(arguments: ["BNBUStudent", "-mock-test-account"]))
         XCTAssertTrue(FixturePolicy.isEnabled(arguments: ["BNBUStudent", "-ui-testing-reset"]))
         XCTAssertTrue(SensitiveLoggingPolicy.isAllowed(metadata: [
             "operationId": "getSystemMode",

@@ -709,6 +709,21 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertFalse(screen("screen.privacy.consent").exists)
     }
 
+    func testLoadingPageUsesProvidedSportArtwork() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-loading-page",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.startup").waitForExistence(timeout: 3))
+        attachScreenshot(named: "loading-page-sport-artwork")
+    }
+
     /// Settings, account details, about, and the changelog are separate pages
     /// reached from the profile header, matching Android's navigation.
     func testProfileHeaderOpensAccountDetailsAndSettingsPages() throws {
@@ -968,6 +983,37 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 5))
     }
 
+    func testMockExerciseHourShortcutAdvancesTheActiveSession() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-active-exercise", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+
+        login()
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        XCTAssertTrue(app.staticTexts["记录中"].waitForExistence(timeout: 5))
+
+        let hourShortcut = app.buttons["checkin.mock.addHour"]
+        scrollToAndTap(hourShortcut)
+        let shortcutDisabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == false"),
+            object: hourShortcut
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [shortcutDisabled], timeout: 3), .completed)
+        XCTAssertTrue(app.staticTexts["1 小时"].waitForExistence(timeout: 3))
+
+        scrollToAndTap(app.buttons["checkin.exercise.end"])
+        let endAlert = app.alerts["结束运动"]
+        XCTAssertTrue(endAlert.waitForExistence(timeout: 3))
+        XCTAssertTrue(endAlert.staticTexts["你确定要结束本次运动吗？"].exists)
+        XCTAssertFalse(endAlert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "不足 1 小时")).firstMatch.exists)
+        endAlert.buttons["确认结束"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["可计学时"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["1 小时"].exists)
+        XCTAssertFalse(app.buttons["checkin.mock.addHour"].exists)
+    }
+
     // Business rules 5.5/10.3: starting exercise fetches one best-effort GPS
     // fix and attaches it to the running session. Runs against a simulated
     // device location, driving the real CoreLocation permission + fix path.
@@ -1161,18 +1207,17 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["login.phone"].exists)
         XCTAssertFalse(app.buttons["login.password.route"].exists)
         XCTAssertTrue(app.buttons["login.recoveryRequest"].exists)
+        XCTAssertTrue(app.buttons["login.mockUser"].exists)
 
-        app.buttons["login.email"].tap()
-        XCTAssertTrue(screen("screen.login.email").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.textFields["verification.contact"].exists)
-        XCTAssertTrue(app.textFields["verification.code"].exists)
-        app.buttons["nav.back"].tap()
-
-        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
         app.buttons["login.recoveryRequest"].tap()
         XCTAssertTrue(screen("screen.recoveryRequest").waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["recovery.submit"].isEnabled)
         app.buttons["nav.back"].tap()
+
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
+        app.buttons["login.mockUser"].tap()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["你好，测试学生"].waitForExistence(timeout: 3))
 
         app.terminate()
         app = XCUIApplication()

@@ -1,7 +1,34 @@
 import Foundation
 
+/// Credentials for the explicit local Mock scheme. The concrete values only
+/// exist in `MockStudentRepository`, which is excluded from non-fixture builds.
+struct MockTestAccountCredentials: Equatable {
+    let studentNumber: String
+    let name: String
+    let email: String
+    let phone: String
+    let verificationCode: String
+
+    func matches(contact: String, channel: ContactChannel) -> Bool {
+        switch channel {
+        case .email:
+            return contact.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                == email.lowercased()
+        case .phone:
+            return ContactBindingRule.normalizedPhone(contact)
+                == ContactBindingRule.normalizedPhone(phone)
+        }
+    }
+}
+
 protocol StudentRepository {
+    /// Present only for an explicit Debug fixture repository. Formal builds and
+    /// the unauthenticated bootstrap repository always return nil.
+    var mockTestAccount: MockTestAccountCredentials? { get }
     func loadWorkspace() -> StudentWorkspace
+    /// Returns the workspace associated with the normal-login Mock account.
+    /// The original demo entry continues to use `loadWorkspace()`.
+    func loadMockTestAccountWorkspace() -> StudentWorkspace?
     /// Resolves a course invite code. Nil means the invite is unknown, expired
     /// or withdrawn, which the join flow reports before asking for details.
     func loadCourseInvite(code: String) -> CourseInvite?
@@ -20,6 +47,26 @@ protocol StudentRepository {
     /// has been published yet; a thrown error is the load failure the help
     /// centre offers to retry.
     func loadHelpArticles() throws -> [HelpArticle]
+    /// Local-only endurance preview used by the full-feature Mock account.
+    /// Production repositories return nil and continue to use the server API.
+    func previewEnduranceScore(
+        timeSeconds: Int,
+        gender: String,
+        gradeLevel: String
+    ) -> EnduranceScoreResult?
+}
+
+extension StudentRepository {
+    var mockTestAccount: MockTestAccountCredentials? { nil }
+    func loadMockTestAccountWorkspace() -> StudentWorkspace? { nil }
+
+    func previewEnduranceScore(
+        timeSeconds _: Int,
+        gender _: String,
+        gradeLevel _: String
+    ) -> EnduranceScoreResult? {
+        nil
+    }
 }
 
 /// Non-domain bootstrap state used before a real authenticated projection is
@@ -84,6 +131,18 @@ struct UnauthenticatedStudentRepository: StudentRepository {
 
 #if BNBU_FIXTURES && DEBUG
 struct MockStudentRepository: StudentRepository {
+    static let fullFeatureTestAccount = MockTestAccountCredentials(
+        studentNumber: "2400123456",
+        name: "测试学生",
+        email: "test.student@bnbu.edu.cn",
+        phone: "13800138000",
+        verificationCode: "123456"
+    )
+
+    var mockTestAccount: MockTestAccountCredentials? {
+        Self.fullFeatureTestAccount
+    }
+
     /// The endurance-run card has four server-driven states that demo data
     /// cannot show at once, so screenshot runs select one by launch argument.
     static var mockEnduranceStatus: EnduranceRunStatus {
@@ -95,7 +154,7 @@ struct MockStudentRepository: StudentRepository {
     }
 
     func loadWorkspace() -> StudentWorkspace {
-        let student = StudentProfile(
+        makeWorkspace(for: StudentProfile(
             id: "demo-student-001",
             studentNumber: "2400123456",
             name: "演示学生",
@@ -108,7 +167,28 @@ struct MockStudentRepository: StudentRepository {
             gender: .female,
             gradeLevel: "sophomore",
             gradeCalculatedAt: "2026-07-29T14:32:07Z"
-        )
+        ))
+    }
+
+    func loadMockTestAccountWorkspace() -> StudentWorkspace? {
+        let account = Self.fullFeatureTestAccount
+        return makeWorkspace(for: StudentProfile(
+            id: "mock-full-feature-student-001",
+            studentNumber: account.studentNumber,
+            name: account.name,
+            email: account.email,
+            college: "工商管理学院",
+            className: "2026A",
+            status: "正常",
+            enrollmentYear: 2024,
+            birthDate: "2000-01-01",
+            gender: .female,
+            gradeLevel: "sophomore",
+            gradeCalculatedAt: "2026-07-29T14:32:07Z"
+        ))
+    }
+
+    private func makeWorkspace(for student: StudentProfile) -> StudentWorkspace {
 
         let teamCredit = Membership(
             id: "m1",
@@ -471,10 +551,40 @@ struct MockStudentRepository: StudentRepository {
         ]
     }
 
-    /// Demo data has no mailbox or handset to deliver to, so any well-formed
-    /// code is accepted until the contact endpoints ship.
+    /// The Mock scheme never sends email or SMS. A single documented code keeps
+    /// contact binding deterministic without weakening formal authentication.
     func acceptsContactCode(_ code: String, channel: ContactChannel, value: String) -> Bool {
-        ContactBindingRule.isValidCode(code)
+        code == Self.fullFeatureTestAccount.verificationCode &&
+            ContactBindingRule.isValid(value, for: channel)
+    }
+
+    func previewEnduranceScore(
+        timeSeconds: Int,
+        gender: String,
+        gradeLevel: String
+    ) -> EnduranceScoreResult? {
+        guard timeSeconds > 0 else { return nil }
+
+        // A deterministic fixture curve makes every result state reachable. It
+        // is deliberately labelled as a local preview in the UI and must never
+        // be used as an official grading table.
+        let baseline = gender == "male" ? 210 : 180
+        let score = max(0, min(100, 100 - max(timeSeconds - baseline, 0) / 3))
+        let tier: String
+        switch score {
+        case 90...: tier = "excellent"
+        case 80..<90: tier = "good"
+        case 60..<80: tier = "pass"
+        default: tier = "fail"
+        }
+        return EnduranceScoreResult(
+            score: score,
+            tier: tier,
+            timeSeconds: timeSeconds,
+            gender: gender,
+            gradeLevel: gradeLevel,
+            gradeGroup: "mock-\(gender)-\(gradeLevel)"
+        )
     }
 
     /// Demo invites resolve to a course the demo student has not joined, so the

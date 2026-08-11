@@ -1319,14 +1319,105 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertFalse(state.sendLoginCode(to: "1380013800", channel: .phone))
         XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
+        XCTAssertFalse(state.sendLoginCode(to: "13900139000", channel: .phone))
+        XCTAssertTrue(state.errorMessage?.contains("测试账号") == true)
         XCTAssertTrue(state.sendLoginCode(to: "13800138000", channel: .phone))
 
         XCTAssertFalse(state.signInWithCode("12345", contact: "13800138000", channel: .phone))
         XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
         XCTAssertFalse(state.isAuthenticated)
 
+        XCTAssertFalse(state.signInWithCode("654321", contact: "13800138000", channel: .phone))
+        XCTAssertFalse(state.isAuthenticated)
+
         XCTAssertTrue(state.signInWithCode("123456", contact: "13800138000", channel: .phone))
         XCTAssertTrue(state.isAuthenticated)
+        XCTAssertEqual(state.workspace.student.email, "test.student@bnbu.edu.cn")
+        XCTAssertEqual(state.workspace.student.name, "测试学生")
+    }
+
+    func testMockShortcutOpensTheUsableTestAccount() {
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+
+        XCTAssertTrue(state.mockAccountLogin())
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isFullFeatureMockMode)
+        XCTAssertEqual(state.workspace.student.id, "mock-full-feature-student-001")
+        XCTAssertEqual(state.workspace.student.name, "测试学生")
+        XCTAssertEqual(state.workspace.student.email, "test.student@bnbu.edu.cn")
+    }
+
+    func testMockHourToolAdvancesActiveSessionAndOnlyCreditsAfterSubmission() async throws {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: store
+        )
+        XCTAssertTrue(state.mockAccountLogin())
+        state.enforcesCheckInTimeWindow = false
+        let originalCourseHours = state.workspace.progress.course
+        let originalRawCourseHours = state.workspace.progress.rawCourse
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let actionTime = start.addingTimeInterval(30)
+
+        XCTAssertFalse(state.addOneHourToMockExercise(at: actionTime))
+        XCTAssertTrue(state.startExerciseSession(
+            category: .courseRelated,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(state.addOneHourToMockExercise(at: actionTime))
+        XCTAssertEqual(state.exerciseSession?.elapsed(at: actionTime), ExerciseSession.oneHour + 30)
+        XCTAssertEqual(state.exerciseSession?.creditedHours(at: actionTime), 1)
+        XCTAssertFalse(state.addOneHourToMockExercise(at: actionTime))
+
+        // The shortcut changes this session only. Semester progress remains
+        // unchanged until the ordinary submit flow creates a record.
+        XCTAssertEqual(state.workspace.progress.course, originalCourseHours)
+        XCTAssertEqual(state.workspace.progress.rawCourse, originalRawCourseHours)
+        XCTAssertTrue(state.endExerciseSession(at: actionTime))
+        let completedSession = try XCTUnwrap(state.exerciseSession)
+        XCTAssertEqual(completedSession.creditedHours(), 1)
+
+        let originalRecordCount = state.workspace.records.count
+        let submitted = await state.submitCheckIn(
+            creditType: .courseRelated,
+            courseId: completedSession.courseID,
+            hours: completedSession.creditedHours(),
+            note: "Mock 一小时运动测试",
+            sportType: completedSession.sportType.rawValue,
+            proofAttachments: [
+                ProofAttachment(
+                    id: "mock-hour-proof",
+                    type: .image,
+                    fileName: "mock-hour-proof.jpg",
+                    byteCount: 400_000,
+                    source: "test"
+                )
+            ],
+            exerciseSession: completedSession
+        )
+        XCTAssertTrue(submitted)
+        state.markExerciseSessionSubmitted()
+        XCTAssertNil(state.exerciseSession)
+        XCTAssertEqual(state.workspace.records.count, originalRecordCount + 1)
+        XCTAssertEqual(state.workspace.records.first?.hours, 1)
+        XCTAssertEqual(state.workspace.progress.course, originalCourseHours + 1)
+        XCTAssertEqual(state.workspace.progress.rawCourse, originalRawCourseHours + 1)
+
+        let restored = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: store
+        )
+        XCTAssertTrue(restored.mockAccountLogin())
+        XCTAssertNil(restored.exerciseSession)
+        XCTAssertEqual(restored.workspace.records.count, originalRecordCount + 1)
+        XCTAssertEqual(restored.workspace.progress.course, originalCourseHours + 1)
+        XCTAssertEqual(restored.workspace.progress.rawCourse, originalRawCourseHours + 1)
     }
 
     func testRecoveryRequestNeedsAnIdentityAndOneReachableContact() {
@@ -2217,36 +2308,54 @@ final class BNBUStudentModelTests: XCTestCase {
         )
     }
 
-    func testAppStateExemptionSubmissionFailsClosedInDemoMode() async {
+    func testFullFeatureMockAccountSubmitsAndSupplementsExemptionsLocally() async throws {
         let defaults = isolatedDefaults()
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: defaults)
         )
-        let originalExemptions = appState.workspace.exemptions
-        let originalSyncOperations = appState.workspace.syncOperations
-        let originalNotices = appState.workspace.notices
+        let originalExemptionCount = appState.workspace.exemptions.count
+        let originalSyncCount = appState.workspace.syncOperations.count
+        let originalNoticeCount = appState.workspace.notices.count
+        let proof = ProofAttachment(
+            id: "proof",
+            type: .image,
+            fileName: "hospital-note.jpg",
+            byteCount: 4,
+            uploadData: Data([0xFF, 0xD8, 0xFF, 0xD9]),
+            source: "摄像头"
+        )
 
         let submitted = await appState.submitExemption(
             item: .run800m,
             reason: "膝关节运动损伤",
             detail: "医生建议暂缓耐力跑测试。",
-            proofAttachments: [
-                ProofAttachment(
-                    id: "proof",
-                    type: .image,
-                    fileName: "hospital-note.jpg",
-                    byteCount: 480_000,
-                    source: "摄像头"
-                )
-            ]
+            proofAttachments: [proof]
         )
 
-        XCTAssertFalse(submitted)
-        XCTAssertEqual(appState.workspace.exemptions, originalExemptions)
-        XCTAssertEqual(appState.workspace.syncOperations, originalSyncOperations)
-        XCTAssertEqual(appState.workspace.notices, originalNotices)
-        XCTAssertTrue(appState.errorMessage?.contains("演示账户") == true)
+        XCTAssertTrue(submitted)
+        XCTAssertEqual(appState.workspace.exemptions.count, originalExemptionCount + 1)
+        XCTAssertEqual(appState.workspace.syncOperations.count, originalSyncCount + 1)
+        XCTAssertEqual(appState.workspace.notices.count, originalNoticeCount + 1)
+        XCTAssertEqual(appState.workspace.exemptions.first?.status, .pending)
+        XCTAssertEqual(appState.workspace.syncOperations.first?.status, .localOnly)
+        XCTAssertNil(appState.errorMessage)
+
+        let rejected = try XCTUnwrap(appState.workspace.exemptions.first(where: { $0.id == "ex1" }))
+        let supplemented = await appState.submitExemptionSupplement(
+            for: rejected,
+            reason: "补充医院证明",
+            detail: "已补充盖章诊断材料。",
+            proofAttachments: [proof]
+        )
+
+        XCTAssertTrue(supplemented)
+        let updated = try XCTUnwrap(appState.workspace.exemptions.first(where: { $0.id == "ex1" }))
+        XCTAssertEqual(updated.status, .pending)
+        XCTAssertEqual(updated.reason, "补充医院证明")
+        XCTAssertEqual(updated.teacherFeedback, "")
+        XCTAssertEqual(appState.workspace.syncOperations.first?.type, .supplementExemption)
+        XCTAssertEqual(appState.workspace.syncOperations.first?.status, .localOnly)
     }
 
     func testAppStateRejectsInvalidExemptionProof() async {
@@ -2435,7 +2544,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(result.timeSeconds, 244)
     }
 
-    func testDemoEnduranceConversionRequiresRemoteServer() async {
+    func testFullFeatureMockAccountConvertsEnduranceWithLocalPreviewCurve() async throws {
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -2443,11 +2552,13 @@ final class BNBUStudentModelTests: XCTestCase {
 
         let converted = await appState.convertEndurance(timeSeconds: 240)
 
-        XCTAssertNil(converted)
-        XCTAssertEqual(
-            appState.errorMessage,
-            BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
-        )
+        let result = try XCTUnwrap(converted)
+        XCTAssertEqual(result.score, 80)
+        XCTAssertEqual(result.tier, "good")
+        XCTAssertEqual(result.timeSeconds, 240)
+        XCTAssertEqual(result.gender, "female")
+        XCTAssertEqual(result.gradeGroup, "mock-female-sophomore")
+        XCTAssertNil(appState.errorMessage)
     }
 
     func testSelfCheckInDraftRestoresSportSelection() {
@@ -2638,21 +2749,22 @@ final class BNBUStudentModelTests: XCTestCase {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
         let remoteWorkspace = MockStudentRepository().loadWorkspace()
+        let studentID = remoteWorkspace.student.id
 
         XCTAssertTrue(
             store.saveRemoteWorkspace(
                 remoteWorkspace,
                 baseURL: StudentServerConfig.testBaseURL,
-                studentID: "demo-student-001"
+                studentID: studentID
             )
         )
         XCTAssertNil(store.readWorkspace().value)
         XCTAssertEqual(
             store.readRemoteWorkspace(
                 baseURL: StudentServerConfig.testBaseURL,
-                studentID: "demo-student-001"
+                studentID: studentID
             ).value?.student.id,
-            "demo-student-001"
+            studentID
         )
         XCTAssertNil(
             store.readRemoteWorkspace(
@@ -2663,7 +2775,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(
             store.readRemoteWorkspace(
                 baseURL: StudentServerConfig.productionBaseURL,
-                studentID: "demo-student-001"
+                studentID: studentID
             ).value
         )
     }
@@ -3892,12 +4004,12 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         XCTAssertFalse(expiredResult)
-        XCTAssertFalse(supplementResult)
+        XCTAssertTrue(supplementResult)
         XCTAssertEqual(
             appState.workspace.exemptions.first(where: { $0.id == base.id })?.status,
-            .supplementRequired
+            .pending
         )
-        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.proofFiles.count, 0)
+        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.proofFiles.count, 1)
         XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == expired.id })?.status, .expired)
     }
 

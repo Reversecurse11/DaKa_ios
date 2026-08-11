@@ -344,7 +344,8 @@ enum SensitiveLoggingPolicy {
 enum FixturePolicy {
     static func isEnabled(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
         #if BNBU_FIXTURES && DEBUG
-        return arguments.contains(where: { $0.hasPrefix("-ui-testing-") })
+        return arguments.contains("-mock-test-account") ||
+            arguments.contains(where: { $0.hasPrefix("-ui-testing-") })
         #else
         return false
         #endif

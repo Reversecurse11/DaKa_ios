@@ -472,6 +472,21 @@ struct CheckInView: View {
                     // (business rule 5.5); captures land in the draft pool.
                     exerciseCaptureSection(displayedSession)
 
+#if BNBU_FIXTURES && DEBUG
+                    if appState.isMockTestAccountSession {
+                        let canAddTestHour = displayedSession.elapsed(at: context.date) < ExerciseSession.oneHour
+                        SecondaryActionButton(
+                            title: canAddTestHour ? "测试：增加 1 小时" : "当前时长已满 1 小时",
+                            systemImage: canAddTestHour ? "clock.badge.plus" : "checkmark.circle.fill"
+                        ) {
+                            appState.addOneHourToMockExercise(at: context.date)
+                        }
+                        .disabled(!canAddTestHour)
+                        .opacity(canAddTestHour ? 1 : 0.55)
+                        .accessibilityIdentifier("checkin.mock.addHour")
+                    }
+#endif
+
                     if displayedSession.isPaused {
                         PrimaryActionButton(title: "继续运动", systemImage: "play.fill") {
                             appState.resumeExerciseSession()
