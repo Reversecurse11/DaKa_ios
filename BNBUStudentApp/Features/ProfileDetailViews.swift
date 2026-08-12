@@ -170,7 +170,7 @@ struct ProfileSettingsView: View {
                 BNBUGroupLabel("账户与安全")
                     .padding(.bottom, 4)
                 BNBUNavigationSettingRow(
-                    title: "绑定或更换邮箱、手机号",
+                    title: "绑定或更换邮箱",
                     systemImage: "phone",
                     accessibilityIdentifier: "settings.contactBinding"
                 ) {
@@ -428,4 +428,3 @@ private struct ChangelogItem: View {
         .padding(.bottom, 10)
     }
 }
-

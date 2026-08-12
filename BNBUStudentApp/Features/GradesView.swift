@@ -7,6 +7,7 @@ import UIKit
 /// contributions are teacher-side grading rules and must not be shown here.
 struct GradesView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ZStack {
@@ -32,6 +33,7 @@ struct GradesView: View {
                 await appState.refreshRemoteWorkspace()
             }
         }
+        .id(locale.identifier)
         .accessibilityIdentifier("screen.grades")
     }
 

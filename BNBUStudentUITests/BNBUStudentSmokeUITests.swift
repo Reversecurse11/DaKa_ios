@@ -236,13 +236,6 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         home()
         tabButton("tab.profile").tap()
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
-        app.buttons["profile.endurance.button"].tap()
-        XCTAssertTrue(screen("screen.profile.endurance").waitForExistence(timeout: 5))
-        attachScreenshot(named: "w09-endurance")
-
-        home()
-        tabButton("tab.profile").tap()
-        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 5))
         app.buttons["profile.exemption.button"].tap()
         attachScreenshot(named: "w10-exemption")
 
@@ -522,12 +515,16 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         scrollToAndTap(app.buttons["settings.contactBinding"])
         XCTAssertTrue(screen("screen.contactManagement").waitForExistence(timeout: 5))
         attachScreenshot(named: "S6-contact-management")
-        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
-        app.buttons["contactBinding.phone.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
-        app.buttons["contactBinding.phone.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 5))
-        attachScreenshot(named: "S7-contact-phone-verified")
+        XCTAssertFalse(app.textFields["contactBinding.phone.value"].exists)
+        if app.buttons["contactBinding.email.change"].exists {
+            app.buttons["contactBinding.email.change"].tap()
+        }
+        focusAndType(app.textFields["contactBinding.email.value"], text: "test.student@bnbu.edu.cn")
+        app.buttons["contactBinding.email.sendCode"].tap()
+        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
+        app.buttons["contactBinding.email.verify"].tap()
+        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 5))
+        attachScreenshot(named: "S7-contact-email-verified")
     }
 
     func testTempShotsNewPagesBaseline() throws {
@@ -546,45 +543,16 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
         attachScreenshot(named: "02-guide-step1")
         app.buttons["guide.next"].tap()
-        XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["再扫码或输入邀请码"].waitForExistence(timeout: 3))
         attachScreenshot(named: "03-guide-step2")
 
-        // Joining a course: invite entry, course confirmation, review status.
-        relaunch(["-ui-testing-reset"])
-        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 8))
-        app.staticTexts["扫码加入课程"].firstMatch.tap()
+        // Joining is available only inside an authenticated empty workspace.
+        relaunch(["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-empty-state"])
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
+        openTab(label: "课程", screenIdentifier: "screen.courses")
+        app.buttons["courses.join.entry"].tap()
         XCTAssertTrue(screen("screen.courseJoin").waitForExistence(timeout: 5))
         attachScreenshot(named: "04-course-join-entry")
-
-        focusAndType(app.textFields["course.join.code.field"], text: "BNBU2026")
-        app.buttons["course.join.submit"].tap()
-        XCTAssertTrue(screen("screen.courseJoinConfirm").waitForExistence(timeout: 5))
-        attachScreenshot(named: "05-course-join-confirm")
-
-        focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
-        focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
-        app.buttons["courseJoinConfirm.submit"].tap()
-        XCTAssertTrue(screen("screen.contactBinding").waitForExistence(timeout: 5))
-        attachScreenshot(named: "05b-contact-binding-empty")
-
-        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
-        app.buttons["contactBinding.phone.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
-        app.buttons["contactBinding.phone.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 5))
-        focusAndType(app.textFields["contactBinding.email.value"], text: "lin@bnbu.edu.cn")
-        app.buttons["contactBinding.email.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
-        app.buttons["contactBinding.email.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 5))
-        attachScreenshot(named: "05c-contact-binding-verified")
-
-        app.buttons["contactBinding.submit"].tap()
-        XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 5))
-        attachScreenshot(named: "06-course-join-pending")
-        app.buttons["nav.back"].tap()
-        XCTAssertTrue(app.buttons["login.joinRequest.entry"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "06b-login-with-pending-request")
 
         func openProfile() {
             relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
@@ -665,7 +633,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertTrue(app.staticTexts["常用服务"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["组织认证与抵扣记录"].exists)
-        assertProfileNavigationCardsAligned()
+        assertProfileServiceEntries()
     }
 
     /// The startup gates run in Android's order: privacy consent, then the
@@ -692,9 +660,9 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["privacy.consent.agree"].tap()
 
         XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["先加入课程"].exists)
+        XCTAssertTrue(app.staticTexts["先完成邮箱登录"].exists)
         app.buttons["guide.next"].tap()
-        XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["再扫码或输入邀请码"].waitForExistence(timeout: 3))
         app.buttons["guide.skip"].tap()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -841,7 +809,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         tabButton("tab.profile").tap()
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
-        assertProfileNavigationCardsAligned()
+        assertProfileServiceEntries()
         attachScreenshot(named: "english-profile")
 
         // The help centre's own chrome follows the app language; the articles
@@ -887,6 +855,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
         XCTAssertTrue(englishSegment.waitForExistence(timeout: 2))
         englishSegment.tap()
+        XCTAssertTrue(app.buttons["Link or change email"].waitForExistence(timeout: 3))
 
         // The tab bar sits behind the settings sheet, so it has to be dismissed
         // before the navigation labels can be read.
@@ -906,6 +875,32 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertEqual(tabButton("tab.checkin").label, "Check In")
         XCTAssertEqual(tabButton("tab.grades").label, "Progress")
         XCTAssertEqual(tabButton("tab.profile").label, "Profile")
+
+        tabButton("tab.dashboard").tap()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Daily check-in hours 06:00–22:00"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["16 hr"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["4 hr remaining toward this semester’s goal"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["4 course hours remaining"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["每日打卡时间 06:00–22:00"].exists)
+        XCTAssertFalse(app.staticTexts["16 小时"].exists)
+
+        // Exercise the reverse transition too. The previous regression could
+        // leave English dates and formatted values inside otherwise-Chinese
+        // pages until the app was relaunched.
+        tabButton("tab.profile").tap()
+        app.buttons["profile.settings.button"].tap()
+        XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 3))
+        app.buttons["简体中文"].tap()
+        app.buttons["nav.back"].firstMatch.tap()
+        tabButton("tab.dashboard").tap()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["每日打卡时间 06:00–22:00"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["16 小时"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["距离本学期目标还差 4 小时"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["差课程 4 小时"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Daily check-in hours 06:00–22:00"].exists)
+        XCTAssertFalse(app.staticTexts["16 hr"].exists)
     }
 
     func testSubmitDraftAndSubmittedRecordFlow() throws {
@@ -1107,96 +1102,36 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["常用服务"].exists)
     }
 
-    // Joining a course is offered on the sign-in screen only; the courses tab
-    // lists courses and carries no join or application entry.
-    func testCourseJoinLivesOnTheSignInScreenOnly() throws {
+    func testCourseJoinRequiresAuthenticatedEmailSession() throws {
         app.terminate()
         app = XCUIApplication()
         app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
-        app.staticTexts["扫码加入课程"].firstMatch.tap()
-
-        XCTAssertTrue(screen("screen.courseJoin").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["course.join.scan"].exists)
-
-        let codeField = app.textFields["course.join.code.field"]
-        XCTAssertTrue(codeField.waitForExistence(timeout: 3))
-        let next = app.buttons["course.join.submit"]
-        XCTAssertFalse(next.isEnabled)
-
-        codeField.tap()
-        codeField.typeText("BNBU2026")
-        XCTAssertTrue(next.isEnabled)
-        next.tap()
-
-        // The invite resolves to a course the student confirms before typing
-        // any identity details.
-        XCTAssertTrue(screen("screen.courseJoinConfirm").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["确认课程信息"].exists)
-        XCTAssertTrue(app.staticTexts["PE1024 / Section S02"].exists)
-        XCTAssertTrue(app.staticTexts["陈老师"].exists)
-
-        let submit = app.buttons["courseJoinConfirm.submit"]
-        submit.tap()
-        XCTAssertTrue(app.staticTexts["请填写姓名。"].waitForExistence(timeout: 3))
-
-        focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
-        submit.tap()
-        XCTAssertTrue(app.staticTexts["请填写学号。"].waitForExistence(timeout: 3))
-
-        focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
-        submit.tap()
-
-        // Binding both contacts is mandatory before a teacher sees the request,
-        // because a reinstalled app signs back in with a code sent to one.
-        XCTAssertTrue(screen("screen.contactBinding").waitForExistence(timeout: 3))
-        let apply = app.buttons["contactBinding.submit"]
-        XCTAssertTrue(apply.waitForExistence(timeout: 3))
-        XCTAssertFalse(apply.isEnabled)
-
-        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
-        app.buttons["contactBinding.phone.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
-        app.buttons["contactBinding.phone.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 3))
-        XCTAssertFalse(apply.isEnabled)
-
-        focusAndType(app.textFields["contactBinding.email.value"], text: "lin@bnbu.edu.cn")
-        app.buttons["contactBinding.email.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
-        app.buttons["contactBinding.email.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 3))
-
-        XCTAssertTrue(apply.isEnabled)
-        apply.tap()
-
-        // Submitting lands on the review status; only approval opens the app.
-        XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["申请状态：待教师审核"].exists)
-        app.buttons["nav.back"].tap()
-
-        // The sign-in screen reports the application until a teacher decides.
-        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["login.joinRequest.entry"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["login.courseJoin"].exists)
+        XCTAssertFalse(app.staticTexts["扫码加入课程"].exists)
 
         app.terminate()
         app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-authenticated",
+            "-ui-testing-empty-state",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
         app.launch()
 
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 8))
-        XCTAssertFalse(app.buttons["dashboard.join.scan"].exists)
-        XCTAssertFalse(app.buttons["dashboard.joinRequest.entry"].exists)
-
         openTab(label: "课程", screenIdentifier: "screen.courses")
-        XCTAssertFalse(app.buttons["courses.join.entry"].exists)
-        XCTAssertFalse(app.buttons["courses.joinRequest.entry"].exists)
-        XCTAssertFalse(app.staticTexts["加入新课程"].exists)
+        XCTAssertTrue(app.buttons["courses.join.entry"].waitForExistence(timeout: 3))
+        app.buttons["courses.join.entry"].tap()
+        XCTAssertTrue(screen("screen.courseJoin").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["course.join.scan"].exists)
     }
 
-    func testLoginPrivacyAndEnduranceEntryFlow() throws {
+    func testEmailOnlyLoginAndServerOwnedGradeEntryFlow() throws {
         app.terminate()
         app = XCUIApplication()
         app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -1204,7 +1139,8 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["login.email"].exists)
-        XCTAssertTrue(app.buttons["login.phone"].exists)
+        XCTAssertFalse(app.buttons["login.phone"].exists)
+        XCTAssertFalse(app.buttons["login.courseJoin"].exists)
         XCTAssertFalse(app.buttons["login.password.route"].exists)
         XCTAssertTrue(app.buttons["login.recoveryRequest"].exists)
         XCTAssertTrue(app.buttons["login.mockUser"].exists)
@@ -1226,11 +1162,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         openTab(label: "我的", screenIdentifier: "screen.profile")
-        scrollToAndTap(app.buttons["profile.endurance.button"])
-        XCTAssertTrue(app.buttons["开始换算"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["测试项目：800m"].exists)
-        app.buttons["关闭"].tap()
-        XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["profile.endurance.button"].exists)
     }
 
     // Temporary remote E2E check driven by env credentials; skipped when env is absent.
@@ -1514,18 +1446,13 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.descendants(matching: .any)[identifier]
     }
 
-    private func assertProfileNavigationCardsAligned(
+    private func assertProfileServiceEntries(
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
         let exemptionCard = app.buttons["profile.exemption.button"]
-        let enduranceCard = app.buttons["profile.endurance.button"]
         XCTAssertTrue(exemptionCard.waitForExistence(timeout: 3), file: file, line: line)
-        XCTAssertTrue(enduranceCard.waitForExistence(timeout: 3), file: file, line: line)
-        // Android renders the two service entries as an equal-width pair on one row.
-        XCTAssertEqual(exemptionCard.frame.minY, enduranceCard.frame.minY, accuracy: 1, file: file, line: line)
-        XCTAssertEqual(exemptionCard.frame.width, enduranceCard.frame.width, accuracy: 1, file: file, line: line)
-        XCTAssertLessThan(exemptionCard.frame.maxX, enduranceCard.frame.minX + 1, file: file, line: line)
+        XCTAssertFalse(app.buttons["profile.endurance.button"].exists, file: file, line: line)
     }
 
     private func scrollToAndTap(_ element: XCUIElement, maxSwipes: Int = 6) {

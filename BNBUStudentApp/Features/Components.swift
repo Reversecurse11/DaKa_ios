@@ -901,17 +901,21 @@ struct ProofAttachmentPanel: View {
                 )
             } else if type == .image,
                       let data = try? await item.loadTransferable(type: Data.self) {
-                // Images are capped at 8 MB, so the small in-memory path remains
-                // bounded. Videos never use this whole-file fallback.
-                attachment = ProofAttachment(
-                    id: UUID().uuidString,
-                    type: type,
-                    fileName: fileName,
-                    byteCount: data.count,
-                    thumbnailData: ProofThumbnailRenderer.imageThumbnailData(from: data),
-                    uploadData: data,
-                    source: "相册"
-                )
+                // Decode and redraw before upload. This normalizes the payload
+                // to JPEG and deliberately leaves EXIF/GPS dictionaries behind.
+                if let uploadData = ProofMediaSanitizer.sanitizedJPEGData(from: data) {
+                    attachment = ProofAttachment(
+                        id: UUID().uuidString,
+                        type: type,
+                        fileName: fileName,
+                        byteCount: uploadData.count,
+                        thumbnailData: ProofThumbnailRenderer.imageThumbnailData(from: uploadData),
+                        uploadData: uploadData,
+                        source: "相册"
+                    )
+                } else {
+                    attachment = nil
+                }
             } else {
                 attachment = nil
             }
@@ -983,14 +987,19 @@ struct ProofAttachmentPanel: View {
         fileURL: URL,
         source: String
     ) async -> ProofAttachment? {
+        guard let sanitizedURL = try? await ProofMediaSanitizer.sanitizedVideoCopy(from: fileURL) else {
+            ProofTransientFileStore.removeManagedCopy(at: fileURL)
+            return nil
+        }
+        ProofTransientFileStore.removeManagedCopy(at: fileURL)
         let fileDetails: (byteCount: Int, digest: String)? = try? await Task.detached(priority: .userInitiated) {
-            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let attributes = try FileManager.default.attributesOfItem(atPath: sanitizedURL.path)
             let byteCount = (attributes[.size] as? NSNumber)?.intValue ?? 0
-            let digest = try ProofContentDigest.sha256(fileURL: fileURL)
+            let digest = try ProofContentDigest.sha256(fileURL: sanitizedURL)
             return (byteCount, digest)
         }.value
         guard let fileDetails else {
-            ProofTransientFileStore.removeManagedCopy(at: fileURL)
+            ProofTransientFileStore.removeManagedCopy(at: sanitizedURL)
             return nil
         }
         return ProofAttachment(
@@ -998,10 +1007,10 @@ struct ProofAttachmentPanel: View {
             type: .video,
             fileName: fileName,
             byteCount: fileDetails.byteCount,
-            durationSeconds: await ProofThumbnailRenderer.videoDurationSeconds(from: fileURL),
-            thumbnailData: ProofThumbnailRenderer.videoThumbnailData(from: fileURL),
+            durationSeconds: await ProofThumbnailRenderer.videoDurationSeconds(from: sanitizedURL),
+            thumbnailData: ProofThumbnailRenderer.videoThumbnailData(from: sanitizedURL),
             uploadData: nil,
-            sourceFileURL: fileURL,
+            sourceFileURL: sanitizedURL,
             source: source,
             contentDigest: fileDetails.digest
         )
@@ -1014,6 +1023,81 @@ private struct ImportedProofFile: Transferable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .movie) { received in
             ImportedProofFile(url: try ProofTransientFileStore.makeProtectedCopy(from: received.file))
+        }
+    }
+}
+
+enum ProofMediaSanitizer {
+    private static let maximumImageDimension: CGFloat = 4_096
+
+    /// Pixel redraw intentionally carries no source property dictionary into
+    /// the JPEG encoder, so EXIF, GPS and other image location metadata cannot
+    /// enter an upload even when the selected library asset contains it.
+    static func sanitizedJPEGData(from data: Data, quality: CGFloat = 0.82) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        return sanitizedJPEGData(from: image, quality: quality)
+    }
+
+    static func sanitizedJPEGData(from image: UIImage, quality: CGFloat = 0.82) -> Data? {
+        let originalSize = image.size
+        guard originalSize.width.isFinite,
+              originalSize.height.isFinite,
+              originalSize.width > 0,
+              originalSize.height > 0 else { return nil }
+        let ratio = min(
+            maximumImageDimension / originalSize.width,
+            maximumImageDimension / originalSize.height,
+            1
+        )
+        let outputSize = CGSize(
+            width: max((originalSize.width * ratio).rounded(), 1),
+            height: max((originalSize.height * ratio).rounded(), 1)
+        )
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let redrawn = UIGraphicsImageRenderer(size: outputSize, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: outputSize))
+            image.draw(in: CGRect(origin: .zero, size: outputSize))
+        }
+        return redrawn.jpegData(compressionQuality: min(max(quality, 0), 1))
+    }
+
+    /// Re-exports rather than copying the captured container. Apple's sharing
+    /// filter removes user-identifying metadata including location; an empty
+    /// explicit metadata array prevents the client from adding any replacement.
+    static func sanitizedVideoCopy(from sourceURL: URL) async throws -> URL {
+        guard sourceURL.isFileURL else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+        let outputURL = try ProofTransientFileStore.makeManagedOutputURL(pathExtension: "mov")
+        do {
+            let asset = AVURLAsset(url: sourceURL)
+            guard let exporter = AVAssetExportSession(
+                asset: asset,
+                presetName: AVAssetExportPresetMediumQuality
+            ) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            exporter.outputURL = outputURL
+            exporter.outputFileType = .mov
+            exporter.shouldOptimizeForNetworkUse = true
+            exporter.metadata = []
+            exporter.metadataItemFilter = .forSharing()
+            await withCheckedContinuation { continuation in
+                exporter.exportAsynchronously {
+                    continuation.resume()
+                }
+            }
+            guard exporter.status == .completed else {
+                throw exporter.error ?? CocoaError(.fileWriteUnknown)
+            }
+            try ProofTransientFileStore.secureManagedFile(at: outputURL)
+            return outputURL
+        } catch {
+            ProofTransientFileStore.removeManagedCopy(at: outputURL)
+            throw error
         }
     }
 }
@@ -1051,6 +1135,14 @@ enum ProofThumbnailRenderer {
         guard let duration = try? await asset.load(.duration) else { return nil }
         let seconds = CMTimeGetSeconds(duration)
         return seconds.isFinite ? seconds : nil
+    }
+
+    static func videoHasAudioTrack(from url: URL) async -> Bool {
+        let asset = AVURLAsset(url: url)
+        guard let tracks = try? await asset.loadTracks(withMediaType: .audio) else {
+            return false
+        }
+        return !tracks.isEmpty
     }
 
     static func demoThumbnailData(type: ProofMediaType, index: Int) -> Data? {
@@ -1186,13 +1278,24 @@ private struct PermissionStatusLine: View {
 struct CameraCapturePicker: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
     var initialCaptureMode: UIImagePickerController.CameraCaptureMode? = nil
+    let failure: (String) -> Void
     let completion: (ProofAttachment) -> Void
+
+    init(
+        initialCaptureMode: UIImagePickerController.CameraCaptureMode? = nil,
+        failure: @escaping (String) -> Void = { _ in },
+        completion: @escaping (ProofAttachment) -> Void
+    ) {
+        self.initialCaptureMode = initialCaptureMode
+        self.failure = failure
+        self.completion = completion
+    }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.delegate = context.coordinator
-        picker.videoMaximumDuration = 30
+        picker.videoMaximumDuration = ExerciseVideoRule.maximumDurationSeconds
         picker.videoQuality = .typeMedium
 
         let availableTypes = UIImagePickerController.availableMediaTypes(for: .camera) ?? []
@@ -1203,6 +1306,11 @@ struct CameraCapturePicker: UIViewControllerRepresentable {
            picker.mediaTypes.contains(UTType.image.identifier) {
             picker.cameraCaptureMode = .photo
             picker.mediaTypes = [UTType.image.identifier]
+        } else if let initialCaptureMode,
+                  initialCaptureMode == .video,
+                  picker.mediaTypes.contains(UTType.movie.identifier) {
+            picker.cameraCaptureMode = .video
+            picker.mediaTypes = [UTType.movie.identifier]
         }
         return picker
     }
@@ -1233,59 +1341,83 @@ struct CameraCapturePicker: UIViewControllerRepresentable {
             if mediaType == UTType.movie.identifier,
                let sourceURL = info[.mediaURL] as? URL {
                 Task {
-                    if let attachment = await makeVideoAttachment(from: sourceURL) {
+                    let result = await makeVideoAttachment(from: sourceURL)
+                    if let attachment = result.attachment {
                         parent.completion(attachment)
+                    } else {
+                        parent.failure(result.errorMessage ?? BNBUL10n.text("视频处理失败，请重新录制。"))
                     }
                     parent.dismiss()
                 }
                 return
             }
 
-            parent.completion(makeImageAttachment(from: info))
+            if let attachment = makeImageAttachment(from: info) {
+                parent.completion(attachment)
+            } else {
+                parent.failure(BNBUL10n.text("图片处理失败，请重新拍摄。"))
+            }
             parent.dismiss()
         }
 
-        private func makeImageAttachment(from info: [UIImagePickerController.InfoKey: Any]) -> ProofAttachment {
-            let image = info[.originalImage] as? UIImage
-            let uploadData = image?.jpegData(compressionQuality: 0.82)
-            let byteCount = uploadData?.count
+        private func makeImageAttachment(from info: [UIImagePickerController.InfoKey: Any]) -> ProofAttachment? {
+            guard let image = info[.originalImage] as? UIImage,
+                  let uploadData = ProofMediaSanitizer.sanitizedJPEGData(from: image) else {
+                return nil
+            }
             return ProofAttachment(
                 id: UUID().uuidString,
                 type: .image,
                 fileName: "camera-photo-\(String(UUID().uuidString.prefix(6))).jpg",
-                byteCount: byteCount,
-                thumbnailData: image.flatMap { ProofThumbnailRenderer.imageThumbnailData(from: $0) },
+                byteCount: uploadData.count,
+                thumbnailData: ProofThumbnailRenderer.imageThumbnailData(from: uploadData),
                 uploadData: uploadData,
                 source: "摄像头"
             )
         }
 
-        private func makeVideoAttachment(from sourceURL: URL) async -> ProofAttachment? {
+        private func makeVideoAttachment(
+            from sourceURL: URL
+        ) async -> (attachment: ProofAttachment?, errorMessage: String?) {
+            guard let sanitizedURL = try? await ProofMediaSanitizer.sanitizedVideoCopy(from: sourceURL) else {
+                return (nil, BNBUL10n.text("视频处理失败，请重新录制。"))
+            }
             let prepared: (url: URL, byteCount: Int, digest: String)? = try? await Task.detached(priority: .userInitiated) {
-                let protectedURL = try ProofTransientFileStore.makeProtectedCopy(from: sourceURL)
                 do {
-                    let attributes = try FileManager.default.attributesOfItem(atPath: protectedURL.path)
+                    let attributes = try FileManager.default.attributesOfItem(atPath: sanitizedURL.path)
                     let byteCount = (attributes[.size] as? NSNumber)?.intValue ?? 0
-                    let digest = try ProofContentDigest.sha256(fileURL: protectedURL)
-                    return (protectedURL, byteCount, digest)
+                    let digest = try ProofContentDigest.sha256(fileURL: sanitizedURL)
+                    return (sanitizedURL, byteCount, digest)
                 } catch {
-                    ProofTransientFileStore.removeManagedCopy(at: protectedURL)
+                    ProofTransientFileStore.removeManagedCopy(at: sanitizedURL)
                     throw error
                 }
             }.value
-            guard let prepared else { return nil }
-            return ProofAttachment(
+            guard let prepared else {
+                return (nil, BNBUL10n.text("视频处理失败，请重新录制。"))
+            }
+            let durationSeconds = await ProofThumbnailRenderer.videoDurationSeconds(from: prepared.url)
+            let hasAudioTrack = await ProofThumbnailRenderer.videoHasAudioTrack(from: prepared.url)
+            if let message = ExerciseVideoRule.validationMessage(
+                durationSeconds: durationSeconds,
+                hasAudioTrack: hasAudioTrack
+            ) {
+                ProofTransientFileStore.removeManagedCopy(at: prepared.url)
+                return (nil, message)
+            }
+            return (ProofAttachment(
                 id: UUID().uuidString,
                 type: .video,
                 fileName: "camera-video-\(String(UUID().uuidString.prefix(6))).mov",
                 byteCount: prepared.byteCount,
-                durationSeconds: await ProofThumbnailRenderer.videoDurationSeconds(from: prepared.url),
+                durationSeconds: durationSeconds,
+                hasAudioTrack: hasAudioTrack,
                 thumbnailData: ProofThumbnailRenderer.videoThumbnailData(from: prepared.url),
                 uploadData: nil,
                 sourceFileURL: prepared.url,
                 source: "摄像头",
                 contentDigest: prepared.digest
-            )
+            ), nil)
         }
     }
 }

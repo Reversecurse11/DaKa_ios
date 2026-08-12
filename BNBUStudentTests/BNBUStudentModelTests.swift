@@ -1,4 +1,7 @@
 import XCTest
+import ImageIO
+import UniformTypeIdentifiers
+import UIKit
 @testable import BNBUStudent
 
 @MainActor
@@ -830,9 +833,7 @@ final class BNBUStudentModelTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
-    // A student joins before they have an account: the application itself is
-    // what the teacher reviews, so it must go through unauthenticated.
-    func testCourseJoinRequestIsFiledBeforeSignIn() throws {
+    func testCourseJoinRequestRequiresEmailSignIn() throws {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -841,11 +842,21 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(state.courseJoinRequest)
 
         let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
-        XCTAssertTrue(state.submitCourseJoinRequest(
+        XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
             phone: "13800138000",
+            email: "lin@bnbu.edu.cn"
+        ))
+        XCTAssertEqual(state.errorMessage, "请先完成邮箱登录和验证，再加入课程。")
+
+        XCTAssertTrue(state.mockAccountLogin())
+        XCTAssertTrue(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            phone: "",
             email: "lin@bnbu.edu.cn"
         ))
         XCTAssertNil(state.errorMessage)
@@ -855,8 +866,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(filed.studentName, "林同学")
         XCTAssertEqual(filed.studentNumber, "2400987654")
         XCTAssertEqual(filed.courseCode, invite.courseCode)
-        // Nothing was written into a workspace the student does not yet own.
-        XCTAssertTrue(state.pendingEnrollmentCourses.isEmpty)
+        XCTAssertFalse(state.pendingEnrollmentCourses.isEmpty)
     }
 
     func testCourseJoinRequestRequiresANameAndStudentNumber() {
@@ -885,23 +895,13 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400"))
     }
 
-    // A student who reinstalls signs back in with a code, so an application
-    // must not reach the teacher until both contacts are verified.
-    func testCourseJoinRequestRequiresBothContactsBound() throws {
+    func testCourseJoinRequestRequiresVerifiedEmailOnly() throws {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
+        XCTAssertTrue(state.mockAccountLogin())
         let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
-
-        XCTAssertFalse(state.submitCourseJoinRequest(
-            invite: invite,
-            name: "林同学",
-            studentNumber: "2400987654",
-            phone: "",
-            email: "lin@bnbu.edu.cn"
-        ))
-        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
 
         XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
@@ -910,17 +910,17 @@ final class BNBUStudentModelTests: XCTestCase {
             phone: "13800138000",
             email: ""
         ))
-        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
+        XCTAssertEqual(state.errorMessage, "请先完成邮箱验证。")
         XCTAssertNil(state.courseJoinRequest)
 
         XCTAssertTrue(state.submitCourseJoinRequest(
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
-            phone: "138 0013 8000",
+            phone: "",
             email: "lin@bnbu.edu.cn"
         ))
-        XCTAssertEqual(state.courseJoinRequest?.phone, "13800138000")
+        XCTAssertEqual(state.courseJoinRequest?.phone, "")
         XCTAssertEqual(state.courseJoinRequest?.email, "lin@bnbu.edu.cn")
     }
 
@@ -1451,12 +1451,11 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(ContactBindingRule.masked("lin@bnbu.edu.cn", for: .email), "li***@bnbu.edu.cn")
     }
 
-    // The application is filed before sign-in, so it cannot ride in the
-    // workspace cache and needs to survive a relaunch on its own.
-    func testCourseJoinRequestSurvivesRelaunchBeforeSignIn() throws {
+    func testCourseJoinRequestSurvivesRelaunchAfterSignIn() throws {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
         let state = AppState(repository: MockStudentRepository(), localStore: store)
+        XCTAssertTrue(state.mockAccountLogin())
         let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
         XCTAssertTrue(state.submitCourseJoinRequest(
             invite: invite,
@@ -1684,15 +1683,91 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertEqual(staleLocalImage.validationMessage, "原始文件已不在内存中，请删除后重新选择")
 
-        let longVideo = ProofAttachment(
+        let oversizedTransportVideo = ProofAttachment(
             id: "video-too-large",
             type: .video,
             fileName: "large.mov",
-            byteCount: ProofUploadRule.maxVideoBytes + 1,
+            byteCount: ProofUploadRule.maxTransportBytes + 1,
             source: "test"
         )
-        XCTAssertEqual(longVideo.validationMessage, "视频超过 100MB")
-        XCTAssertFalse(longVideo.isValidForUpload)
+        XCTAssertEqual(oversizedTransportVideo.validationMessage, "视频超过上传安全上限")
+        XCTAssertFalse(oversizedTransportVideo.isValidForUpload)
+
+        XCTAssertNil(ExerciseVideoRule.validationMessage(durationSeconds: 15, hasAudioTrack: true))
+        XCTAssertEqual(
+            ExerciseVideoRule.validationMessage(durationSeconds: 15.01, hasAudioTrack: true),
+            "运动视频最长只能录制 15 秒。"
+        )
+        XCTAssertEqual(
+            ExerciseVideoRule.validationMessage(durationSeconds: 8, hasAudioTrack: false),
+            "运动视频必须包含声音，请开启麦克风后重新录制。"
+        )
+
+        let verifiedVideo = ProofAttachment(
+            id: "verified-video",
+            type: .video,
+            fileName: "proof.mov",
+            byteCount: 1_000,
+            durationSeconds: 8,
+            hasAudioTrack: true,
+            source: "test"
+        )
+        let restoredVideo = try? JSONDecoder().decode(
+            ProofAttachment.self,
+            from: JSONEncoder().encode(verifiedVideo)
+        )
+        XCTAssertEqual(restoredVideo?.hasAudioTrack, true)
+    }
+
+    func testImageSanitizerDropsSourceGPSAndEXIFMetadata() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let sourceData = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(
+                sourceData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            )
+        )
+        let properties: [CFString: Any] = [
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 22.3400,
+                kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 114.1800,
+                kCGImagePropertyGPSLongitudeRef: "E"
+            ],
+            kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifUserComment: "must-not-survive"
+            ]
+        ]
+        CGImageDestinationAddImage(destination, try XCTUnwrap(image.cgImage), properties as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let originalSource = try XCTUnwrap(
+            CGImageSourceCreateWithData(sourceData as Data as CFData, nil)
+        )
+        let originalProperties = try XCTUnwrap(
+            CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil) as? [CFString: Any]
+        )
+        XCTAssertNotNil(originalProperties[kCGImagePropertyGPSDictionary])
+        let originalExif = originalProperties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        XCTAssertEqual(originalExif?[kCGImagePropertyExifUserComment] as? String, "must-not-survive")
+
+        let sanitized = try XCTUnwrap(
+            ProofMediaSanitizer.sanitizedJPEGData(from: sourceData as Data)
+        )
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(sanitized as CFData, nil))
+        let sanitizedProperties = try XCTUnwrap(
+            CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        )
+        XCTAssertNil(sanitizedProperties[kCGImagePropertyGPSDictionary])
+        let exif = sanitizedProperties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        // The JPEG encoder may add non-identifying dimensions and colour-space
+        // facts, but source EXIF content must not survive the pixel redraw.
+        XCTAssertNil(exif?[kCGImagePropertyExifUserComment])
     }
 
     func testCheckInSubmissionPhaseCalculatesOverallUploadProgress() {
@@ -1844,7 +1919,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.workspace.progress.general, appState.hourRule.generalRequired)
     }
 
-    func testProofUploadRuleRejectsBatchAboveServerRequestLimit() {
+    func testProofUploadRuleDoesNotInventAggregateBusinessSizeLimit() {
         let attachments = [
             ProofAttachment(id: "video", type: .video, fileName: "proof.mov", byteCount: 100_000_000, source: "test"),
             ProofAttachment(id: "image-1", type: .image, fileName: "proof-1.jpg", byteCount: 7_000_001, source: "test"),
@@ -1853,8 +1928,8 @@ final class BNBUStudentModelTests: XCTestCase {
         ]
 
         XCTAssertEqual(ProofUploadRule.totalByteCount(in: attachments), 121_000_003)
-        XCTAssertFalse(ProofUploadRule.accepts(attachments))
-        XCTAssertEqual(ProofUploadRule.validationMessage(for: attachments), "全部凭证总大小不能超过 120MB。")
+        XCTAssertTrue(ProofUploadRule.accepts(attachments))
+        XCTAssertNil(ProofUploadRule.validationMessage(for: attachments))
     }
 
     func testExemptionProofRuleStopsAtFiveBackendReferences() {

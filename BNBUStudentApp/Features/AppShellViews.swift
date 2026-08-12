@@ -84,7 +84,6 @@ struct AppShellView: View {
     let isUITesting: Bool
     @Binding var stage: AppShellStage
 
-    @State private var presentsCourseJoin = false
     @State private var showsStartupArtwork: Bool
 
     private let keepsStartupArtworkVisibleForUITesting: Bool
@@ -159,7 +158,6 @@ struct AppShellView: View {
                     onStartJoin: {
                         BNBUPreLoginGuide.markSeen()
                         stage = .login
-                        presentsCourseJoin = true
                     },
                     onSkipToLogin: {
                         BNBUPreLoginGuide.markSeen()
@@ -168,13 +166,6 @@ struct AppShellView: View {
                 )
             case .login:
                 LoginView()
-                    // Android reaches `ScanJoinScreen` from the pre-login guide,
-                    // so scanning works before sign-in; submitting still requires
-                    // an account.
-                    .sheet(isPresented: $presentsCourseJoin) {
-                        CourseJoinSheet()
-                            .environmentObject(appState)
-                    }
             case .authenticated:
                 AuthenticatedShellView(isUITesting: isUITesting)
             }
@@ -570,19 +561,18 @@ struct PrivacyConsentView: View {
 
 // MARK: - Pre-login course guide
 
-/// Android's `PreLoginCourseGuideScreen`: a two-step pager explaining that a
-/// course QR code or invitation code is needed before signing in.
+/// First-launch guide for the email-first authentication and enrollment order.
 struct PreLoginCourseGuideView: View {
     let onStartJoin: () -> Void
     let onSkipToLogin: () -> Void
 
     var body: some View {
         BNBUGuideFlow(
-            headerTitle: "加入课程",
+            headerTitle: "开始使用",
             steps: Self.steps,
             skipLabel: "直接登录",
             skipDescription: "跳过加入课程指引并进入登录页",
-            finalActionLabel: "开始加入课程",
+            finalActionLabel: "使用邮箱登录",
             onSkip: onSkipToLogin,
             onFinish: onStartJoin,
             screenIdentifier: "screen.guide.pre-login"
@@ -591,15 +581,15 @@ struct PreLoginCourseGuideView: View {
 
     static let steps: [BNBUGuideStep] = [
         BNBUGuideStep(
-            eyebrow: "准备课程二维码或邀请码",
-            title: "先加入课程",
-            detail: "老师会提供课程二维码或邀请码。扫码或手动输入后，即可找到对应课程。",
+            eyebrow: "学校邮箱验证码",
+            title: "先完成邮箱登录",
+            detail: "手机号和短信验证码入口已下线。使用学校邮箱接收验证码并登录。",
             artwork: .courseJoin
         ),
         BNBUGuideStep(
-            eyebrow: "核对信息后再加入",
-            title: "确认并提交申请",
-            detail: "核对课程和个人资料后提交加入申请；如需补正或等待审核，按页面提示处理。",
+            eyebrow: "邮箱验证后加入课程",
+            title: "再扫码或输入邀请码",
+            detail: "只有邮箱已验证的账号可以加入课程。登录后再核对课程与学号信息。",
             artwork: .joinRequest
         )
     ]

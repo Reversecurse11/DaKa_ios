@@ -697,7 +697,7 @@ enum StudentRecordTimeDisplay {
 
 /// A camera capture taken during or right after an exercise session. Media
 /// bytes live in a protected on-device file (or inline for small test
-/// payloads); drafts never upload until the student selects them as proof.
+/// payloads); every retained draft is uploaded with the final record.
 struct ExerciseMediaDraft: Identifiable, Hashable, Codable {
     let id: String
     let studentID: String
@@ -713,6 +713,7 @@ struct ExerciseMediaDraft: Identifiable, Hashable, Codable {
     var thumbnailData: Data?
     let byteCount: Int
     let durationSeconds: Double?
+    var hasAudioTrack: Bool? = nil
     let capturedAt: Date
 }
 
@@ -726,6 +727,10 @@ enum ExerciseMediaDraftRule {
 
     static func canAddPhoto(to drafts: [ExerciseMediaDraft]) -> Bool {
         drafts.filter { $0.type == .image }.count < maximumPhotoDrafts
+    }
+
+    static func canAddVideo(to drafts: [ExerciseMediaDraft]) -> Bool {
+        drafts.filter { $0.type == .video }.count < maximumVideoDrafts
     }
 }
 
@@ -1723,16 +1728,17 @@ enum ProofUploadRule {
     static let maxVideoCount = 1
     static let maxAttachmentCount = maxImageCount + maxVideoCount
     static let maxImageBytes = 8_000_000
-    static let maxVideoBytes = 100_000_000
-    static let maxRequestBytes = 120_000_000
+    /// Backend has no exercise-video business size cap. This is only the
+    /// transport safety ceiling published by the current media implementation.
+    static let maxTransportBytes = 512 * 1_024 * 1_024
 
     static var summaryText: String {
-        "最多 \(maxImageCount) 张照片 + \(maxVideoCount) 个视频；图片不超过 8MB，视频不超过 100MB。"
+        "最多 \(maxImageCount) 张照片 + \(maxVideoCount) 个最长 15 秒的有声视频；图片不超过 8MB。"
     }
 
     static func accepts(_ attachments: [ProofAttachment]) -> Bool {
         acceptsAttachmentCounts(attachments) &&
-            totalByteCount(in: attachments) <= maxRequestBytes
+            attachments.allSatisfy { ($0.byteCount ?? 0) <= maxTransportBytes }
     }
 
     static func acceptsAttachmentCounts(_ attachments: [ProofAttachment]) -> Bool {
@@ -1751,8 +1757,8 @@ enum ProofUploadRule {
         if attachments.count > maxAttachmentCount {
             return BNBUL10n.text("最多只能添加 \(maxAttachmentCount) 个凭证。")
         }
-        if totalByteCount(in: attachments) > maxRequestBytes {
-            return BNBUL10n.text("全部凭证总大小不能超过 120MB。")
+        if attachments.contains(where: { ($0.byteCount ?? 0) > maxTransportBytes }) {
+            return BNBUL10n.text("单个凭证超过上传安全上限。")
         }
         return nil
     }
@@ -1776,7 +1782,7 @@ enum ExemptionProofRule {
     static let maxAttachmentCount = 5
 
     static var summaryText: String {
-        "免测证明最多 \(maxAttachmentCount) 个；图片不超过 8MB，视频不超过 100MB。"
+        "免测证明最多 \(maxAttachmentCount) 个；图片不超过 8MB。"
     }
 
     static func accepts(_ attachments: [ProofAttachment]) -> Bool {
@@ -1794,9 +1800,9 @@ enum ExemptionProofRule {
 }
 
 enum CheckInInputRule {
-    /// Q&A 7/23 (Q5): the sport note is required for both course-related and
-    /// general exercise. The 200-character cap stays until the final field
-    /// spec is published with the OpenAPI document.
+    /// Frozen Contract 1.4 still requires a non-empty description for every
+    /// credit type. The approved 1.5 rule will make COURSE_RELATED optional and
+    /// keep GENERAL required; do not switch before the immutable 1.5 handoff.
     static let maximumDescriptionLength = 200
 
     static func normalizedDescription(_ note: String, for category: ExerciseCategory) -> String {
@@ -1811,6 +1817,23 @@ enum CheckInInputRule {
         }
         if trimmed.count > maximumDescriptionLength {
             return BNBUL10n.text("运动说明不能超过 \(maximumDescriptionLength) 个字符。")
+        }
+        return nil
+    }
+}
+
+enum ExerciseVideoRule {
+    static let maximumDurationSeconds = 15.0
+
+    static func validationMessage(durationSeconds: Double?, hasAudioTrack: Bool) -> String? {
+        guard let durationSeconds, durationSeconds > 0 else {
+            return BNBUL10n.text("无法读取视频实际时长，请重新录制。")
+        }
+        if durationSeconds > maximumDurationSeconds {
+            return BNBUL10n.text("运动视频最长只能录制 15 秒。")
+        }
+        if !hasAudioTrack {
+            return BNBUL10n.text("运动视频必须包含声音，请开启麦克风后重新录制。")
         }
         return nil
     }
@@ -1892,36 +1915,50 @@ enum ProofTransientFileStore {
             throw CocoaError(.fileReadUnsupportedScheme)
         }
         let fileManager = FileManager.default
-        let directoryURL = fileManager.temporaryDirectory
-            .appendingPathComponent(directoryName, isDirectory: true)
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-            attributes: [.protectionKey: FileProtectionType.complete]
-        )
-        try fileManager.setAttributes(
-            [.protectionKey: FileProtectionType.complete],
-            ofItemAtPath: directoryURL.path
-        )
+        let directoryURL = try protectedDirectory(fileManager: fileManager)
 
         let suffix = sourceURL.pathExtension.isEmpty ? "bin" : sourceURL.pathExtension
         let destinationURL = directoryURL
             .appendingPathComponent("proof-\(UUID().uuidString).\(suffix)")
         do {
             try fileManager.copyItem(at: sourceURL, to: destinationURL)
-            try fileManager.setAttributes(
-                [.protectionKey: FileProtectionType.complete],
-                ofItemAtPath: destinationURL.path
-            )
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            var mutableURL = destinationURL
-            try mutableURL.setResourceValues(values)
+            try secureManagedFile(at: destinationURL, fileManager: fileManager)
             return destinationURL
         } catch {
             try? fileManager.removeItem(at: destinationURL)
             throw error
         }
+    }
+
+    /// Returns a non-existent destination inside the protected proof directory.
+    /// AVFoundation requires the export destination not to exist beforehand.
+    static func makeManagedOutputURL(pathExtension: String) throws -> URL {
+        let fileManager = FileManager.default
+        let directoryURL = try protectedDirectory(fileManager: fileManager)
+        let safeExtension = pathExtension.range(of: "^[A-Za-z0-9]+$", options: .regularExpression) != nil
+            ? pathExtension.lowercased()
+            : "bin"
+        return directoryURL
+            .appendingPathComponent("proof-\(UUID().uuidString).\(safeExtension)")
+    }
+
+    /// Applies file protection and backup exclusion after a media exporter has
+    /// atomically created a managed output file.
+    static func secureManagedFile(
+        at fileURL: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        guard isManagedCopy(fileURL), fileManager.fileExists(atPath: fileURL.path) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        try fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: fileURL.path
+        )
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableURL = fileURL
+        try mutableURL.setResourceValues(values)
     }
 
     static func removeManagedCopy(at fileURL: URL?) {
@@ -1933,6 +1970,21 @@ enum ProofTransientFileStore {
         let directoryURL = fileManager.temporaryDirectory
             .appendingPathComponent(directoryName, isDirectory: true)
         try? fileManager.removeItem(at: directoryURL)
+    }
+
+    private static func protectedDirectory(fileManager: FileManager) throws -> URL {
+        let directoryURL = fileManager.temporaryDirectory
+            .appendingPathComponent(directoryName, isDirectory: true)
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        try fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: directoryURL.path
+        )
+        return directoryURL
     }
 
     private static func isManagedCopy(_ fileURL: URL) -> Bool {
@@ -1950,6 +2002,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
     let fileName: String
     let byteCount: Int?
     var durationSeconds: Double? = nil
+    var hasAudioTrack: Bool? = nil
     var thumbnailData: Data? = nil
     var uploadData: Data? = nil
     /// A transient app-owned file used for large uploads and streaming SHA-256.
@@ -1967,6 +2020,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
         fileName: String,
         byteCount: Int?,
         durationSeconds: Double? = nil,
+        hasAudioTrack: Bool? = nil,
         thumbnailData: Data? = nil,
         uploadData: Data? = nil,
         sourceFileURL: URL? = nil,
@@ -1980,6 +2034,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
         self.fileName = fileName
         self.byteCount = byteCount
         self.durationSeconds = durationSeconds
+        self.hasAudioTrack = hasAudioTrack
         self.thumbnailData = thumbnailData
         self.uploadData = uploadData
         self.sourceFileURL = sourceFileURL
@@ -2003,6 +2058,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
         case byteCount
         case size
         case durationSeconds
+        case hasAudioTrack
         case thumbnailData
         case source
         case storagePath
@@ -2032,6 +2088,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
         byteCount = try container.decodeIfPresent(Int.self, forKey: .byteCount)
             ?? container.decodeIfPresent(Int.self, forKey: .size)
         durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        hasAudioTrack = try container.decodeIfPresent(Bool.self, forKey: .hasAudioTrack)
         thumbnailData = try container.decodeIfPresent(Data.self, forKey: .thumbnailData)
         uploadData = nil
         sourceFileURL = nil
@@ -2048,6 +2105,7 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
         try container.encode(fileName, forKey: .fileName)
         try container.encodeIfPresent(byteCount, forKey: .byteCount)
         try container.encodeIfPresent(durationSeconds, forKey: .durationSeconds)
+        try container.encodeIfPresent(hasAudioTrack, forKey: .hasAudioTrack)
         try container.encodeIfPresent(thumbnailData, forKey: .thumbnailData)
         try container.encode(source, forKey: .source)
         try container.encodeIfPresent(cosKey, forKey: .cosKey)
@@ -2080,8 +2138,8 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
             switch type {
             case .image where byteCount > ProofUploadRule.maxImageBytes:
                 return BNBUL10n.text("图片超过 8MB")
-            case .video where byteCount > ProofUploadRule.maxVideoBytes:
-                return BNBUL10n.text("视频超过 100MB")
+            case .video where byteCount > ProofUploadRule.maxTransportBytes:
+                return BNBUL10n.text("视频超过上传安全上限")
             default:
                 break
             }

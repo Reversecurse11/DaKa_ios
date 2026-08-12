@@ -132,8 +132,11 @@ final class BNBULanguageSettings: ObservableObject {
               selectedMode != mode else {
             return
         }
-        mode = selectedMode
+        // Persist first. SwiftUI publishes `mode` immediately, and views that
+        // rebuild in response resolve non-View strings through `BNBUL10n`,
+        // which reads this value from UserDefaults.
         defaults.set(selectedMode.rawValue, forKey: BNBULanguage.defaultsKey)
+        mode = selectedMode
     }
 }
 

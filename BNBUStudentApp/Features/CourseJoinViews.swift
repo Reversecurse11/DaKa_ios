@@ -3,10 +3,8 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Course join application entry (business rule 4.2). A student joins before
-/// signing in: scan the course QR code or type the invite code, confirm the
-/// course the invite resolves to, then supply identity details for the teacher
-/// to review. Only an approved application opens the main app.
+/// Authenticated course join entry. The student's email must already be
+/// verified before scanning a QR code or entering an invitation code.
 struct CourseJoinSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
@@ -44,26 +42,16 @@ struct CourseJoinSheet: View {
                         },
                         onContinue: { name, studentNumber in
                             appState.errorMessage = nil
-                            step = .contactBinding(
-                                invite,
+                            guard appState.submitCourseJoinRequest(
+                                invite: invite,
                                 name: name,
-                                studentNumber: studentNumber
-                            )
+                                studentNumber: studentNumber,
+                                phone: "",
+                                email: appState.workspace.student.email
+                            ) else { return }
+                            step = .submitted
                         }
                     )
-                case let .contactBinding(invite, name, studentNumber):
-                    // Binding is not optional and has no way back: the student
-                    // has to be reachable before a teacher sees the request.
-                    ContactBindingView { phone, email in
-                        guard appState.submitCourseJoinRequest(
-                            invite: invite,
-                            name: name,
-                            studentNumber: studentNumber,
-                            phone: phone,
-                            email: email
-                        ) else { return }
-                        step = .submitted
-                    }
                 case .submitted:
                     JoinRequestStatusView(
                         request: appState.courseJoinRequest,
@@ -226,7 +214,6 @@ struct CourseJoinSheet: View {
 private enum CourseJoinStep: Hashable {
     case entry
     case confirm(CourseInvite)
-    case contactBinding(CourseInvite, name: String, studentNumber: String)
     case submitted
 }
 
@@ -338,32 +325,24 @@ struct CourseJoinConfirmView: View {
     }
 }
 
-/// Both contacts are bound before the application reaches the teacher: a
-/// student who reinstalls the app signs back in with a code sent to one of
-/// them, so registration is not complete until both are verified.
+/// Email is the only supported authentication contact. Phone/SMS binding is
+/// retired and must not be offered as an alternative.
 struct ContactBindingView: View {
     @EnvironmentObject private var appState: AppState
-    let onBound: (_ phone: String, _ email: String) -> Void
+    let onBound: (_ email: String) -> Void
 
-    @State private var phone = ""
     @State private var email = ""
-    @State private var verifiedPhone: String?
     @State private var verifiedEmail: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SectionTitle(eyebrow: "ACCOUNT", title: "绑定手机号和邮箱")
-                Text("退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。")
+                SectionTitle(eyebrow: "ACCOUNT", title: "验证学校邮箱")
+                Text("邮箱是唯一登录方式。完成验证后才可提交课程加入申请。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
 
-                ContactChannelPanel(
-                    channel: .phone,
-                    value: $phone,
-                    verifiedValue: $verifiedPhone
-                )
                 ContactChannelPanel(
                     channel: .email,
                     value: $email,
@@ -373,11 +352,11 @@ struct ContactBindingView: View {
                 DisabledAwareButton(
                     title: "提交加入申请",
                     systemImage: "paperplane.fill",
-                    isDisabled: verifiedPhone == nil || verifiedEmail == nil,
+                    isDisabled: verifiedEmail == nil,
                     accessibilityIdentifier: "contactBinding.submit"
                 ) {
-                    guard let verifiedPhone, let verifiedEmail else { return }
-                    onBound(verifiedPhone, verifiedEmail)
+                    guard let verifiedEmail else { return }
+                    onBound(verifiedEmail)
                 }
             }
             .padding(BNBUSpacing.screen)

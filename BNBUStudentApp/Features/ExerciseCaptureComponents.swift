@@ -27,6 +27,10 @@ enum ExerciseCameraCapturePurpose {
                 : "Exemption proof must be captured live. Allow BNBU Student to use the camera."
         }
     }
+
+    var microphoneDeniedMessage: String {
+        BNBUL10n.text("运动视频必须包含现场声音，需要允许 BNBU Student 使用麦克风。")
+    }
 }
 
 /// Camera-only capture entry for the check-in flow (business rule 6.4: no
@@ -65,7 +69,9 @@ struct ExerciseCameraCaptureButton: View {
         .disabled(isDisabled)
         .accessibilityIdentifier(accessibilityIdentifier ?? "checkin.capture.camera")
         .fullScreenCover(isPresented: $isCameraPresented) {
-            CameraCapturePicker(initialCaptureMode: initialCaptureMode) { attachment in
+            CameraCapturePicker(initialCaptureMode: initialCaptureMode) { message in
+                activeAlert = .captureFailed(message)
+            } completion: { attachment in
                 onCapture(attachment)
             }
             .ignoresSafeArea()
@@ -95,6 +101,29 @@ struct ExerciseCameraCaptureButton: View {
                     message: Text("当前设备策略不允许使用摄像头，请联系设备管理员。"),
                     dismissButton: .default(Text("好"))
                 )
+            case .microphoneDenied:
+                return Alert(
+                    title: Text("麦克风权限未开启"),
+                    message: Text(purpose.microphoneDeniedMessage),
+                    primaryButton: .default(Text("去设置")) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    },
+                    secondaryButton: .cancel(Text("取消"))
+                )
+            case .microphoneRestricted:
+                return Alert(
+                    title: Text("麦克风受系统限制"),
+                    message: Text("当前设备策略不允许使用麦克风，无法录制合规运动视频。"),
+                    dismissButton: .default(Text("好"))
+                )
+            case .captureFailed(let message):
+                return Alert(
+                    title: Text("视频无法使用"),
+                    message: Text(message),
+                    dismissButton: .default(Text("重新录制"))
+                )
             }
         }
     }
@@ -106,12 +135,12 @@ struct ExerciseCameraCaptureButton: View {
         }
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            isCameraPresented = true
+            authorizeMicrophoneIfNeeded()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 Task { @MainActor in
                     if granted {
-                        isCameraPresented = true
+                        authorizeMicrophoneIfNeeded()
                     } else {
                         activeAlert = .denied
                     }
@@ -125,18 +154,51 @@ struct ExerciseCameraCaptureButton: View {
             activeAlert = .restricted
         }
     }
+
+    private func authorizeMicrophoneIfNeeded() {
+        guard initialCaptureMode == .video else {
+            isCameraPresented = true
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            isCameraPresented = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                Task { @MainActor in
+                    if granted {
+                        isCameraPresented = true
+                    } else {
+                        activeAlert = .microphoneDenied
+                    }
+                }
+            }
+        case .denied:
+            activeAlert = .microphoneDenied
+        case .restricted:
+            activeAlert = .microphoneRestricted
+        @unknown default:
+            activeAlert = .microphoneRestricted
+        }
+    }
 }
 
 private enum ExerciseCameraAlert: Identifiable {
     case unavailable
     case denied
     case restricted
+    case microphoneDenied
+    case microphoneRestricted
+    case captureFailed(String)
 
     var id: String {
         switch self {
         case .unavailable: return "unavailable"
         case .denied: return "denied"
         case .restricted: return "restricted"
+        case .microphoneDenied: return "microphoneDenied"
+        case .microphoneRestricted: return "microphoneRestricted"
+        case .captureFailed(let message): return "captureFailed-\(message)"
         }
     }
 }
@@ -163,8 +225,8 @@ struct SessionStatePill: View {
     }
 }
 
-/// Read-only strip of what has been captured so far. The evidence form still
-/// owns selection; this only mirrors Android's "已拍摄素材" preview.
+/// Read-only strip of all retained captures that will be submitted. Removing a
+/// draft here is the only way to exclude it from the final record.
 struct ExerciseDraftThumbnailStrip: View {
     let drafts: [ExerciseMediaDraft]
     let onDelete: (ExerciseMediaDraft) -> Void

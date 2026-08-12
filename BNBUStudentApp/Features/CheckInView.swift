@@ -51,10 +51,8 @@ struct CheckInView: View {
     @State private var note = ""
     @State private var selectedSportType: ExerciseSportType?
     @State private var customSportType = ""
-    /// Draft-pool captures the student picked as proof for this submission.
-    @State private var selectedDraftIDs: Set<String> = []
-    /// Materialized attachments for the current selection. Rebuilt when the
-    /// selection or the draft pool changes, so render passes stay cheap.
+    /// Materialized attachments for every retained capture. The backend binds
+    /// the complete evidence set, so a draft can only be excluded by deleting it.
     @State private var proofAttachments: [ProofAttachment] = []
     @State private var submitted = false
     @State private var draftSaved = false
@@ -70,6 +68,7 @@ struct CheckInView: View {
     var body: some View {
         scaffoldWithSubmitDialogs
             .modifier(sessionDialogs)
+            .id(locale.identifier)
     }
 
     private var scaffoldWithSubmitDialogs: some View {
@@ -168,17 +167,8 @@ struct CheckInView: View {
         .onChange(of: appState.currentExerciseCourse) { _, _ in
             syncSportTypeWithCategory()
         }
-        .onChange(of: selectedDraftIDs) { _, _ in
+        .onChange(of: appState.exerciseMediaDrafts) { _, _ in
             rebuildProofAttachments()
-        }
-        .onChange(of: appState.exerciseMediaDrafts) { _, drafts in
-            let validIDs = Set(drafts.map(\.id))
-            let pruned = selectedDraftIDs.intersection(validIDs)
-            if pruned != selectedDraftIDs {
-                selectedDraftIDs = pruned
-            } else {
-                rebuildProofAttachments()
-            }
         }
     }
 
@@ -205,7 +195,6 @@ struct CheckInView: View {
 
     private func rebuildProofAttachments() {
         proofAttachments = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) }
             .compactMap { appState.proofAttachment(from: $0) }
         draftSaved = false
     }
@@ -613,7 +602,7 @@ struct CheckInView: View {
                         isDisabled: appState.exercisePhotoDraftCount >= ExerciseMediaDraftRule.maximumPhotoDrafts,
                         accessibilityIdentifier: "checkin.capture.photo"
                     ) { attachment in
-                        handleCapturedAttachment(attachment, autoSelect: false)
+                        handleCapturedAttachment(attachment)
                     }
 
                     ExerciseCameraCaptureButton(
@@ -623,7 +612,7 @@ struct CheckInView: View {
                         isDisabled: appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts,
                         accessibilityIdentifier: "checkin.capture.video"
                     ) { attachment in
-                        handleCapturedAttachment(attachment, autoSelect: false)
+                        handleCapturedAttachment(attachment)
                     }
                 }
 
@@ -723,7 +712,7 @@ struct CheckInView: View {
         }
     }
 
-    private func handleCapturedAttachment(_ attachment: ProofAttachment, autoSelect: Bool) {
+    private func handleCapturedAttachment(_ attachment: ProofAttachment) {
         let added: Bool
         switch attachment.type {
         case .image:
@@ -738,23 +727,14 @@ struct CheckInView: View {
                 fileURL: fileURL,
                 byteCount: attachment.byteCount ?? 0,
                 durationSeconds: attachment.durationSeconds,
+                hasAudioTrack: attachment.hasAudioTrack,
                 thumbnailData: attachment.thumbnailData
             )
         }
-        guard added, autoSelect, let newDraft = appState.exerciseMediaDrafts.last else { return }
-        let selectedImages = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) && $0.type == .image }.count
-        let selectedVideos = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) && $0.type == .video }.count
-        if newDraft.type == .image, selectedImages < ProofUploadRule.maxImageCount {
-            selectedDraftIDs.insert(newDraft.id)
-        } else if newDraft.type == .video, selectedVideos < ProofUploadRule.maxVideoCount {
-            selectedDraftIDs.insert(newDraft.id)
-        }
+        if added { rebuildProofAttachments() }
     }
 
     private func deleteDraft(_ mediaDraft: ExerciseMediaDraft) {
-        selectedDraftIDs.remove(mediaDraft.id)
         appState.removeExerciseMediaDraft(id: mediaDraft.id)
     }
 
@@ -857,23 +837,46 @@ struct CheckInView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("打卡凭证")
                     .font(BNBUFont.titleMedium)
-                Text("至少选择 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 凭证只能通过相机实时拍摄，不支持从相册选择。")
+                Text("至少保留 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 当前保留的全部素材都会上传，不支持从相册选择。")
                     .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
             }
 
-            ExerciseCameraCaptureButton(
-                title: "现场拍摄照片 / 视频",
-                accessibilityIdentifier: "checkin.capture.camera"
-            ) { attachment in
-                handleCapturedAttachment(attachment, autoSelect: true)
+            HStack(spacing: 10) {
+                ExerciseCameraCaptureButton(
+                    title: "现场拍照",
+                    systemImage: "camera.fill",
+                    initialCaptureMode: .photo,
+                    isDisabled: appState.exercisePhotoDraftCount >= ExerciseMediaDraftRule.maximumPhotoDrafts,
+                    accessibilityIdentifier: "checkin.capture.photo"
+                ) { attachment in
+                    handleCapturedAttachment(attachment)
+                }
+
+                ExerciseCameraCaptureButton(
+                    title: "现场录像",
+                    systemImage: "video.fill",
+                    initialCaptureMode: .video,
+                    isDisabled: appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts,
+                    accessibilityIdentifier: "checkin.capture.video"
+                ) { attachment in
+                    handleCapturedAttachment(attachment)
+                }
             }
 
-            ExerciseProofSelectionPanel(
-                drafts: appState.exerciseMediaDrafts,
-                selectedDraftIDs: $selectedDraftIDs
-            ) { mediaDraft in
-                deleteDraft(mediaDraft)
+            if appState.exerciseMediaDrafts.isEmpty {
+                Text("尚无现场凭证。")
+                    .font(BNBUFont.labelMedium)
+                    .foregroundStyle(BNBUTheme.muted)
+            } else {
+                HStack(spacing: 8) {
+                    StatusBadge(text: "照片 \(appState.exercisePhotoDraftCount)/\(ExerciseMediaDraftRule.maximumPhotoDrafts)")
+                    StatusBadge(text: "视频 \(appState.exerciseVideoDraftCount)/\(ExerciseMediaDraftRule.maximumVideoDrafts)")
+                    Spacer()
+                }
+                ExerciseDraftThumbnailStrip(drafts: appState.exerciseMediaDrafts) { mediaDraft in
+                    deleteDraft(mediaDraft)
+                }
             }
         }
         .padding(16)
@@ -1048,10 +1051,8 @@ struct CheckInView: View {
             return
         }
         note = appState.exerciseSession.map { submissionNote(draft.note, for: $0) } ?? ""
-        // Proof bytes live in the media draft pool; restore the selection by
-        // intersecting the saved attachment ids with what is still on disk.
-        let poolIDs = Set(appState.exerciseMediaDrafts.map(\.id))
-        selectedDraftIDs = Set(draft.proofAttachments.map(\.id)).intersection(poolIDs)
+        // Proof bytes live in the media draft pool. The final submission always
+        // includes the complete retained set rather than a saved subset.
         rebuildProofAttachments()
         selectedSegment = .submit
         draftSaved = false
@@ -1073,10 +1074,10 @@ struct CheckInView: View {
 
     private func clearDraftAndForm() {
         appState.clearDraft()
+        appState.removeAllExerciseMediaDrafts()
         note = ""
         selectedSportType = nil
         customSportType = ""
-        selectedDraftIDs = []
         proofAttachments = []
         draftSaved = false
     }
@@ -1086,7 +1087,6 @@ struct CheckInView: View {
         selectedSportType = nil
         selectedCategory = .general
         customSportType = ""
-        selectedDraftIDs = []
         proofAttachments = []
         draftSaved = false
     }
@@ -1139,10 +1139,9 @@ struct CheckInView: View {
     private func startExercise() {
         guard startValidationMessage == nil else { return }
         appState.clearDraft()
-        // Retained media drafts from an earlier <1h attempt stay in the pool;
-        // only the form selection resets for the new session.
-        selectedDraftIDs = []
-        proofAttachments = []
+        // Retained media drafts from an earlier <1h attempt stay in the pool and
+        // therefore remain part of the next eligible final submission.
+        rebuildProofAttachments()
         note = ""
         draftSaved = false
         guard appState.startExerciseSession(

@@ -153,6 +153,7 @@ const localStore = read("BNBUStudentApp/Core/AppLocalStore.swift");
 const credentialStore = read("BNBUStudentApp/Core/SecureCredentialStore.swift");
 const components = read("BNBUStudentApp/Features/Components.swift");
 const loginView = read("BNBUStudentApp/Features/LoginView.swift");
+const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");
 const profileView = read("BNBUStudentApp/Features/ProfileView.swift");
 const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
 const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
@@ -247,7 +248,13 @@ requireText(appState, "hours == 1 || hours == 2", "Submission hours are restrict
 requireText(models, 'static let businessTimeZone = TimeZone(identifier: "Asia/Shanghai")!', "The check-in policy owns the backend business timezone");
 requireText(appState, "CheckInTimeWindowRule.businessDateString", "Daily submission guard uses the centralized Beijing business date");
 requireText(models, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
-requireText(models, "static let maxRequestBytes = 120_000_000", "Check-in proof batch enforces the 120MB request limit");
+requireText(models, "static let maxTransportBytes = 512 * 1_024 * 1_024", "Media uses only the backend transport safety ceiling");
+rejectText(models, "maxVideoBytes = 100_000_000", "iOS does not invent a 100MB video business limit");
+requireText(models, "enum ExerciseVideoRule", "Exercise video rules are centralized");
+requireText(models, "static let maximumDurationSeconds = 15.0", "Exercise video is capped at 15 seconds");
+requireText(components, "videoHasAudioTrack", "Captured video is checked for an audio track");
+requireText(components, "picker.videoMaximumDuration = ExerciseVideoRule.maximumDurationSeconds", "The camera enforces the published duration cap");
+requireText(models, "var hasAudioTrack: Bool? = nil", "Audio-track verification survives draft persistence");
 requireText(models, "enum ExemptionProofRule", "Physical exemptions have a dedicated proof rule");
 requireText(models, "static let maxAttachmentCount = 5", "Physical exemptions enforce the five-proof API limit");
 requireText(models, "static let maximumCombinedReasonLength = 2_000", "Physical exemption reason enforces the 2000-character API limit");
@@ -259,7 +266,9 @@ requireText(models, "static let maximumPhotoDrafts = 6", "In-session photo draft
 requireText(checkinView, "ExerciseCameraCaptureButton", "Check-in proofs are captured through the camera-only flow");
 rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from the photo library");
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
-requireText(models, "请填写运动说明", "The sport note is required for all check-ins (Q&A 7/23 Q5)");
+rejectText(checkinView, "selectedDraftIDs", "Students cannot submit only a hand-picked subset of retained evidence");
+requireText(checkinView, "当前保留的全部素材都会上传", "The UI explains complete evidence binding");
+requireText(models, "请填写运动说明", "Frozen Contract 1.4 keeps the sport note required until the 1.5 conditional rule ships");
 requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
@@ -338,21 +347,14 @@ requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side 
 requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
 requireText(appState, "func lookupCourseInvite(rawCode: String)", "An invite code resolves to a course before the student applies");
 requireText(appState, "func submitCourseJoinRequest(", "Students can submit a course join application");
-// Joining precedes sign-in: the application is what creates the relationship,
-// so it must not be gated on an account.
-rejectText(appState, "请先登录后再提交课程加入申请。", "A join application is filed before the student has an account");
+rejectText(loginView, "扫码加入课程", "Unauthenticated students are not offered course joining");
+rejectText(appShellViews, "presentsCourseJoin", "The startup guide cannot bypass email authentication");
 requireText(courseJoinViews, "struct CourseJoinConfirmView", "The invite is confirmed on its own page before identity details are typed");
 requireText(courseJoinViews, "courseJoinConfirm.submit", "The confirmation page submits the application");
 requireText(models, "enum CourseJoinRequestRule", "Name and student number are validated client-side");
-// Registration binds both contacts: a reinstalled app signs back in with a
-// code, so an unreachable student must never reach the teacher's queue.
 requireText(models, "enum ContactBindingRule", "Contact binding has client-side rules");
-requireText(models, "enum ContactChannel", "Phone and email are bound as named channels");
-requireText(courseJoinViews, "struct ContactBindingView", "Contact binding is its own step in the join flow");
-requireText(courseJoinViews, ").sendCode\")", "Binding a contact sends a verification code");
-requireText(courseJoinViews, "ContactBindingRule.resendInterval", "The send button waits out the server's resend window");
-requireText(appState, "请先完成手机号和邮箱绑定。", "An application without both contacts bound is refused");
-requireText(modelTests, "testCourseJoinRequestRequiresBothContactsBound", "XCTest covers the contact-binding gate");
+requireText(appState, "请先完成邮箱验证。", "An application without verified email is refused");
+requireText(modelTests, "testCourseJoinRequestRequiresVerifiedEmailOnly", "XCTest covers the email-only enrollment gate");
 requireText(modelTests, "testContactBindingChecksFormatAndCodeBeforeAccepting", "XCTest covers contact and code validation");
 requireText(modelTests, "testBoundContactsAreShownMasked", "XCTest covers masking bound contacts");
 
@@ -382,20 +384,20 @@ requireText(loginView, "screen.recoverySubmitted", "A filed recovery request con
 rejectText(loginView, "验证码登录接口尚未接入 iOS", "The sign-in stub notice is gone");
 rejectText(loginView, "账号恢复接口尚未接入 iOS", "The recovery stub notice is gone");
 requireText(models, "struct CourseInvite", "An invite lookup has its own model");
-requireText(loginView, "login.joinRequest.entry", "The sign-in screen reports an application under review");
-requireText(modelTests, "testCourseJoinRequestIsFiledBeforeSignIn", "XCTest covers filing an application without an account");
+requireText(modelTests, "testCourseJoinRequestRequiresEmailSignIn", "XCTest covers the authenticated enrollment gate");
 requireText(modelTests, "testCourseJoinRequestRequiresANameAndStudentNumber", "XCTest covers the identity form rules");
-requireText(modelTests, "testCourseJoinRequestSurvivesRelaunchBeforeSignIn", "XCTest covers the pre-sign-in application cache");
+requireText(modelTests, "testCourseJoinRequestSurvivesRelaunchAfterSignIn", "XCTest covers the enrollment application cache");
 requireText(appState, "$0.isCurrent && $0.allowsCheckIn", "A pending course is never selected as the exercise course");
 requireText(appState, "workspace.courses.contains(where: { $0.id == courseId && $0.allowsCheckIn })", "Course-related submissions revalidate the approved enrolment");
 requireText(courseJoinViews, "CourseQRScannerView", "Course joining offers a QR scanning entry");
 requireText(courseJoinViews, "AVCaptureMetadataOutput", "The QR entry reads codes through live capture");
 requireText(courseJoinViews, "case .unavailable:", "The QR entry degrades gracefully without a camera");
-rejectText(coursesView, "courses.join.entry", "Joining a course is offered on the sign-in screen only");
+requireText(coursesView, "courses.join.entry", "Course joining is offered after authentication");
 rejectText(coursesView, "JoinRequestEntryPanel", "The courses page lists courses, not join applications");
 rejectText(dashboardView, "JoinRequestEntryPanel", "The dashboard lists no join application entry");
 rejectText(dashboardView, "dashboard.join.scan", "The dashboard offers no scan entry");
-requireText(loginView, "扫码加入课程", "The sign-in screen keeps the only join entry");
+rejectText(loginView, 'accessibilityIdentifier("login.phone")', "Phone/SMS sign-in is retired");
+requireText(loginView, "邮箱验证码登录", "Email code is the sole student sign-in entry");
 rejectText(loginView, "login.password.route", "Students are not offered account-and-password sign-in");
 requireText(coursesView, "PendingEnrollmentCard", "Pending applications render as their own state");
 requireText(modelTests, "testPendingEnrollmentBlocksExerciseStartAndSubmission", "Pending enrolments are proven not to produce check-ins");
@@ -464,6 +466,10 @@ requireText(checkinView, 'BNBUL10n.text("定位功能未开放")', "Formal build
 rejectText(models, "var latitude: Double?", "Legacy exercise sessions cannot retain raw latitude");
 rejectText(models, "var longitude: Double?", "Legacy exercise sessions cannot retain raw longitude");
 rejectText(debugInfoPlist + releaseInfoPlist, "NSLocationAlwaysAndWhenInUseUsageDescription", "Background location is never requested");
+requireText(components, "ProofMediaSanitizer.sanitizedJPEGData", "Images are redrawn before upload instead of forwarding EXIF/GPS metadata");
+requireText(components, "exporter.metadata = []", "Video export never adds replacement container metadata");
+requireText(components, "exporter.metadataItemFilter = .forSharing()", "Video export removes user-identifying metadata including location");
+requireText(modelTests, "testImageSanitizerDropsSourceGPSAndEXIFMetadata", "XCTest proves image metadata is removed before upload");
 requireText(gradesView, "maxAttachmentCount: ExemptionProofRule.maxAttachmentCount", "Exemption picker stops at five proofs");
 requireText(appState, "guard ExemptionProofRule.accepts(proofAttachments)", "Exemption submission revalidates its proof contract");
 requireText(remote, "guard attachment.uploadData != nil || attachment.sourceFileURL != nil", "Uploads require original bounded Data or the selected local file rather than a thumbnail");
@@ -608,8 +614,7 @@ requireText(remote, "sourceHandle.read(upToCount: ProofContentDigest.streamingCh
 requireText(remote, "ProofTransientFileStore.removeStaleCopies()", "Crash-leftover local proof copies are removed on startup");
 requireText(components, "struct ImportedProofFile: Transferable", "PhotosPicker imports large proofs as file representations");
 requireText(components, "FileRepresentation(importedContentType: .movie)", "Photo-library videos remain file-backed");
-requireText(components, "let digest = try ProofContentDigest.sha256(fileURL: fileURL)", "Photo-library file identity uses streaming SHA-256");
-requireText(components, "let digest = try ProofContentDigest.sha256(fileURL: protectedURL)", "Camera video identity uses streaming SHA-256");
+requireCount(components, "let digest = try ProofContentDigest.sha256(fileURL: sanitizedURL)", 2, "Imported and camera video identity uses the sanitized file's streaming SHA-256");
 requireText(models, "attributes: [.protectionKey: FileProtectionType.complete]", "Transient proof files use complete file protection");
 requireText(models, "values.isExcludedFromBackup = true", "Transient proof files are excluded from backup");
 
@@ -734,7 +739,6 @@ rejectText(
 
 // Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch
 // course guide, then sign-in.
-const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");
 const profileDetailViews = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
 const joinRequestStatusView = read("BNBUStudentApp/Features/JoinRequestStatusView.swift");
 

@@ -3,10 +3,10 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var languageSettings: BNBULanguageSettings
+    @Environment(\.locale) private var locale
     @AppStorage(BNBUAppearanceMode.defaultsKey) private var appearanceModeRaw = BNBUAppearanceMode.light.rawValue
     @State private var showExemptionCenter = false
 
-    @State private var showEnduranceScoring = false
     @State private var showPendingDiscardConfirmation = false
     @State private var pendingScopeToDiscard: String?
     @State private var showAccountDetails = false
@@ -28,6 +28,7 @@ struct ProfileView: View {
                 .padding(BNBUSpacing.screen)
             }
         }
+        .id(locale.identifier)
         .sheet(isPresented: $showAccountDetails) {
             NavigationStack {
                 AccountDetailsView { showAccountDetails = false }
@@ -48,10 +49,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showExemptionCenter) {
             ExemptionCenterSheet()
-                .environmentObject(appState)
-        }
-        .sheet(isPresented: $showEnduranceScoring) {
-            EnduranceScoringSheet()
                 .environmentObject(appState)
         }
         .confirmationDialog(
@@ -171,24 +168,13 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle(eyebrow: "SERVICES", title: "常用服务")
 
-            HStack(alignment: .top, spacing: 12) {
-                ProfileServiceTile(
-                    title: "免测与免打卡",
-                    detail: "申请与进度",
-                    systemImage: "figure.strengthtraining.traditional",
-                    accessibilityIdentifier: "profile.exemption.button"
-                ) {
-                    showExemptionCenter = true
-                }
-
-                ProfileServiceTile(
-                    title: "耐力跑成绩换算",
-                    detail: "800m / 1000m",
-                    systemImage: "gauge.with.dots.needle.67percent",
-                    accessibilityIdentifier: "profile.endurance.button"
-                ) {
-                    showEnduranceScoring = true
-                }
+            ProfileServiceTile(
+                title: "免测与免打卡",
+                detail: "申请与进度",
+                systemImage: "figure.strengthtraining.traditional",
+                accessibilityIdentifier: "profile.exemption.button"
+            ) {
+                showExemptionCenter = true
             }
         }
     }
@@ -322,7 +308,7 @@ struct ProfileView: View {
                 ForEach(appState.workspace.memberships) { membership in
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("\(membership.typeTitle) · \(membership.organization)")
+                            Text(verbatim: "\(BNBUL10n.dynamicText(membership.typeTitle)) · \(membership.organization)")
                                 .font(BNBUFont.titleMedium)
                             Text("有效至 \(membership.validUntilText)")
                                 .font(BNBUFont.labelMedium)
@@ -332,7 +318,7 @@ struct ProfileView: View {
                                     text: membership.status,
                                     filled: membership.status == "有效" || membership.status == "认证有效"
                                 )
-                                Text("抵扣: \(membership.offset)")
+                                Text(verbatim: "\(BNBUL10n.text("抵扣")): \(BNBUL10n.dynamicText(membership.offset))")
                                     .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.primary)
                             }

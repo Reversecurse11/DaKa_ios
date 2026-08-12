@@ -62,7 +62,11 @@ struct BNBUStudentApp: App {
 #endif
 #if BNBU_FIXTURES && DEBUG
         if FixturePolicy.isEnabled(arguments: arguments), arguments.contains("-ui-testing-authenticated") {
-            state.mockAccountLogin()
+            if arguments.contains("-ui-testing-empty-state") {
+                state.demoLogin()
+            } else {
+                state.mockAccountLogin()
+            }
         }
 #endif
 #if DEBUG

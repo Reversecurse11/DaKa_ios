@@ -9,7 +9,6 @@ private enum LoginFormField: Hashable {
 private enum LoginRoute: Hashable {
     case chooser
     case emailVerification
-    case phoneVerification
     case accountPassword
     case recovery
 }
@@ -58,14 +57,11 @@ enum BNBUPrivacyConsent {
 struct LoginView: View {
     @EnvironmentObject private var appState: AppState
     @State private var route: LoginRoute
-    @State private var showCourseJoin = false
 
     init() {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-ui-testing-login-email") {
             _route = State(initialValue: .emailVerification)
-        } else if arguments.contains("-ui-testing-login-phone") {
-            _route = State(initialValue: .phoneVerification)
         } else if arguments.contains("-ui-testing-login-recovery") {
             _route = State(initialValue: .recovery)
         } else if arguments.contains("-ui-testing-login-password") {
@@ -83,14 +79,7 @@ struct LoginView: View {
             switch route {
             case .chooser:
                 LoginMethodChooser(
-                    // An application under review is the student's only way in,
-                    // so the sign-in screen reports it until a teacher decides.
-                    joinRequest: appState.courseJoinRequest.flatMap {
-                        $0.status == .active ? nil : $0
-                    },
                     onEmail: { route = .emailVerification },
-                    onPhone: { route = .phoneVerification },
-                    onJoin: { showCourseJoin = true },
                     onRecovery: { route = .recovery },
                     onMockLogin: { appState.mockAccountLogin() }
                 )
@@ -99,20 +88,11 @@ struct LoginView: View {
                     initialMethod: .email,
                     onBack: { route = .chooser }
                 )
-            case .phoneVerification:
-                VerificationLoginView(
-                    initialMethod: .phone,
-                    onBack: { route = .chooser }
-                )
             case .accountPassword:
                 AccountPasswordLoginView(onBack: { route = .chooser })
             case .recovery:
                 RecoveryRequestView(onBack: { route = .chooser })
             }
-        }
-        .sheet(isPresented: $showCourseJoin) {
-            CourseJoinSheet()
-                .environmentObject(appState)
         }
     }
 }
@@ -120,10 +100,7 @@ struct LoginView: View {
 private struct LoginMethodChooser: View {
     @Environment(\.locale) private var locale
 
-    var joinRequest: CourseJoinRequest?
     let onEmail: () -> Void
-    let onPhone: () -> Void
-    let onJoin: () -> Void
     let onRecovery: () -> Void
     let onMockLogin: () -> Void
 
@@ -163,14 +140,6 @@ private struct LoginMethodChooser: View {
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
 
-                    if let joinRequest {
-                        JoinRequestEntryPanel(
-                            request: joinRequest,
-                            identifier: "login.joinRequest.entry",
-                            onOpen: onJoin
-                        )
-                    }
-
                     SwissPanel {
                         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
                             Text(copy("选择登录方式", "Choose a sign-in method"))
@@ -186,30 +155,6 @@ private struct LoginMethodChooser: View {
                             )
                             .accessibilityIdentifier("login.email")
 
-                            LoginMethodRow(
-                                title: copy("手机验证码登录", "Sign in with mobile code"),
-                                subtitle: copy("使用已绑定的手机号", "Use your linked mobile number"),
-                                systemImage: "iphone",
-                                action: onPhone
-                            )
-                            .accessibilityIdentifier("login.phone")
-
-                            Divider()
-                                .overlay(BNBUTheme.outlineVariant)
-                                .padding(.vertical, BNBUSpacing.space4)
-
-                            Text(copy("其他方式", "Other options"))
-                                .font(BNBUFont.labelMedium)
-                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-
-                            LoginMethodRow(
-                                title: copy("扫码加入课程", "Join a course by scanning"),
-                                subtitle: copy("打开课程邀请并提交加入申请", "Open a course invitation and apply to join"),
-                                systemImage: "qrcode.viewfinder",
-                                action: onJoin
-                            )
-                            .accessibilityIdentifier("login.courseJoin")
-
 #if BNBU_FIXTURES && DEBUG
                             LoginMethodRow(
                                 title: copy("使用 Mock 用户", "Use Mock user"),
@@ -224,8 +169,8 @@ private struct LoginMethodChooser: View {
 
                     Button(action: onRecovery) {
                         Text(copy(
-                            "无法使用绑定的手机号或邮箱？",
-                            "Can't use your linked mobile number or email?"
+                            "无法使用绑定的邮箱？",
+                            "Can't use your linked email?"
                         ))
                         .font(BNBUFont.labelLarge)
                         .foregroundStyle(BNBUTheme.primary)
@@ -402,25 +347,6 @@ private struct VerificationLoginView: View {
                         }
                     }
 
-                    Button {
-                        method = method == .email ? .phone : .email
-                        contact = ""
-                        code = ""
-                        notice = nil
-                        codeSent = false
-                        resendSeconds = 0
-                    } label: {
-                        Label(
-                            method == .email
-                                ? copy("改用手机验证码登录", "Use mobile verification instead")
-                                : copy("改用邮箱验证码登录", "Use email verification instead"),
-                            systemImage: method == .email ? "iphone" : "envelope"
-                        )
-                        .font(BNBUFont.labelLarge)
-                        .foregroundStyle(BNBUTheme.primary)
-                        .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
-                    }
-                    .buttonStyle(BNBUPressStyle())
                 }
                 .frame(maxWidth: 520)
                 .padding(.horizontal, BNBUSpacing.screen)
@@ -776,7 +702,6 @@ private struct RecoveryRequestView: View {
     @State private var studentID = ""
     @State private var name = ""
     @State private var explanation = ""
-    @State private var newPhone = ""
     @State private var newEmail = ""
     @State private var notice: String?
 
@@ -801,8 +726,8 @@ private struct RecoveryRequestView: View {
                             .font(BNBUFont.headlineSmall)
                             .foregroundStyle(BNBUTheme.onSurface)
                         Text(copy(
-                            "老师或系统管理员会核对你的身份，通过后会把账号换绑到你填写的新联系方式。请留意新手机号或邮箱的通知。",
-                            "A teacher or administrator will verify your identity and then rebind the account to the new contact you provided. Watch for a notice there."
+                            "老师或系统管理员会核对你的身份，通过后会把账号换绑到你填写的新邮箱。请留意邮箱通知。",
+                            "A teacher or administrator will verify your identity and then rebind the account to the new email you provided. Watch for an email notice."
                         ))
                         .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -812,9 +737,6 @@ private struct RecoveryRequestView: View {
                         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
                             DetailFactRow(label: copy("学号", "Student ID"), value: studentID)
                             DetailFactRow(label: copy("姓名", "Name"), value: name)
-                            if !newPhone.isEmpty {
-                                DetailFactRow(label: copy("新手机号", "New mobile"), value: newPhone)
-                            }
                             if !newEmail.isEmpty {
                                 DetailFactRow(label: copy("新邮箱", "New email"), value: newEmail)
                             }
@@ -847,12 +769,12 @@ private struct RecoveryRequestView: View {
                     BNBUBackRow(title: copy("账号恢复", "Account recovery"), action: onBack)
 
                     VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
-                        Text(copy("换手机后无法登录？", "Can't sign in after changing phones?"))
+                        Text(copy("无法使用原邮箱登录？", "Can't use your original email?"))
                             .font(BNBUFont.headlineSmall)
                             .foregroundStyle(BNBUTheme.onSurface)
                         Text(copy(
-                            "填写身份和情况说明，并留下一个当前可用的联系方式。老师或管理员核验后会协助换绑。",
-                            "Provide your identity, an explanation and a contact you can currently use. Staff will verify it and help rebind your account."
+                            "填写身份和情况说明，并留下一个当前可用的新邮箱。老师或管理员核验后会协助换绑。",
+                            "Provide your identity, an explanation and a new email you can currently use. Staff will verify it and help rebind your account."
                         ))
                         .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -881,8 +803,8 @@ private struct RecoveryRequestView: View {
                     recoverySection(
                         title: copy("情况说明", "What happened"),
                         detail: copy(
-                            "简要说明原联系方式无法使用的情况",
-                            "Briefly explain why the original contact details cannot be used."
+                            "简要说明原邮箱无法使用的情况",
+                            "Briefly explain why the original email cannot be used."
                         )
                     ) {
                         RecoveryField(
@@ -894,17 +816,12 @@ private struct RecoveryRequestView: View {
                     }
 
                     recoverySection(
-                        title: copy("新的联系方式", "New contact details"),
+                        title: copy("新邮箱", "New email"),
                         detail: copy(
-                            "至少填写一项，供老师换绑",
-                            "Provide at least one so staff can rebind the account."
+                            "填写可接收验证码的邮箱，供老师换绑",
+                            "Provide an email that can receive verification codes."
                         )
                     ) {
-                        RecoveryField(
-                            title: copy("新手机号", "New mobile number"),
-                            placeholder: copy("请输入新手机号", "Enter a new mobile number"),
-                            text: $newPhone
-                        )
                         RecoveryField(
                             title: copy("新邮箱", "New email"),
                             placeholder: copy("请输入新邮箱", "Enter a new email"),
@@ -964,7 +881,8 @@ private struct RecoveryRequestView: View {
     private var canSubmit: Bool {
         !studentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            !explanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !explanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            ContactBindingRule.isValid(newEmail, for: .email)
     }
 
     private func submit() {
@@ -973,7 +891,7 @@ private struct RecoveryRequestView: View {
             studentNumber: studentID,
             name: name,
             description: explanation,
-            newPhone: newPhone,
+            newPhone: "",
             newEmail: newEmail
         ) else {
             notice = appState.errorMessage

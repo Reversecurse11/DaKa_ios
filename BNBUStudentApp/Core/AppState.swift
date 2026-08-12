@@ -548,11 +548,14 @@ final class AppState: ObservableObject {
             errorMessage = validationMessage
             return false
         }
-        // Registration is only complete once the student can be reached again,
-        // so an unbound contact must never reach the teacher's queue.
-        guard ContactBindingRule.isValid(phone, for: .phone),
-              ContactBindingRule.isValid(email, for: .email) else {
-            errorMessage = BNBUL10n.text("请先完成手机号和邮箱绑定。")
+        guard isAuthenticated else {
+            errorMessage = BNBUL10n.text("请先完成邮箱登录和验证，再加入课程。")
+            return false
+        }
+        // Email is the sole authentication channel. Phone/SMS is retired and a
+        // verified email is required before an enrollment request can proceed.
+        guard ContactBindingRule.isValid(email, for: .email) else {
+            errorMessage = BNBUL10n.text("请先完成邮箱验证。")
             return false
         }
         guard allowWrite() else { return false }
@@ -573,7 +576,7 @@ final class AppState: ObservableObject {
             studentName: name.trimmingCharacters(in: .whitespacesAndNewlines),
             studentNumber: studentNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-            phone: ContactBindingRule.normalizedPhone(phone),
+            phone: "",
             status: .pending,
             reviewComment: "",
             submittedAt: Self.joinRequestTimestampFormatter.string(from: Date()),
@@ -810,6 +813,10 @@ final class AppState: ObservableObject {
         ExerciseMediaDraftRule.canAddPhoto(to: exerciseMediaDrafts)
     }
 
+    var canAddExerciseVideoDraft: Bool {
+        ExerciseMediaDraftRule.canAddVideo(to: exerciseMediaDrafts)
+    }
+
     /// Stores a camera photo as a local draft. Capture is only offered while a
     /// check-in lifecycle exists (active, paused or completed session).
     @discardableResult
@@ -861,6 +868,7 @@ final class AppState: ObservableObject {
         fileURL: URL,
         byteCount: Int,
         durationSeconds: Double?,
+        hasAudioTrack: Bool?,
         thumbnailData: Data?,
         at date: Date = Date()
     ) -> Bool {
@@ -868,6 +876,18 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("请先开始运动，再拍摄打卡凭证。")
             return false
         }
+        guard canAddExerciseVideoDraft else {
+            errorMessage = BNBUL10n.text("最多保存 \(ExerciseMediaDraftRule.maximumVideoDrafts) 个视频草稿。")
+            return false
+        }
+        if let validationMessage = ExerciseVideoRule.validationMessage(
+            durationSeconds: durationSeconds,
+            hasAudioTrack: hasAudioTrack == true
+        ) {
+            errorMessage = validationMessage
+            return false
+        }
+        guard let durationSeconds else { return false }
         let draftID = UUID().uuidString
         let displayName = "exercise-video-\(String(draftID.prefix(6))).mov"
         guard localStore.exerciseMediaDirectoryURL != nil,
@@ -886,6 +906,7 @@ final class AppState: ObservableObject {
             thumbnailData: thumbnailData,
             byteCount: byteCount,
             durationSeconds: durationSeconds,
+            hasAudioTrack: hasAudioTrack,
             capturedAt: date
         )
         return appendExerciseMediaDraft(mediaDraft)
@@ -913,6 +934,7 @@ final class AppState: ObservableObject {
             thumbnailData: nil,
             byteCount: videoData.count,
             durationSeconds: durationSeconds,
+            hasAudioTrack: true,
             capturedAt: date
         )
         return appendExerciseMediaDraft(mediaDraft)
@@ -932,6 +954,11 @@ final class AppState: ObservableObject {
             localStore.removeExerciseMediaFile(fileName: storedFileName)
         }
         exerciseMediaDrafts = updated
+    }
+
+    func removeAllExerciseMediaDrafts() {
+        clearAllExerciseMediaDrafts()
+        errorMessage = nil
     }
 
     /// Abandoning a session clears only the drafts it produced; drafts
@@ -1021,6 +1048,7 @@ final class AppState: ObservableObject {
                     fileName: mediaDraft.fileName,
                     byteCount: mediaDraft.byteCount,
                     durationSeconds: mediaDraft.durationSeconds,
+                    hasAudioTrack: mediaDraft.hasAudioTrack,
                     thumbnailData: mediaDraft.thumbnailData,
                     sourceFileURL: fileURL,
                     source: "运动拍摄"
@@ -1033,6 +1061,7 @@ final class AppState: ObservableObject {
                 fileName: mediaDraft.fileName,
                 byteCount: data.count,
                 durationSeconds: mediaDraft.durationSeconds,
+                hasAudioTrack: mediaDraft.hasAudioTrack,
                 thumbnailData: mediaDraft.thumbnailData,
                 uploadData: data,
                 source: "运动拍摄"
