@@ -1850,9 +1850,9 @@ enum ExemptionProofRule {
 }
 
 enum CheckInInputRule {
-    /// Frozen Contract 1.4 still requires a non-empty description for every
-    /// credit type. The approved 1.5 rule will make COURSE_RELATED optional and
-    /// keep GENERAL required; do not switch before the immutable 1.5 handoff.
+    /// Contract 1.5 requires a nonblank student description for GENERAL and
+    /// permits COURSE_RELATED to omit it. The server remains authoritative and
+    /// normalizes a blank course description to null.
     static let maximumDescriptionLength = 200
 
     static func normalizedDescription(_ note: String, for category: ExerciseCategory) -> String {
@@ -1860,15 +1860,21 @@ enum CheckInInputRule {
         return note.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func validationMessage(note: String) -> String? {
+    static func validationMessage(note: String, for category: ExerciseCategory = .general) -> String? {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
+        if trimmed.isEmpty, category == .general {
             return BNBUL10n.text("请填写运动说明。")
         }
         if trimmed.count > maximumDescriptionLength {
             return BNBUL10n.text("运动说明不能超过 \(maximumDescriptionLength) 个字符。")
         }
         return nil
+    }
+
+    static func contractDescription(_ note: String, for creditType: CreditType) -> String? {
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty, creditType == .courseRelated { return nil }
+        return trimmed
     }
 }
 

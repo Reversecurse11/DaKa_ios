@@ -6123,6 +6123,38 @@
         }
       }
     },
+    "选填" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选填"
+          }
+        }
+      }
+    },
+    "选填，最多 %lld 个字符" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional, up to %lld characters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选填，最多 %lld 个字符"
+          }
+        }
+      }
+    },
     "必填" : {
       "localizations" : {
         "en" : {
@@ -15270,6 +15302,42 @@
             "value" : "麦克风权限未开启"
           }
         }
+      }
+    },
+    "视频最长 15 秒，请重新录制。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Videos can be up to 15 seconds. Record a new video." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视频最长 15 秒，请重新录制。" } }
+      }
+    },
+    "视频必须包含声音，请开启麦克风后重新录制。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The video must include audio. Enable the microphone and record again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视频必须包含声音，请开启麦克风后重新录制。" } }
+      }
+    },
+    "凭证包含位置元数据，请重新拍摄或选择不含位置信息的文件。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This evidence contains location metadata. Capture it again or choose a file without location data." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "凭证包含位置元数据，请重新拍摄或选择不含位置信息的文件。" } }
+      }
+    },
+    "凭证格式不受支持，请重新拍摄。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This evidence format is not supported. Capture it again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "凭证格式不受支持，请重新拍摄。" } }
+      }
+    },
+    "凭证文件校验失败，请重新拍摄后上传。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The evidence file failed validation. Capture and upload it again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "凭证文件校验失败，请重新拍摄后上传。" } }
+      }
+    },
+    "上传会话已过期，请重新上传该凭证。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The upload session expired. Upload this evidence again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上传会话已过期，请重新上传该凭证。" } }
       }
     },
     "默认使用浅色模式；选择跟随系统后会随设备设置切换。" : {

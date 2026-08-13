@@ -123,7 +123,7 @@ enum ExportAvailabilityPolicy {
     }
 }
 
-/// OpenAPI 1.4 publishes IOS as the truthful wire value on every platform-
+/// OpenAPI 1.5 publishes IOS as the truthful wire value on every platform-
 /// bearing client-capability route. This says nothing about remote readiness.
 enum IOSPlatformContractPolicy {
     static let wireValue = "IOS"
@@ -153,7 +153,7 @@ enum ClientCapabilityReadinessPolicy {
     }
 }
 
-/// Contract 1.4 keeps three score sort strings only for 1.3 wire
+/// Contract 1.5 keeps three score sort strings only for 1.3 wire
 /// compatibility. Their runtime order is fixed, so new clients always omit
 /// those parameters instead of suggesting that the value has an effect.
 enum RuntimeQueryContractPolicy {
@@ -234,6 +234,44 @@ enum MediaUploadContractPolicy {
 
     private static func hasValue(_ value: String?) -> Bool {
         value.map { !$0.isEmpty } == true
+    }
+}
+
+enum ExerciseRecordContractPolicy {
+    static func accepts(_ request: APIV1CreateExerciseRecordRequest) -> Bool {
+        guard !request.sessionId.isEmpty,
+              !request.sportType.isEmpty,
+              !request.clientRequestId.isEmpty else { return false }
+        let description = request.description?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if request.creditType == .general {
+            guard let description, !description.isEmpty else { return false }
+        }
+        return description.map { $0.count <= CheckInInputRule.maximumDescriptionLength } ?? true
+    }
+}
+
+/// Stable Contract 1.5 media failures need actionable client copy. In
+/// particular, location metadata is not permission-related: the student must
+/// capture a fresh sanitized item rather than grant location access.
+enum MediaValidationErrorPolicy {
+    static func message(for error: APITransportError) -> String? {
+        guard case .failure(_, let envelope) = error else { return nil }
+        switch envelope.code {
+        case "MEDIA_VIDEO_DURATION_EXCEEDED":
+            return BNBUL10n.text("视频最长 15 秒，请重新录制。")
+        case "MEDIA_AUDIO_TRACK_REQUIRED":
+            return BNBUL10n.text("视频必须包含声音，请开启麦克风后重新录制。")
+        case "MEDIA_LOCATION_METADATA_NOT_ALLOWED":
+            return BNBUL10n.text("凭证包含位置元数据，请重新拍摄或选择不含位置信息的文件。")
+        case "MEDIA_TYPE_NOT_ALLOWED":
+            return BNBUL10n.text("凭证格式不受支持，请重新拍摄。")
+        case "MEDIA_INTEGRITY_MISMATCH":
+            return BNBUL10n.text("凭证文件校验失败，请重新拍摄后上传。")
+        case "MEDIA_UPLOAD_SESSION_EXPIRED":
+            return BNBUL10n.text("上传会话已过期，请重新上传该凭证。")
+        default:
+            return nil
+        }
     }
 }
 

@@ -6,7 +6,7 @@ require "fileutils"
 require "optparse"
 require "yaml"
 
-EXPECTED_SHA256 = "c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b"
+EXPECTED_SHA256 = "f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed"
 ROOT = File.expand_path("..", __dir__)
 DEFAULT_INPUT = File.join(ROOT, "Contracts", "openapi.snapshot.yaml")
 DEFAULT_OUTPUT = File.join(ROOT, "BNBUStudentApp", "Backend", "Generated", "APIV1Models.generated.swift")
@@ -35,11 +35,11 @@ document.fetch("paths").each do |path, path_item|
   end
 end
 
-unless document.dig("info", "version") == "1.4.0-contract" &&
-       document.fetch("paths").length == 104 &&
-       operations.length == 122 &&
-       schemas.length == 275
-  abort("error: OpenAPI 1.4 structural baseline mismatch")
+unless document.dig("info", "version") == "1.5.0-contract" &&
+       document.fetch("paths").length == 106 &&
+       operations.length == 123 &&
+       schemas.length == 279
+  abort("error: OpenAPI 1.5 structural baseline mismatch")
 end
 
 intentionally_disabled_operations = operations
@@ -62,7 +62,6 @@ expected_intentionally_disabled_operation_ids = %w[
   listExports
   openStudentScoreCorrection
   startExerciseLocationTrack
-  updateCurrentUserProfile
   updateLocationPrivacyPolicy
   updateStudent
   withdrawEnrollment
@@ -70,9 +69,9 @@ expected_intentionally_disabled_operation_ids = %w[
 ].freeze
 unless intentionally_disabled_operations.map { |operation| operation.fetch("operationId") } ==
        expected_intentionally_disabled_operation_ids &&
-       system_mode_unsupported_operations.length == 14 &&
-       operations.length - intentionally_disabled_operations.length == 104
-  abort("error: OpenAPI 1.4 operation completion matrix changed")
+       system_mode_unsupported_operations.length == 13 &&
+       operations.length - intentionally_disabled_operations.length == 106
+  abort("error: OpenAPI 1.5 operation completion matrix changed")
 end
 
 client_capability_operations = operations.select do |operation|
@@ -111,7 +110,7 @@ unless default_denied_client_capability_operations.map { |operation| operation.f
            operation["x-default-deny-error"].nil? &&
            operation["x-business-blocker"].nil?
        }
-  abort("error: OpenAPI 1.4 client capability readiness split changed")
+  abort("error: OpenAPI 1.5 client capability readiness split changed")
 end
 
 runtime_query_parameters = {}
@@ -149,7 +148,7 @@ expected_runtime_unsupported_query_parameters = %w[
 ].freeze
 unless runtime_query_parameters == expected_runtime_query_parameters &&
        runtime_unsupported_query_parameters.sort == expected_runtime_unsupported_query_parameters
-  abort("error: OpenAPI 1.4 query errata constraints changed")
+  abort("error: OpenAPI 1.5 query errata constraints changed")
 end
 
 runtime_property_enums = {
@@ -162,7 +161,7 @@ unless runtime_property_enums == {
   ["InitiateMediaUploadRequest", "captureSource"] => %w[IN_APP_CAMERA FILE_PICKER],
   ["MediaAccessRequest", "purpose"] => %w[VIEW_ORIGINAL]
 }
-  abort("error: OpenAPI 1.4 media runtime constraints changed")
+  abort("error: OpenAPI 1.5 media runtime constraints changed")
 end
 runtime_property_type_names = {
   ["InitiateMediaUploadRequest", "captureSource"] => "APIV1InitiateMediaUploadCaptureSource",
@@ -177,7 +176,7 @@ unless wall_time_properties.all? { |schema_name, property_name|
            choices.any? { |choice| choice["type"] == "string" && choice["format"] == "time" } &&
            choices.any? { |choice| choice["type"] == "string" && choice["pattern"] }
        }
-  abort("error: OpenAPI 1.4 organization-local wall-time compatibility changed")
+  abort("error: OpenAPI 1.5 organization-local wall-time compatibility changed")
 end
 
 student_score_status_parameter = operations
@@ -185,7 +184,7 @@ student_score_status_parameter = operations
   &.fetch("parameters", [])
   &.find { |parameter| parameter["name"] == "status" }
 unless student_score_status_parameter&.fetch("description", "")&.include?("Mutually exclusive")
-  abort("error: OpenAPI 1.4 StudentScore status precedence is missing")
+  abort("error: OpenAPI 1.5 StudentScore status precedence is missing")
 end
 
 location_sample = schemas.fetch("LocationSample").fetch("properties")
@@ -379,7 +378,7 @@ lines << "}"
 lines << ""
 [
   [
-    "All operations formally classified as intentionally disabled in the 1.4 release.",
+    "All operations formally classified as intentionally disabled in the 1.5 release.",
     "APIV1IntentionallyDisabledOperation",
     intentionally_disabled_operations
   ],
@@ -389,7 +388,7 @@ lines << ""
     system_mode_unsupported_operations
   ],
   [
-    "All 30 client-capability routes in the 1.4 contract. Membership does not imply remote readiness.",
+    "All 30 client-capability routes in the 1.5 contract. Membership does not imply remote readiness.",
     "APIV1ClientCapability",
     client_capability_operations
   ],

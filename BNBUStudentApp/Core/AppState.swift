@@ -1550,7 +1550,8 @@ final class AppState: ObservableObject {
         checkInSubmissionPhase = .submitting
         defer { checkInSubmissionPhase = .idle }
 
-        if let inputMessage = CheckInInputRule.validationMessage(note: note) {
+        let category: ExerciseCategory = creditType == .courseRelated ? .courseRelated : .general
+        if let inputMessage = CheckInInputRule.validationMessage(note: note, for: category) {
             errorMessage = inputMessage
             return false
         }
@@ -1591,7 +1592,7 @@ final class AppState: ObservableObject {
             proofPhotoCount: photoCount,
             proofVideoCount: videoCount,
             proofFiles: proofAttachments,
-            note: note.isEmpty ? "学生未填写补充说明。" : note,
+            note: CheckInInputRule.contractDescription(note, for: submission.creditType) ?? "",
             sportType: sportType
         )
         workspace.records.insert(record, at: 0)
@@ -2198,7 +2199,7 @@ final class AppState: ObservableObject {
             return false
         }
         guard !proofAttachments.isEmpty, ProofUploadRule.accepts(proofAttachments) else { return false }
-        let submittedNote = note.isEmpty ? "学生未填写补充说明。" : note
+        let submittedNote = CheckInInputRule.contractDescription(note, for: submission.creditType) ?? ""
         let scope = "sport-record:create"
         let fingerprint = checkInFingerprint(
             submission: submission,
@@ -3033,7 +3034,7 @@ final class AppState: ObservableObject {
             "courseId": submission.courseId ?? "",
             "creditType": submission.creditType.apiValue,
             "hours": String(format: "%.1f", submission.hours),
-            "description": note.isEmpty ? "学生未填写补充说明。" : note,
+            "description": CheckInInputRule.contractDescription(note, for: submission.creditType) ?? "",
             "sportType": sportType ?? ""
         ]
     }

@@ -757,7 +757,9 @@ struct CheckInView: View {
                         HStack {
                             Text("运动说明")
                                 .font(BNBUFont.titleMedium)
-                            Text("必填")
+                            Text(verbatim: BNBUL10n.text(
+                                session.category == .courseRelated ? "选填" : "必填"
+                            ))
                                 .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                             Spacer()
@@ -782,7 +784,15 @@ struct CheckInView: View {
                         TextEditor(text: $note)
                             .bnbuInputText()
                             .accessibilityLabel("运动说明")
-                            .accessibilityHint("必填，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符")
+                            .accessibilityHint(session.category == .courseRelated
+                                ? BNBUL10n.formatted(
+                                    "选填，最多 %lld 个字符",
+                                    CheckInInputRule.maximumDescriptionLength
+                                )
+                                : BNBUL10n.formatted(
+                                    "必填，最多 %lld 个字符",
+                                    CheckInInputRule.maximumDescriptionLength
+                                ))
                             .focused($focusedField, equals: .note)
                             .frame(minHeight: 100)
                             .padding(8)
@@ -926,7 +936,10 @@ struct CheckInView: View {
         let creditedHours = session.creditedHours()
         return !appState.hasSubmittedCheckInToday() &&
             (creditedHours == 1 || creditedHours == 2) &&
-            CheckInInputRule.validationMessage(note: submissionNote(for: session)) == nil &&
+            CheckInInputRule.validationMessage(
+                note: submissionNote(for: session),
+                for: session.category
+            ) == nil &&
             !proofAttachments.isEmpty &&
             ProofUploadRule.accepts(proofAttachments) &&
             (proofAttachments.allSatisfy(\.isValidForUpload) || canResumePendingUpload)
@@ -943,7 +956,10 @@ struct CheckInView: View {
         if session.creditedHours() != 1 && session.creditedHours() != 2 {
             return BNBUL10n.text("运动不足 1 小时，不能提交。")
         }
-        if let inputMessage = CheckInInputRule.validationMessage(note: submissionNote(for: session)) {
+        if let inputMessage = CheckInInputRule.validationMessage(
+            note: submissionNote(for: session),
+            for: session.category
+        ) {
             return inputMessage
         }
         if proofAttachments.isEmpty {

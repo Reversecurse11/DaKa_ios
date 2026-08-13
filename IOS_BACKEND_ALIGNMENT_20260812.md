@@ -1,5 +1,7 @@
 # iOS 对齐 Android / Backend 最新规则（2026-08-12）
 
+> 历史记录：本文描述的是 1.5 发布前状态。自 2026-08-13 起开发基线已切换到 Backend 合并提交 `dac49050ebcf7c07eb6966ed061534128627cf33` 的 `1.5.0-contract`（SHA-256 `f0b4916…9bed`）；当前状态以 `IOS_BACKEND_CONTRACT_1_5_20260813.md` 为准。
+
 ## 本轮基线
 
 - iOS 基于协作者最新提交 `527a4e6` 开展，变更保存在隔离分支 `client/ios-backend-v1-alignment-2026-08-12/codex`。

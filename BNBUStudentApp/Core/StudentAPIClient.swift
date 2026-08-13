@@ -143,7 +143,7 @@ enum APITransportError: Error, LocalizedError, Equatable {
         let suffix = requestId.map { " (requestId: \($0))" } ?? ""
         switch self {
         case .failure(_, let envelope):
-            return envelope.message + suffix
+            return (MediaValidationErrorPolicy.message(for: self) ?? envelope.message) + suffix
         case .network:
             return "Network request failed." + suffix
         case .invalidRequest:

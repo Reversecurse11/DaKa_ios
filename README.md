@@ -2,9 +2,9 @@
 
 SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透明化，不包含老师端或管理端功能。
 
-> **现行口径（2026-08-08）**：Local 使用 `http://127.0.0.1:3000/api/v1`；Staging/Production 必须显式注入获批的 HTTPS `/api/v1` 地址，否则构建失败。统一合同来自正式 tag `1.4.0-contract`（tag commit `9dd0654d5947cc8ec7d57e7e6d4f029e88ca3740`，合同源 commit `d368aea5671f7507ca7b1cf61bfa05173855db68`），固定为 122 operations / 275 schemas，SHA-256 为 `c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b`。正式矩阵为 104 项已实现并符合合同、18 项有真实路由但故意关闭、0 项未实现；合同发布不等于具名 Staging 已部署，目前仍没有可供 iOS 联调的正式 HTTPS Base URL。本页后半部分按轮次保留的是历史开发记录，旧远程 IP、旧端口、旧路径和历史测试结论不得再作为构建或部署说明。
+> **现行口径（2026-08-13）**：iOS 开发基线固定到 Backend 合并提交 `dac49050ebcf7c07eb6966ed061534128627cf33` 的 `1.5.0-contract`，合同 SHA-256 为 `f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed`，共 106 paths / 123 operations / 279 schemas，其中 106 项已实现、17 项故意关闭。原 `1.4.0-contract` 快照及 `c5d18…059b` 校验值保存在 `Contracts/history/`，没有被覆盖。Local 使用 `http://127.0.0.1:3000/api/v1`；Staging/Production 必须显式注入获批的 HTTPS `/api/v1` 地址，否则构建失败。代码与合同合并不等于 Staging 已部署，目前仍不能宣称真实环境联调完成。
 
-> **2026-08-12 Android / Backend 规则预对齐**：iOS 已同步邮箱唯一登录、登录后入课、15 秒有声视频、全部保留凭证绑定及移除耐力跑录入入口；图片与视频会在上传前移除位置元数据。正式 OpenAPI 快照仍保持上述不可变 hash。负责人已确认最终规则为 GENERAL 说明必填、COURSE_RELATED 选填，但 iOS 在 `1.5.0-contract` 不可变交接包发布前继续遵守 1.4 的全部必填约束，详情见 [`IOS_BACKEND_ALIGNMENT_20260812.md`](./IOS_BACKEND_ALIGNMENT_20260812.md)。
+> **2026-08-13 Contract 1.5 接入**：课程运动说明已改为选填并以 `null`/省略传输，自主运动继续强制非空；typed 基础层已覆盖邮箱验证码、邮箱绑定、QR 入课、Session、媒体上传/绑定及 Record DTO/请求。现有 SwiftUI 数据源仍在按闭环迁移，不能把基础层覆盖表述成真实页面或 Staging E2E 已完成。媒体位置元数据、超时、缺少音轨、格式和完整性错误均按稳定错误码提供可操作提示。历史预对齐记录见 [`IOS_BACKEND_ALIGNMENT_20260812.md`](./IOS_BACKEND_ALIGNMENT_20260812.md)，本轮记录见 [`IOS_BACKEND_CONTRACT_1_5_20260813.md`](./IOS_BACKEND_CONTRACT_1_5_20260813.md)。
 
 > **主线切换（2026-07-19）**：本目录源自负责人 7.18 回传的反馈版源码（`7.18 Feedback/BNBUStudent-iOS-Source-20260717-Aligned-API-Version.zip`），经编译修复、68 项单元测试、UI 冒烟和真实服务器提交/读回闭环验证后升级为主线。旧 3333/96 主线保留在 `../ios-app-legacy-20260715/`，仅作归档不再开发。2026-07-19 验证记录：`test-evidence-20260718/`；Debug 演示图片凭证已携带真实字节，可在真实服务器模式走通上传与提交（演示视频仍为预览占位）。
 
@@ -15,8 +15,8 @@ SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透�
 - 单一 `URLSession` transport 处理 `data/meta`、五字段错误 envelope、最终 `requestId` 和安全有界重试。
 - 新会话适配器以二维码 `preview → join-capabilities → join` 为学生主链，Access/Refresh 作为一个原子 Keychain 会话保存并支持轮换、撤销与重启恢复。
 - Media 按用途分流：运动材料采用 `initiate → private PUT → confirm → bind`，免测材料按 `enrollmentId` 上传确认后由免测申请原子关联，不调用运动 bind；Session 与 Score 仅消费服务端权威投影。
-- OpenAPI 1.4 将 122 项 operation 生成为 104 项已实现与 18 项故意关闭的正式矩阵；其中 14 项以 `SYSTEM_MODE_UNSUPPORTED` 失败，Client Capabilities 仍为 22 项启用、8 项关闭。关闭响应保留 `requestId`，不会伪造成功，也不会被当成 Staging 可用证据。
-- Contract 1.4 的 16 项勘误生成查询字段运行时闭集；成绩规则、学生成绩和成绩调整的 `sort` 仅为 1.3 兼容字段，iOS 必须省略。教学班本地时间继续按可空字符串解码，兼容 `HH:mm`、`HH:mm:ss` 与旧 RFC3339 time 表示。
+- OpenAPI 1.5 将 123 项 operation 生成为 106 项已实现与 17 项故意关闭的矩阵；其中 13 项以 `SYSTEM_MODE_UNSUPPORTED` 失败，Client Capabilities 仍为 22 项启用、8 项关闭。关闭响应保留 `requestId`，不会伪造成功，也不会被当成 Staging 可用证据。
+- Contract 1.5 继续保留已登记的历史查询兼容边界；成绩规则、学生成绩和成绩调整的 `sort` 仅为 1.3 兼容字段，iOS 必须省略。教学班本地时间继续按可空字符串解码，兼容 `HH:mm`、`HH:mm:ss` 与旧 RFC3339 time 表示。
 - 2026-08-10 同步后端 PR #6/#7 与 Android PR #11/#12：普通文件和 V1 私有签名上传均报告真实网络进度；新 Session 只允许在北京时间 `06:00:00–22:00:00`（含边界）开始，班级窗口只能收窄；服务端 `businessDate` 保持北京业务日期，学生看到的开始、结束和提交时间按设备时区显示。后端返回 `SESSION_ALREADY_COMPLETED` 时提示已达合格时长且不创建本地假 Session。
 - GPS/位置能力在 Release 与 Staging 不编译、不申请定位权限、不持久化原始坐标；旧版会话中的经纬度会在恢复时迁移清洗。Debug 仅保留显式 `-ui-testing-location-check` 权限测试入口。
 - 当前合同已在推送设备、App 版本策略和反馈上下文中允许 `IOS`；客户端如实发送 `IOS`，并以数字 `CFBundleVersion` 查询版本策略，不伪装其他平台，也不把合同可表达性当成远程环境已开放。
@@ -88,6 +88,7 @@ edu.bnbu.student.mvp
 
 ## 当前可证明的验证状态
 
+- 2026-08-13 已通过 Contract 1.5 SHA/生成物门禁、iOS 静态合同审计及 iPhone 17 Pro（iOS 26.5 Simulator）全量 XCTest：151 passed、0 failed；其中包含邮箱验证码/邮箱绑定、课程说明为空的 Record draft→submit 和媒体稳定错误码定向回归。
 - 2026-08-10 已通过 OpenAPI 哈希/生成物门禁、iOS 静态合同审计与 plist 校验。
 - iPhone 17 Pro（iOS 26.5 Simulator）已执行 `BNBUStudentTests`：145 passed、0 failed。
 - Debug XCTest、Staging 模拟器构建与 Release generic iOS 无签名构建均已通过；Staging/Release 仅注入构建校验用 HTTPS `/api/v1` 地址，正式部署域名仍须由学校提供。

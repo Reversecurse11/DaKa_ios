@@ -268,7 +268,9 @@ rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from t
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
 rejectText(checkinView, "selectedDraftIDs", "Students cannot submit only a hand-picked subset of retained evidence");
 requireText(checkinView, "当前保留的全部素材都会上传", "The UI explains complete evidence binding");
-requireText(models, "请填写运动说明", "Frozen Contract 1.4 keeps the sport note required until the 1.5 conditional rule ships");
+requireText(models, "category == .general", "Contract 1.5 keeps GENERAL descriptions required");
+requireText(models, "creditType == .courseRelated { return nil }", "Contract 1.5 sends an omitted/null COURSE_RELATED description");
+requireText(checkinView, 'session.category == .courseRelated ? "选填" : "必填"', "The note requirement follows the Contract 1.5 credit type");
 requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");

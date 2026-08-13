@@ -298,6 +298,79 @@ actor AuthoritativeExerciseSessionGateway {
     }
 }
 
+actor AuthoritativeExerciseRecordGateway {
+    private let auth: BackendAuthSessionController
+    private let intents: IdempotencyIntentRegistry
+
+    init(
+        auth: BackendAuthSessionController,
+        intents: IdempotencyIntentRegistry = IdempotencyIntentRegistry()
+    ) {
+        self.auth = auth
+        self.intents = intents
+    }
+
+    func createDraft(
+        _ request: APIV1CreateExerciseRecordRequest
+    ) async throws -> APIResponse<APIV1ExerciseRecord> {
+        guard ExerciseRecordContractPolicy.accepts(request) else {
+            throw APITransportError.invalidRequest
+        }
+        let scope = "exercise-record:create:\(request.sessionId)"
+        return try await mutate(
+            operationID: "createExerciseRecordDraft",
+            path: "exercise-records",
+            scope: scope,
+            body: request
+        )
+    }
+
+    func get(recordID: String) async throws -> APIResponse<APIV1ExerciseRecord> {
+        let recordID = try APIPath.component(recordID)
+        return try await auth.sendAuthorized(APIRequest(
+            operationID: "getExerciseRecord",
+            method: .get,
+            path: "exercise-records/\(recordID)"
+        ))
+    }
+
+    func submit(
+        recordID: String,
+        request: APIV1SubmitExerciseRecordRequest
+    ) async throws -> APIResponse<APIV1ExerciseRecord> {
+        guard !request.mediaIds.isEmpty, request.expectedVersion > 0 else {
+            throw APITransportError.invalidRequest
+        }
+        let recordID = try APIPath.component(recordID)
+        return try await mutate(
+            operationID: "submitExerciseRecord",
+            path: "exercise-records/\(recordID)/submit",
+            scope: "exercise-record:submit:\(recordID)",
+            body: request
+        )
+    }
+
+    private func mutate<Body: Encodable>(
+        operationID: String,
+        path: String,
+        scope: String,
+        body: Body
+    ) async throws -> APIResponse<APIV1ExerciseRecord> {
+        let response: APIResponse<APIV1ExerciseRecord> = try await auth.sendAuthorized(APIRequest(
+            operationID: operationID,
+            method: .post,
+            path: path,
+            body: try APIRequest.jsonBody(body),
+            idempotencyKey: await intents.key(
+                scope: scope,
+                fingerprint: try IntentFingerprint.make(body)
+            )
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+}
+
 enum ServerSessionDisplayClock {
     /// This value is display-only. Every persisted and submitted duration must
     /// come from the server projection.

@@ -10,18 +10,18 @@ final class BackendFoundationTests: XCTestCase {
     func testContractMetadataAndLocalEnvironmentArePinned() throws {
         XCTAssertEqual(
             APIV1ContractMetadata.sourceSHA256,
-            "c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b"
+            "f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed"
         )
-        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.4.0-contract")
+        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.5.0-contract")
         XCTAssertEqual(APIV1ContractMetadata.apiPrefix, "/api/v1")
-        XCTAssertEqual(APIV1ContractMetadata.pathCount, 104)
-        XCTAssertEqual(APIV1ContractMetadata.operationCount, 122)
-        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 275)
-        XCTAssertEqual(APIV1ContractMetadata.implementedOperationCount, 104)
-        XCTAssertEqual(APIV1ContractMetadata.intentionallyDisabledOperationCount, 18)
-        XCTAssertEqual(APIV1ContractMetadata.systemModeUnsupportedOperationCount, 14)
-        XCTAssertEqual(APIV1IntentionallyDisabledOperation.allCases.count, 18)
-        XCTAssertEqual(APIV1SystemModeUnsupportedOperation.allCases.count, 14)
+        XCTAssertEqual(APIV1ContractMetadata.pathCount, 106)
+        XCTAssertEqual(APIV1ContractMetadata.operationCount, 123)
+        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 279)
+        XCTAssertEqual(APIV1ContractMetadata.implementedOperationCount, 106)
+        XCTAssertEqual(APIV1ContractMetadata.intentionallyDisabledOperationCount, 17)
+        XCTAssertEqual(APIV1ContractMetadata.systemModeUnsupportedOperationCount, 13)
+        XCTAssertEqual(APIV1IntentionallyDisabledOperation.allCases.count, 17)
+        XCTAssertEqual(APIV1SystemModeUnsupportedOperation.allCases.count, 13)
         XCTAssertEqual(APIV1ContractMetadata.clientCapabilityCount, 30)
         XCTAssertEqual(APIV1ContractMetadata.localIntegrationClientCapabilityCount, 22)
         XCTAssertEqual(APIV1ContractMetadata.defaultDeniedClientCapabilityCount, 8)
@@ -266,7 +266,32 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertFalse(IOSPlatformContractPolicy.supportsIOS(.requestStudentSignInCode))
     }
 
-    func testContract14RuntimeQueryErrataAndWallTimeCompatibility() throws {
+    func testContract15MediaValidationErrorsProduceActionableMessages() {
+        for code in [
+            "MEDIA_VIDEO_DURATION_EXCEEDED",
+            "MEDIA_AUDIO_TRACK_REQUIRED",
+            "MEDIA_LOCATION_METADATA_NOT_ALLOWED",
+            "MEDIA_TYPE_NOT_ALLOWED",
+            "MEDIA_INTEGRITY_MISMATCH",
+            "MEDIA_UPLOAD_SESSION_EXPIRED"
+        ] {
+            let error = APITransportError.failure(
+                statusCode: 422,
+                envelope: APIErrorEnvelope(
+                    code: code,
+                    message: "Backend fallback",
+                    details: .object([:]),
+                    requestId: "req-media-15",
+                    timestamp: "2026-08-13T00:00:00Z"
+                )
+            )
+            XCTAssertNotNil(MediaValidationErrorPolicy.message(for: error), code)
+            XCTAssertTrue(error.localizedDescription.contains("req-media-15"), code)
+            XCTAssertFalse(error.localizedDescription.contains("Backend fallback"), code)
+        }
+    }
+
+    func testContract15RuntimeQueryErrataAndWallTimeCompatibility() throws {
         XCTAssertEqual(
             APIV1ListExerciseRecordsSortRuntimeValue.allCases.map(\.rawValue),
             ["businessDate", "-businessDate"]
@@ -622,7 +647,7 @@ final class BackendFoundationTests: XCTestCase {
             profile: APIV1IssueJoinCapabilityRequest(
                 fullName: "Synthetic Student",
                 studentNumber: "SYNTH-001",
-                gender: .other,
+                gender: .female,
                 gradeYear: 2026
             )
         )
@@ -640,6 +665,154 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertEqual(idempotencyKeys.count, 2)
         XCTAssertEqual(store.session?.accessToken, "join-access")
         XCTAssertEqual(store.session?.refreshToken, "join-refresh")
+    }
+
+    func testContract15EmailSignInAndBindingInstallOneRotatingSession() async throws {
+        let store = MemoryAuthSessionStore()
+        let lock = NSLock()
+        var paths: [String] = []
+        var authorizedEmailRequests = 0
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            if request.url?.path.contains("/me/email-verification-challenges") == true,
+               request.value(forHTTPHeaderField: "Authorization") == "Bearer otp-access" {
+                authorizedEmailRequests += 1
+            }
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/auth/student-sign-in-codes":
+                return .json(
+                    status: 202,
+                    headers: ["X-Request-ID": "req-otp-request"],
+                    body: #"{"data":{"challengeId":"challenge-otp","expiresAt":"2026-08-13T05:00:00Z"},"meta":{"requestId":"req-otp-request"}}"#
+                )
+            case "/api/v1/auth/student-sign-in-codes/verify":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-otp-verify"],
+                    body: Self.authEnvelopeJSON(access: "otp-access", refresh: "otp-refresh", requestID: "req-otp-verify")
+                )
+            case "/api/v1/me/email-verification-challenges":
+                return .json(
+                    status: 202,
+                    headers: ["X-Request-ID": "req-email-request"],
+                    body: #"{"data":{"challengeId":"challenge-email","mode":"FIRST_BIND","expiresAt":"2026-08-13T05:00:00Z"},"meta":{"requestId":"req-email-request"}}"#
+                )
+            case "/api/v1/me/email-verification-challenges/challenge-email/verify":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-email-verify"],
+                    body: Self.currentUserEnvelopeJSON(requestID: "req-email-verify")
+                )
+            default:
+                return .json(status: 404, headers: ["X-Request-ID": "req-404"], body: Self.errorJSON(code: "USER_NOT_FOUND", requestID: "req-404"))
+            }
+        }
+        let controller = BackendAuthSessionController(
+            client: StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session),
+            store: store
+        )
+
+        let challenge = try await controller.requestStudentSignInCode(APIV1StudentSignInCodeRequest(
+            organizationCode: "BNBU",
+            account: "student@example.edu",
+            channel: "EMAIL",
+            locale: "zh-CN"
+        ))
+        _ = try await controller.verifyStudentSignInCode(APIV1StudentSignInCodeVerificationRequest(
+            challengeId: challenge.value.challengeId,
+            code: "123456",
+            deviceId: "ios-test-device"
+        ))
+        let emailChallenge = try await controller.requestCurrentUserEmailChallenge(
+            APIV1EmailVerificationChallengeRequest(
+                email: "student@example.edu",
+                locale: "zh-CN",
+                expectedVersion: 1
+            )
+        )
+        let currentUser = try await controller.verifyCurrentUserEmailChallenge(
+            challengeID: emailChallenge.value.challengeId,
+            request: APIV1VerifyEmailChallengeRequest(currentEmailCode: nil, newEmailCode: "654321")
+        )
+
+        XCTAssertEqual(paths, [
+            "/api/v1/auth/student-sign-in-codes",
+            "/api/v1/auth/student-sign-in-codes/verify",
+            "/api/v1/me/email-verification-challenges",
+            "/api/v1/me/email-verification-challenges/challenge-email/verify"
+        ])
+        XCTAssertEqual(authorizedEmailRequests, 2)
+        XCTAssertEqual(store.session?.accessToken, "otp-access")
+        XCTAssertEqual(currentUser.value.user.id, "user-1")
+    }
+
+    func testContract15RecordDraftAndSubmitAllowEmptyCourseDescription() async throws {
+        let store = MemoryAuthSessionStore(session: Self.authSession(access: "record-access", refresh: "record-refresh"))
+        let lock = NSLock()
+        var paths: [String] = []
+        var idempotencyKeys: [String] = []
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            if let key = request.value(forHTTPHeaderField: "Idempotency-Key") { idempotencyKeys.append(key) }
+            lock.unlock()
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer record-access")
+            switch request.url?.path {
+            case "/api/v1/exercise-records":
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-record-create"],
+                    body: Self.exerciseRecordEnvelopeJSON(status: "DRAFT", description: nil, version: 1, requestID: "req-record-create")
+                )
+            case "/api/v1/exercise-records/record-1/submit":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-record-submit"],
+                    body: Self.exerciseRecordEnvelopeJSON(status: "SUBMITTED", description: nil, version: 2, requestID: "req-record-submit")
+                )
+            default:
+                return .json(status: 404, headers: ["X-Request-ID": "req-404"], body: Self.errorJSON(code: "USER_NOT_FOUND", requestID: "req-404"))
+            }
+        }
+        let auth = BackendAuthSessionController(
+            client: StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session),
+            store: store
+        )
+        let gateway = AuthoritativeExerciseRecordGateway(auth: auth)
+        let draft = try await gateway.createDraft(APIV1CreateExerciseRecordRequest(
+            sessionId: "exercise-session-1",
+            creditType: .courseRelated,
+            sportType: "RUNNING",
+            sportName: nil,
+            description: nil,
+            clientRequestId: "ios-record-1"
+        ))
+        let submitted = try await gateway.submit(
+            recordID: draft.value.id,
+            request: APIV1SubmitExerciseRecordRequest(mediaIds: ["media-1"], expectedVersion: draft.value.version)
+        )
+
+        XCTAssertEqual(paths, ["/api/v1/exercise-records", "/api/v1/exercise-records/record-1/submit"])
+        XCTAssertEqual(idempotencyKeys.count, 2)
+        XCTAssertNil(draft.value.description)
+        XCTAssertEqual(submitted.value.status, .submitted)
+
+        do {
+            _ = try await gateway.createDraft(APIV1CreateExerciseRecordRequest(
+                sessionId: "exercise-session-2",
+                creditType: .general,
+                sportType: "RUNNING",
+                sportName: nil,
+                description: nil,
+                clientRequestId: "ios-record-2"
+            ))
+            XCTFail("GENERAL must fail before transport without a nonblank description")
+        } catch let error as APITransportError {
+            XCTAssertEqual(error, .invalidRequest)
+        }
+        XCTAssertEqual(paths.count, 2)
     }
 
     func testKeychainSessionBlobRestartRestoreReuseRevocationAndFailedLogoutClear() async throws {
@@ -911,7 +1084,7 @@ final class BackendFoundationTests: XCTestCase {
         ])
     }
 
-    func testMediaAccessUsesOnlyContract14ViewOriginalPurpose() async throws {
+    func testMediaAccessUsesOnlyContract15ViewOriginalPurpose() async throws {
         let store = MemoryAuthSessionStore(session: Self.authSession(access: "media-access", refresh: "media-refresh"))
         let session = makeSession { request in
             XCTAssertEqual(request.httpMethod, "POST")
@@ -1014,6 +1187,24 @@ final class BackendFoundationTests: XCTestCase {
 
     private static func authEnvelopeJSON(access: String, refresh: String, requestID: String) -> String {
         "{\"data\":\(authSessionJSON(access: access, refresh: refresh)),\"meta\":{\"requestId\":\"\(requestID)\"}}"
+    }
+
+    private static func currentUserEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":{"user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"ACTIVE","primaryEmailMasked":"s***@example.edu","emailVerified":true,"version":2},"studentProfile":null,"teacherProfile":null,"adminProfile":null},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func exerciseRecordEnvelopeJSON(
+        status: String,
+        description: String?,
+        version: Int,
+        requestID: String
+    ) -> String {
+        let descriptionJSON = description.map { "\"\($0)\"" } ?? "null"
+        return """
+        {"data":{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"class-section-1","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"2026-08-13","creditType":"COURSE_RELATED","sportType":"RUNNING","sportName":null,"description":\(descriptionJSON),"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":null,"version":\(version)},"meta":{"requestId":"\(requestID)"}}
+        """
     }
 
     private static func mediaEnvelopeJSON(status: String, requestID: String) -> String {

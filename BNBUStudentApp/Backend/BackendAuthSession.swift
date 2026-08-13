@@ -97,6 +97,82 @@ actor BackendAuthSessionController {
         session.map(AuthSessionState.authenticated) ?? .signedOut
     }
 
+    func requestStudentSignInCode(
+        _ request: APIV1StudentSignInCodeRequest
+    ) async throws -> APIResponse<APIV1StudentSignInCodeAccepted> {
+        let scope = "auth:student-sign-in-code:request"
+        let response: APIResponse<APIV1StudentSignInCodeAccepted> = try await client.send(APIRequest(
+            operationID: "requestStudentSignInCode",
+            method: .post,
+            path: "auth/student-sign-in-codes",
+            body: try APIRequest.jsonBody(request),
+            idempotencyKey: await intents.key(
+                scope: scope,
+                fingerprint: try IntentFingerprint.make(request)
+            )
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func verifyStudentSignInCode(
+        _ request: APIV1StudentSignInCodeVerificationRequest
+    ) async throws -> APIResponse<APIV1AuthSession> {
+        let challengeID = try APIPath.component(request.challengeId)
+        let scope = "auth:student-sign-in-code:verify:\(challengeID)"
+        let response: APIResponse<APIV1AuthSession> = try await client.send(APIRequest(
+            operationID: "verifyStudentSignInCode",
+            method: .post,
+            path: "auth/student-sign-in-codes/verify",
+            body: try APIRequest.jsonBody(request),
+            idempotencyKey: await intents.key(
+                scope: scope,
+                fingerprint: try IntentFingerprint.make(request)
+            )
+        ))
+        try install(response.value)
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func requestCurrentUserEmailChallenge(
+        _ request: APIV1EmailVerificationChallengeRequest
+    ) async throws -> APIResponse<APIV1EmailVerificationChallengeAccepted> {
+        let scope = "me:email-verification:request"
+        let response: APIResponse<APIV1EmailVerificationChallengeAccepted> = try await sendAuthorized(APIRequest(
+            operationID: "requestCurrentUserEmailChallenge",
+            method: .post,
+            path: "me/email-verification-challenges",
+            body: try APIRequest.jsonBody(request),
+            idempotencyKey: await intents.key(
+                scope: scope,
+                fingerprint: try IntentFingerprint.make(request)
+            )
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func verifyCurrentUserEmailChallenge(
+        challengeID: String,
+        request: APIV1VerifyEmailChallengeRequest
+    ) async throws -> APIResponse<APIV1CurrentUserData> {
+        let challengeID = try APIPath.component(challengeID)
+        let scope = "me:email-verification:verify:\(challengeID)"
+        let response: APIResponse<APIV1CurrentUserData> = try await sendAuthorized(APIRequest(
+            operationID: "verifyCurrentUserEmailChallenge",
+            method: .post,
+            path: "me/email-verification-challenges/\(challengeID)/verify",
+            body: try APIRequest.jsonBody(request),
+            idempotencyKey: await intents.key(
+                scope: scope,
+                fingerprint: try IntentFingerprint.make(request)
+            )
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
     @discardableResult
     func restore(now: Date = Date()) async throws -> AuthSessionState {
         guard let restored = try store.load() else {

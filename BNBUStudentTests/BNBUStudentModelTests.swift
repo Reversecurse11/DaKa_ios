@@ -2082,6 +2082,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
         XCTAssertEqual(CheckInInputRule.validationMessage(note: "  \n"), "请填写运动说明。")
+        XCTAssertNil(CheckInInputRule.validationMessage(note: "", for: .courseRelated))
+        XCTAssertNil(CheckInInputRule.validationMessage(note: "  \n", for: .courseRelated))
         XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 200)))
         XCTAssertEqual(
             CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 201)),
@@ -2093,6 +2095,11 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertEqual(
             CheckInInputRule.normalizedDescription("  课程训练说明  ", for: .courseRelated),
+            "课程训练说明"
+        )
+        XCTAssertNil(CheckInInputRule.contractDescription("  \n", for: .courseRelated))
+        XCTAssertEqual(
+            CheckInInputRule.contractDescription("  课程训练说明  ", for: .courseRelated),
             "课程训练说明"
         )
         XCTAssertEqual(BNBUNotificationManager.route(from: ["route": "course"]), .courses)

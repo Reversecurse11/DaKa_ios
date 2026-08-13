@@ -614,16 +614,20 @@ actor RemoteStudentRepository {
         proofFiles: [ProofAttachment] = [],
         idempotencyKey: String? = nil
     ) async throws -> CheckInRecord {
-        if let inputMessage = CheckInInputRule.validationMessage(note: note) {
+        let resolvedCreditType = resolvedCreditType(from: creditType)
+        let category: ExerciseCategory = resolvedCreditType == .courseRelated ? .courseRelated : .general
+        if let inputMessage = CheckInInputRule.validationMessage(note: note, for: category) {
             throw RepositoryError.apiError(inputMessage)
         }
         let proofReferences = try proofFiles.map(canonicalProofReference)
         var body: [String: Any] = [
             "creditType": creditType,
             "hours": hours,
-            "description": note,
             "proofFiles": proofReferences
         ]
+        if let description = CheckInInputRule.contractDescription(note, for: resolvedCreditType) {
+            body["description"] = description
+        }
         if let courseId, !courseId.isEmpty {
             body["courseId"] = courseId
         }
@@ -644,7 +648,7 @@ actor RemoteStudentRepository {
             id: identifier?.id ?? identifier?.recordId ?? UUID().uuidString,
             courseId: courseId,
             taskTitle: taskTitle,
-            creditType: resolvedCreditType(from: creditType),
+            creditType: resolvedCreditType,
             hours: hours,
             submittedAt: RecentTimestamp.justNow,
             validity: .valid,
@@ -652,7 +656,7 @@ actor RemoteStudentRepository {
             proofPhotoCount: 0,
             proofVideoCount: 0,
             proofFiles: [],
-            note: note,
+            note: CheckInInputRule.contractDescription(note, for: resolvedCreditType) ?? "",
             sportType: sportType
         )
     }

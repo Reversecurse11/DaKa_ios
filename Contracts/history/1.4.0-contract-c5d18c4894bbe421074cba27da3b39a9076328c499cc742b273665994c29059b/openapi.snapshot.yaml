@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: BNBU Sports Unified API
-  version: 1.5.0-contract
+  version: 1.4.0-contract
   summary: Unified contract for the sports check-in platform
   license:
     name: UNLICENSED
     identifier: LicenseRef-UNLICENSED
   description: |
-    Cross-client compatibility candidate derived from the immutable published 1.4.0
+    Production-closure candidate derived from the immutable published 1.3.0
     snapshot. It does not prove that every registered capability is
     business-enabled or production-ready.
     Business fields come from 02-data-dictionary.md, state transitions from
@@ -251,7 +251,9 @@ paths:
                     role: TEACHER
                     status: ACTIVE
                     primaryEmailMasked: t***@example.edu
+                    primaryPhoneMasked: null
                     emailVerified: true
+                    phoneVerified: false
                     version: 4
                 meta:
                   requestId: req_01JABC123
@@ -364,20 +366,22 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
-  /me/email-verification-challenges:
-    post:
-      tags: [Current User, Authentication]
-      operationId: requestCurrentUserEmailChallenge
+    patch:
+      tags: [Current User]
+      operationId: updateCurrentUserProfile
       x-access-policy:
-        policyId: USER-EMAIL-VERIFY-REQUEST
+        policyId: USER-SELF-UPDATE
         authentication: ACCESS_TOKEN
         allowedRoles: [STUDENT, TEACHER, ADMIN]
         organizationScope: PRINCIPAL_ORGANIZATION
         resourceScope: SELF
         resourceResolver: PRINCIPAL_USER
         defaultDeny: true
-      summary: Request first email binding or a verified email change
-      description: First binding sends one code to the new email. Rebinding sends separate codes to both the currently verified email and the new email. No phone or SMS channel is accepted.
+      summary: Request a verified change to the authenticated user's contact method
+      description: Transport placeholder only; always returns SYSTEM_MODE_UNSUPPORTED until a verified contact-change flow is approved.
+      x-enabled-by-default: false
+      x-business-blocker: CONTACT_VERIFICATION_GATE
+      x-default-deny-error: SYSTEM_MODE_UNSUPPORTED
       parameters:
         - $ref: '#/components/parameters/RequestIdHeader'
         - $ref: '#/components/parameters/IdempotencyKeyHeader'
@@ -386,47 +390,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmailVerificationChallengeRequest'
-      responses:
-        '202':
-          $ref: '#/components/responses/EmailVerificationChallengeAcceptedSuccess'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/UnprocessableEntity'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-  /me/email-verification-challenges/{challengeId}/verify:
-    post:
-      tags: [Current User, Authentication]
-      operationId: verifyCurrentUserEmailChallenge
-      x-access-policy:
-        policyId: USER-EMAIL-VERIFY-COMPLETE
-        authentication: ACCESS_TOKEN
-        allowedRoles: [STUDENT, TEACHER, ADMIN]
-        organizationScope: PRINCIPAL_ORGANIZATION
-        resourceScope: SELF
-        resourceResolver: PRINCIPAL_USER
-        defaultDeny: true
-      summary: Verify and bind the requested email
-      description: Rebinding requires both the current-email code and new-email code. Success revokes the user's other active sessions while preserving the calling session.
-      parameters:
-        - name: challengeId
-          in: path
-          required: true
-          schema: { $ref: '#/components/schemas/OpaqueId' }
-        - $ref: '#/components/parameters/RequestIdHeader'
-        - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VerifyEmailChallengeRequest'
+              $ref: '#/components/schemas/UpdateCurrentProfileRequest'
       responses:
         '200':
           $ref: '#/components/responses/CurrentUserSuccess'
@@ -434,8 +398,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -2042,6 +2004,7 @@ paths:
                     sportType: RUNNING
                     sportName: null
                     description: 晨跑 5 公里
+                    studentRemark: 操场内圈
                     actualDurationSeconds: 5400
                     pausedDurationSeconds: 600
                     creditedDurationSeconds: 3600
@@ -2277,7 +2240,6 @@ paths:
     post:
       tags: [Media Uploads]
       operationId: initiateMediaUpload
-      x-error-codes: [MEDIA_VIDEO_DURATION_EXCEEDED]
       x-access-policy:
         policyId: MEDIA-UPLOAD-INITIATE
         authentication: ACCESS_TOKEN
@@ -2329,7 +2291,6 @@ paths:
     post:
       tags: [Media Uploads]
       operationId: confirmMediaUpload
-      x-error-codes: [MEDIA_VIDEO_DURATION_EXCEEDED, MEDIA_AUDIO_TRACK_REQUIRED, MEDIA_LOCATION_METADATA_NOT_ALLOWED]
       x-access-policy:
         policyId: MEDIA-UPLOAD-CONFIRM
         authentication: ACCESS_TOKEN
@@ -3618,7 +3579,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/UserPreferencesSuccess' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409': { $ref: '#/components/responses/Conflict' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
     patch:
       tags: [Current User, Client Capabilities]
@@ -4412,13 +4372,6 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/AccountRecoveryAcceptedEnvelope' }
-    EmailVerificationChallengeAcceptedSuccess:
-      description: Email verification challenge acceptance
-      headers:
-        X-Request-ID: { $ref: '#/components/headers/RequestIdResponseHeader' }
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/EmailVerificationChallengeAcceptedEnvelope' }
     HealthSuccess:
       description: Foundation health status
       headers:
@@ -4946,7 +4899,7 @@ components:
       enum: [STUDENT, TEACHER, ADMIN]
     UserStatus:
       type: string
-      enum: [PENDING_CONTACT_BINDING, ACTIVE, LOCKED, DISABLED]
+      enum: [ACTIVE, LOCKED, DISABLED]
     SemesterTermCode:
       type: string
       enum: [FIRST, SECOND, SUMMER]
@@ -4965,10 +4918,6 @@ components:
     Gender:
       type: string
       enum: [MALE, FEMALE, OTHER]
-    CourseJoinGender:
-      type: string
-      enum: [MALE, FEMALE]
-      description: Gender values accepted when a student joins a course by QR invite; OTHER remains available only in the broader historical profile and roster model.
     EnrollmentStatus:
       type: string
       enum: [ACTIVE, WITHDRAWN, REMOVED]
@@ -5524,9 +5473,11 @@ components:
         role: { $ref: '#/components/schemas/UserRole' }
         status: { $ref: '#/components/schemas/UserStatus' }
         primaryEmailMasked: { type: [string, 'null'], maxLength: 254, readOnly: true, description: Masked projection only; plaintext email is never returned. }
+        primaryPhoneMasked: { type: [string, 'null'], maxLength: 32, readOnly: true, description: Masked projection only; plaintext phone is never returned. }
         emailVerified: { type: boolean, readOnly: true, description: Derived from the current contact verification fact; the verification timestamp is not exposed. }
+        phoneVerified: { type: boolean, readOnly: true, description: Derived from the current contact verification fact; the verification timestamp is not exposed. }
         version: { $ref: '#/components/schemas/PositiveVersion' }
-      required: [id, organizationId, role, status, primaryEmailMasked, emailVerified, version]
+      required: [id, organizationId, role, status, primaryEmailMasked, primaryPhoneMasked, emailVerified, phoneVerified, version]
     StudentProfile:
       type: object
       additionalProperties: false
@@ -5537,7 +5488,7 @@ components:
         studentNumber: { type: string, minLength: 1, maxLength: 32 }
         fullName: { type: string, minLength: 1, maxLength: 100 }
         gender: { $ref: '#/components/schemas/Gender' }
-        gradeYear: { type: integer, minimum: 1000, maximum: 9999, description: Four-digit cohort year with stable format-only bounds; it is not restricted by the current date. }
+        gradeYear: { type: integer, minimum: 2000, maximum: 2027, description: Contract-year bound; update annually and enforce the current-year-plus-one rule at runtime. }
         collegeName: { type: [string, 'null'], maxLength: 200 }
         majorName: { type: [string, 'null'], maxLength: 200 }
         administrativeClassName: { type: [string, 'null'], maxLength: 200 }
@@ -5709,7 +5660,7 @@ components:
           oneOf:
             - $ref: '#/components/schemas/Gender'
             - type: 'null'
-        gradeYear: { type: [integer, 'null'], minimum: 1000, maximum: 9999, description: Four-digit cohort year with stable format-only bounds; it is not restricted by the current date. }
+        gradeYear: { type: [integer, 'null'], minimum: 2000, maximum: 2027, description: Contract-year bound; update annually and enforce the current-year-plus-one rule at runtime. }
         collegeName: { type: [string, 'null'], maxLength: 200 }
         majorName: { type: [string, 'null'], maxLength: 200 }
         administrativeClassName: { type: [string, 'null'], maxLength: 200 }
@@ -5811,7 +5762,8 @@ components:
         creditType: { $ref: '#/components/schemas/CreditType' }
         sportType: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
         sportName: { type: [string, 'null'], maxLength: 100 }
-        description: { type: [string, 'null'], minLength: 1, maxLength: 200 }
+        description: { type: string, minLength: 1, maxLength: 200 }
+        studentRemark: { type: [string, 'null'], maxLength: 200 }
         actualDurationSeconds: { $ref: '#/components/schemas/NonNegativeSeconds' }
         pausedDurationSeconds: { $ref: '#/components/schemas/NonNegativeSeconds' }
         creditedDurationSeconds: { $ref: '#/components/schemas/NonNegativeSeconds' }
@@ -5824,7 +5776,7 @@ components:
             - { $ref: '#/components/schemas/StudentCurrentReview' }
             - { type: 'null' }
         version: { $ref: '#/components/schemas/PositiveVersion' }
-      required: [id, organizationId, semesterId, studentId, enrollmentId, classSectionId, courseId, teacherId, sessionId, businessDate, creditType, sportType, sportName, description, actualDurationSeconds, pausedDurationSeconds, creditedDurationSeconds, status, submittedAt, cancelledAt, clientRequestId, currentReview, version]
+      required: [id, organizationId, semesterId, studentId, enrollmentId, classSectionId, courseId, teacherId, sessionId, businessDate, creditType, sportType, sportName, description, studentRemark, actualDurationSeconds, pausedDurationSeconds, creditedDurationSeconds, status, submittedAt, cancelledAt, clientRequestId, currentReview, version]
     MediaEvidence:
       type: object
       additionalProperties: false
@@ -5837,9 +5789,9 @@ components:
         recordId: { oneOf: [{ $ref: '#/components/schemas/OpaqueId' }, { type: 'null' }] }
         businessPurpose: { $ref: '#/components/schemas/MediaBusinessPurpose' }
         mediaType: { $ref: '#/components/schemas/MediaType' }
-        declaredMimeType: { type: string, maxLength: 127, description: Untrusted client declaration captured at initiation. Exercise-record video format is not a business limit. }
+        declaredMimeType: { type: string, maxLength: 127, description: Untrusted client declaration captured at initiation. }
         verifiedMimeType: { type: [string, 'null'], maxLength: 127, description: Null until trusted byte-level processing succeeds. }
-        declaredFileSizeBytes: { type: integer, minimum: 1, description: Untrusted client declaration captured at initiation. It is a transport and integrity fact; exercise-record video has no business size maximum. }
+        declaredFileSizeBytes: { type: integer, minimum: 1, description: Untrusted client declaration captured at initiation. }
         verifiedFileSizeBytes: { type: [integer, 'null'], minimum: 1, description: Null until the private object is read and validated by the server. }
         captureSource: { $ref: '#/components/schemas/CaptureSource', description: EXERCISE_RECORD requires IN_APP_CAMERA. EXEMPTION_APPLICATION permits IN_APP_CAMERA or FILE_PICKER; SYSTEM_IMPORT is not accepted by this student endpoint. }
         uploadStatus: { $ref: '#/components/schemas/MediaUploadStatus' }
@@ -5847,8 +5799,8 @@ components:
         boundAt: { type: [string, 'null'], format: date-time }
         declaredContentSha256: { oneOf: [{ $ref: '#/components/schemas/Sha256' }, { type: 'null' }], description: Optional untrusted client declaration. }
         verifiedContentSha256: { oneOf: [{ $ref: '#/components/schemas/Sha256' }, { type: 'null' }], description: The only public integrity hash; written only after trusted byte-level validation succeeds and null beforehand. }
-        declaredDurationSeconds: { type: [integer, 'null'], minimum: 1, description: Untrusted client declaration; required for VIDEO and null for IMAGE. EXERCISE_RECORD VIDEO is limited to 15 cumulative recorded seconds. }
-        verifiedDurationSeconds: { type: [integer, 'null'], minimum: 1, description: Trusted parsed duration for VIDEO and null for IMAGE or before processing; this value finally enforces the 15-second exercise-video cap. }
+        declaredDurationSeconds: { type: [integer, 'null'], minimum: 1, description: Untrusted client declaration; required for VIDEO and null for IMAGE. }
+        verifiedDurationSeconds: { type: [integer, 'null'], minimum: 1, description: Trusted parsed duration for VIDEO and null for IMAGE or before processing. }
         version: { $ref: '#/components/schemas/PositiveVersion' }
       required: [id, organizationId, ownerStudentId, sessionId, enrollmentId, recordId, businessPurpose, mediaType, declaredMimeType, verifiedMimeType, declaredFileSizeBytes, verifiedFileSizeBytes, captureSource, uploadStatus, uploadedAt, boundAt, declaredContentSha256, verifiedContentSha256, declaredDurationSeconds, verifiedDurationSeconds, version]
       description: Declared and verified facts are intentionally distinct. storageKey and thumbnailStorageKey are never exposed.
@@ -6147,7 +6099,7 @@ components:
       additionalProperties: false
       required: [account, password]
       properties:
-        account: { type: string, format: email, minLength: 3, maxLength: 254 }
+        account: { type: string, minLength: 1, maxLength: 254 }
         password: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
     RefreshRequest:
       type: object
@@ -6161,22 +6113,18 @@ components:
       required: [refreshToken]
       properties:
         refreshToken: { type: string, minLength: 1, writeOnly: true }
-    EmailVerificationChallengeRequest:
+    UpdateCurrentProfileRequest:
       type: object
       additionalProperties: false
-      required: [email, locale, expectedVersion]
+      anyOf:
+        - required: [primaryEmail]
+        - required: [primaryPhone]
       properties:
-        email: { type: string, format: email, minLength: 3, maxLength: 254, writeOnly: true }
-        locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
+        primaryEmail: { type: [string, 'null'], format: email, maxLength: 254 }
+        primaryPhone: { type: [string, 'null'], maxLength: 32 }
         expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
-    VerifyEmailChallengeRequest:
-      type: object
-      additionalProperties: false
-      required: [newEmailCode]
-      properties:
-        currentEmailCode: { type: string, pattern: '^\d{4,10}$', writeOnly: true }
-        newEmailCode: { type: string, pattern: '^\d{4,10}$', writeOnly: true }
-      description: currentEmailCode is required only when changing an already verified email.
+      required: [expectedVersion]
+      description: Contact-change transport placeholder; it must fail closed with SYSTEM_MODE_UNSUPPORTED until a verified contact-change flow is approved.
     UpdateStudentRequest:
       type: object
       additionalProperties: false
@@ -6184,7 +6132,7 @@ components:
       properties:
         fullName: { type: string, minLength: 1, maxLength: 100 }
         gender: { $ref: '#/components/schemas/Gender' }
-        gradeYear: { type: integer, minimum: 1000, maximum: 9999, description: Four-digit cohort year with stable format-only bounds; it is not restricted by the current date. }
+        gradeYear: { type: integer, minimum: 2000, maximum: 2027, description: Contract-year bound; update annually and enforce the current-year-plus-one rule at runtime. }
         collegeName: { type: [string, 'null'], maxLength: 200 }
         majorName: { type: [string, 'null'], maxLength: 200 }
         administrativeClassName: { type: [string, 'null'], maxLength: 200 }
@@ -6275,8 +6223,8 @@ components:
       properties:
         fullName: { type: string, minLength: 1, maxLength: 100 }
         studentNumber: { type: string, minLength: 1, maxLength: 32 }
-        gender: { $ref: '#/components/schemas/CourseJoinGender' }
-        gradeYear: { type: integer, minimum: 1000, maximum: 9999, description: Four-digit cohort year with stable format-only bounds; it is not restricted by the current date. }
+        gender: { $ref: '#/components/schemas/Gender' }
+        gradeYear: { type: integer, minimum: 2000, maximum: 2027, description: Contract-year bound; update annually and enforce the current-year-plus-one rule at runtime. }
     RosterFieldMapping:
       type: object
       additionalProperties: false
@@ -6359,27 +6307,15 @@ components:
     CreateExerciseRecordRequest:
       type: object
       additionalProperties: false
-      required: [sessionId, creditType, sportType, clientRequestId]
+      required: [sessionId, creditType, sportType, description, clientRequestId]
       properties:
         sessionId: { $ref: '#/components/schemas/OpaqueId' }
         creditType: { $ref: '#/components/schemas/CreditType' }
         sportType: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
         sportName: { type: [string, 'null'], maxLength: 100 }
-        description:
-          description: Student-authored explanation. Required and nonblank for GENERAL; optional for COURSE_RELATED, where omitted, null, or blank input is normalized to null.
-          oneOf:
-            - { type: string, minLength: 1, maxLength: 200 }
-            - { type: 'null' }
+        description: { type: string, minLength: 1, maxLength: 200 }
+        studentRemark: { type: [string, 'null'], maxLength: 200 }
         clientRequestId: { type: string, minLength: 1, maxLength: 64 }
-      allOf:
-        - if:
-            properties:
-              creditType: { const: GENERAL }
-            required: [creditType]
-          then:
-            properties:
-              description: { type: string, minLength: 1, maxLength: 200, pattern: '.*\S.*' }
-            required: [description]
     UpdateExerciseRecordRequest:
       type: object
       additionalProperties: false
@@ -6388,18 +6324,15 @@ components:
         creditType: { $ref: '#/components/schemas/CreditType' }
         sportType: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
         sportName: { type: [string, 'null'], maxLength: 100 }
-        description:
-          description: Omit to preserve the current value. Null or blank is accepted only when the resulting creditType is COURSE_RELATED.
-          oneOf:
-            - { type: string, minLength: 1, maxLength: 200 }
-            - { type: 'null' }
+        description: { type: string, minLength: 1, maxLength: 200 }
+        studentRemark: { type: [string, 'null'], maxLength: 200 }
         expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
     SubmitExerciseRecordRequest:
       type: object
       additionalProperties: false
       required: [mediaIds, expectedVersion]
       properties:
-        mediaIds: { type: array, minItems: 1, uniqueItems: true, items: { $ref: '#/components/schemas/OpaqueId' }, description: Complete set of AVAILABLE EXERCISE_RECORD media captured in-app for this session. Omitting any eligible item is rejected. }
+        mediaIds: { type: array, minItems: 1, uniqueItems: true, items: { $ref: '#/components/schemas/OpaqueId' } }
         expectedVersion: { $ref: '#/components/schemas/PositiveVersion' }
     InitiateMediaUploadRequest:
       type: object
@@ -6410,11 +6343,11 @@ components:
         enrollmentId: { $ref: '#/components/schemas/OpaqueId' }
         businessPurpose: { $ref: '#/components/schemas/MediaBusinessPurpose' }
         mediaType: { $ref: '#/components/schemas/MediaType' }
-        mimeType: { type: string, minLength: 1, maxLength: 127, enum: [image/jpeg, image/png, video/mp4, video/quicktime, video/3gpp, video/webm], x-transport-constraint: true, description: Untrusted transport declaration. The server verifies the actual bytes and container; clients must not substitute video/mp4 when the browser reports an empty or different MIME. }
-        fileSizeBytes: { type: integer, minimum: 1, description: Exact upload length used for transport integrity. No business maximum applies to EXERCISE_RECORD VIDEO. }
+        mimeType: { type: string, minLength: 1, maxLength: 127 }
+        fileSizeBytes: { type: integer, minimum: 1 }
         captureSource: { $ref: '#/components/schemas/CaptureSource', x-runtime-enum: [IN_APP_CAMERA, FILE_PICKER], description: EXERCISE_RECORD requires IN_APP_CAMERA. EXEMPTION_APPLICATION permits IN_APP_CAMERA or FILE_PICKER; SYSTEM_IMPORT is not accepted by this student endpoint. }
         declaredContentSha256: { oneOf: [{ $ref: '#/components/schemas/Sha256' }, { type: 'null' }], description: Optional and untrusted client declaration; it is not an integrity fact. }
-        durationSeconds: { type: [integer, 'null'], minimum: 1, description: Required and positive for VIDEO; omit or null for IMAGE. EXERCISE_RECORD VIDEO has a fixed maximum of 15 cumulative recorded seconds; pauses are excluded. Runtime validation enforces the media-type and purpose conditions. }
+        durationSeconds: { type: [integer, 'null'], minimum: 1, description: Required and positive for VIDEO; omit or null for IMAGE. Runtime validation enforces the media-type condition. }
       oneOf:
         - properties:
             businessPurpose: { const: EXERCISE_RECORD }
@@ -6426,17 +6359,7 @@ components:
             enrollmentId: { $ref: '#/components/schemas/OpaqueId' }
           required: [enrollmentId]
           not: { properties: { sessionId: {} }, required: [sessionId] }
-      allOf:
-        - if:
-            properties:
-              businessPurpose: { const: EXERCISE_RECORD }
-              mediaType: { const: VIDEO }
-            required: [businessPurpose, mediaType]
-          then:
-            properties:
-              durationSeconds: { type: integer, minimum: 1, maximum: 15 }
-            required: [durationSeconds]
-      description: EXERCISE_RECORD media is scoped to an owned ExerciseSession. EXEMPTION_APPLICATION media is scoped to an owned active Enrollment before atomic association with an application draft. No location permission or GPS data is required; uploaded JPEG/PNG/ISO/WebM media containing recognized location metadata is rejected.
+      description: EXERCISE_RECORD media is scoped to an owned ExerciseSession. EXEMPTION_APPLICATION media is scoped to an owned active Enrollment before atomic association with an application draft.
     ConfirmMediaUploadRequest:
       type: object
       additionalProperties: false
@@ -6805,8 +6728,8 @@ components:
       required: [organizationCode, account, channel, locale]
       properties:
         organizationCode: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,31}$' }
-        account: { type: string, format: email, minLength: 3, maxLength: 254, writeOnly: true }
-        channel: { type: string, enum: [EMAIL], x-transport-constraint: true }
+        account: { type: string, minLength: 1, maxLength: 254, writeOnly: true }
+        channel: { type: string, enum: [EMAIL, PHONE], x-transport-constraint: true }
         locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
       description: Organization-scoped input. The response never reveals whether a STUDENT account exists.
     StudentSignInCodeAccepted:
@@ -6831,9 +6754,9 @@ components:
       required: [organizationCode, account, requestedRole, channel, locale]
       properties:
         organizationCode: { type: string, pattern: '^[A-Z0-9][A-Z0-9_-]{1,31}$' }
-        account: { type: string, format: email, minLength: 3, maxLength: 254, writeOnly: true }
+        account: { type: string, minLength: 1, maxLength: 254, writeOnly: true }
         requestedRole: { type: string, enum: [TEACHER, ADMIN], x-transport-constraint: true }
-        channel: { type: string, enum: [EMAIL], x-transport-constraint: true }
+        channel: { type: string, enum: [EMAIL, PHONE], x-transport-constraint: true }
         locale: { type: string, enum: [zh-CN, en], x-transport-constraint: true }
       description: Enumeration-safe recovery request for pre-provisioned TEACHER or ADMIN accounts only.
     AccountRecoveryAccepted:
@@ -6852,14 +6775,6 @@ components:
         recoveryId: { $ref: '#/components/schemas/OpaqueId' }
         verificationCode: { type: string, pattern: '^\d{4,10}$', writeOnly: true }
         newPassword: { type: string, minLength: 12, maxLength: 256, writeOnly: true }
-    EmailVerificationChallengeAccepted:
-      type: object
-      additionalProperties: false
-      required: [challengeId, mode, expiresAt]
-      properties:
-        challengeId: { $ref: '#/components/schemas/OpaqueId' }
-        mode: { type: string, enum: [FIRST_BIND, REBIND], x-transport-constraint: true }
-        expiresAt: { type: string, format: date-time }
     Notification:
       type: object
       additionalProperties: false
@@ -7177,11 +7092,6 @@ components:
       additionalProperties: false
       required: [data, meta]
       properties: { data: { $ref: '#/components/schemas/AccountRecoveryAccepted' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
-    EmailVerificationChallengeAcceptedEnvelope:
-      type: object
-      additionalProperties: false
-      required: [data, meta]
-      properties: { data: { $ref: '#/components/schemas/EmailVerificationChallengeAccepted' }, meta: { $ref: '#/components/schemas/SuccessMeta' } }
     ExemptionApplicationEnvelope:
       type: object
       required: [data, meta]
