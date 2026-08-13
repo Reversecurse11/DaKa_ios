@@ -44,11 +44,33 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(BNBUL10n.dynamicText("春季学期"), "Spring Semester")
         XCTAssertEqual(BNBUL10n.dynamicText("开始时间"), "Start Time")
         XCTAssertEqual(BNBUL10n.dynamicText("可计学时"), "Eligible Hours")
+        XCTAssertEqual(BNBUL10n.dynamicText("课程相关运动打卡"), "Course Exercise Check-in")
+        XCTAssertEqual(BNBUL10n.dynamicText("图片"), "Image")
+        XCTAssertEqual(
+            BNBUL10n.dynamicText("图片哈希命中历史记录，本次不计入有效学时。"),
+            "This image matches a previous record, so these hours do not count."
+        )
         XCTAssertEqual(4.0.localizedHourText, "4 hr")
         XCTAssertEqual(
             BNBUL10n.formatted("还差 %@", 4.0.localizedHourText),
             "4 hr remaining"
         )
+        let record = CheckInRecord(
+            id: "localized-proof-summary",
+            courseId: nil,
+            taskTitle: "课程相关运动打卡",
+            creditType: .courseRelated,
+            hours: 2,
+            submittedAt: "2026-08-13T08:00:00Z",
+            proofSummary: "2 张图片，1 个短视频",
+            proofPhotoCount: 2,
+            proofVideoCount: 1,
+            proofFiles: [],
+            note: ""
+        )
+        XCTAssertEqual(record.localizedProofSummary, "2 photos, 1 short video")
+        XCTAssertEqual(record.localizedTaskTitle, "Course Exercise Check-in")
+        XCTAssertEqual(StudentRecordTimeDisplay.dateTime("刚刚"), "Just now")
 
         BNBUL10n.localeOverride = Locale(identifier: "zh-Hans")
         XCTAssertEqual(BNBUL10n.dynamicText("正常"), "正常")
@@ -2048,6 +2070,10 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         let languageSettings = BNBULanguageSettings(defaults: consentDefaults)
         XCTAssertEqual(languageSettings.mode, .system)
+        XCTAssertEqual(
+            consentDefaults.string(forKey: BNBULanguage.defaultsKey),
+            BNBULanguage.system.rawValue
+        )
         languageSettings.select(rawValue: BNBULanguage.english.rawValue)
         XCTAssertEqual(languageSettings.mode, .english)
         XCTAssertEqual(

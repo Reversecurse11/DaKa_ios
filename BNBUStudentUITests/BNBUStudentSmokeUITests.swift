@@ -753,12 +753,38 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Sports credit progress"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Credit breakdown"].exists)
-        XCTAssertTrue(
-            app.staticTexts.containing(
-                NSPredicate(format: "label CONTAINS %@", "4 hr")
-            ).firstMatch.exists
-        )
+        XCTAssertTrue(app.staticTexts["Remain 4 hr"].exists)
         XCTAssertFalse(app.staticTexts["体育学时进度"].exists)
+
+        tabButton("tab.checkin").tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
+        app.buttons["Records"].firstMatch.tap()
+        assertNoHanText(context: "English record list")
+        scrollToAndTap(app.buttons["record.r1.open"])
+        XCTAssertTrue(screen("screen.recordDetail").waitForExistence(timeout: 3))
+        for text in [
+            "Record Details",
+            "Course Exercise Check-in",
+            "Proof Summary",
+            "2 photos, 1 short video",
+            "Ran on the track for a full 2-hour session."
+        ] {
+            XCTAssertTrue(app.staticTexts[text].waitForExistence(timeout: 2), text)
+        }
+        XCTAssertFalse(app.staticTexts["课程相关运动打卡"].exists)
+        XCTAssertFalse(app.staticTexts["2 张图片，1 个短视频"].exists)
+        XCTAssertFalse(app.staticTexts["操场跑步，全程计时 2 小时。"].exists)
+        assertNoHanText(context: "English valid record detail")
+
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(screen("screen.checkin").waitForExistence(timeout: 3))
+        scrollToAndTap(app.buttons["record.r4.open"])
+        XCTAssertTrue(screen("screen.recordDetail").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Record Marked Invalid"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.staticTexts["This image matches a previous record, so these hours do not count."].exists
+        )
+        assertNoHanText(context: "English invalid record detail")
 
         tabButton("tab.grades").tap()
         XCTAssertTrue(screen("screen.grades").waitForExistence(timeout: 3))
@@ -1453,6 +1479,27 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         let exemptionCard = app.buttons["profile.exemption.button"]
         XCTAssertTrue(exemptionCard.waitForExistence(timeout: 3), file: file, line: line)
         XCTAssertFalse(app.buttons["profile.endurance.button"].exists, file: file, line: line)
+    }
+
+    private func assertNoHanText(
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let labelsWithHan = app.staticTexts.allElementsBoundByIndex
+            .map(\.label)
+            .filter { label in
+                label.unicodeScalars.contains { scalar in
+                    (0x3400...0x9FFF).contains(Int(scalar.value)) ||
+                        (0xF900...0xFAFF).contains(Int(scalar.value))
+                }
+            }
+        XCTAssertTrue(
+            labelsWithHan.isEmpty,
+            "\(context) still contains Chinese client text: \(labelsWithHan)",
+            file: file,
+            line: line
+        )
     }
 
     private func scrollToAndTap(_ element: XCUIElement, maxSwipes: Int = 6) {

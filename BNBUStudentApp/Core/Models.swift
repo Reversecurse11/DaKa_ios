@@ -676,7 +676,10 @@ enum StudentRecordTimeDisplay {
               !value.isEmpty else {
             return nil
         }
-        guard !RecentTimestamp.isJustNow(value), let instant = instant(from: value) else {
+        if RecentTimestamp.isJustNow(value) {
+            return RecentTimestamp.justNow
+        }
+        guard let instant = instant(from: value) else {
             return value
         }
         let formatter = DateFormatter()
@@ -1673,6 +1676,53 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
 
     var studentLocalEndedAt: String? {
         StudentRecordTimeDisplay.dateTime(endedAt)
+    }
+
+    /// Known app/fixture values follow the selected UI language. Values not
+    /// owned by the client (for example a server-authored task or student note)
+    /// are returned unchanged by `dynamicText`.
+    var localizedTaskTitle: String {
+        BNBUL10n.dynamicText(taskTitle)
+    }
+
+    var localizedNote: String {
+        BNBUL10n.dynamicText(note)
+    }
+
+    var localizedInvalidReason: String {
+        BNBUL10n.dynamicText(
+            invalidReason ?? "老师已将该记录标记为无效，本次学时不计入。"
+        )
+    }
+
+    var hasStudentNote: Bool {
+        !note.isEmpty && note != "学生未填写补充说明。" && note != "No additional note was provided."
+    }
+
+    /// Counts are client-owned presentation data and can be localized safely.
+    /// If an older server record only has a free-form summary, translate known
+    /// app/fixture values and otherwise preserve the server text verbatim.
+    var localizedProofSummary: String {
+        let usesChinese = BNBUL10n.locale.identifier.hasPrefix("zh")
+        var parts: [String] = []
+        if proofPhotoCount > 0 {
+            parts.append(
+                usesChinese
+                    ? "\(proofPhotoCount) 张图片"
+                    : "\(proofPhotoCount) \(proofPhotoCount == 1 ? "photo" : "photos")"
+            )
+        }
+        if proofVideoCount > 0 {
+            parts.append(
+                usesChinese
+                    ? "\(proofVideoCount) 个短视频"
+                    : "\(proofVideoCount) short \(proofVideoCount == 1 ? "video" : "videos")"
+            )
+        }
+        guard !parts.isEmpty else {
+            return BNBUL10n.dynamicText(proofSummary)
+        }
+        return parts.joined(separator: usesChinese ? "，" : ", ")
     }
 
     private static func proofSummary(for proofFiles: [ProofAttachment]) -> String {

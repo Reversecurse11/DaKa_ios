@@ -152,7 +152,7 @@ struct DashboardView: View {
                     .foregroundStyle(BNBUTheme.onSurface)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HomeStatusPill(
-                    text: appState.workspace.progress.status,
+                    text: progressStatusText,
                     emphasized: !hasHourRisk
                 )
             }
@@ -213,6 +213,13 @@ struct DashboardView: View {
             "距离本学期目标还差 %@",
             appState.totalRemaining.localizedHourText
         )
+    }
+
+    private var progressStatusText: String {
+        if locale.identifier.hasPrefix("en"), appState.courseRemaining > 0 {
+            return "Remain \(appState.courseRemaining.localizedHourText)"
+        }
+        return appState.workspace.progress.status
     }
 
     private var progressBreakdown: some View {

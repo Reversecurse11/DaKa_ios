@@ -903,6 +903,7 @@ struct CheckInView: View {
                     RecordCard(record: record, courseTitle: courseTitle(for: record))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("record.\(record.id).open")
             }
         }
     }

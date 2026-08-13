@@ -82,6 +82,7 @@
       }
     },
     "%@ · %@ · %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1484,6 +1485,23 @@
         }
       }
     },
+    "体育馆力量训练。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strength training in the gym."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "体育馆力量训练。"
+          }
+        }
+      }
+    },
     "你好，%@" : {
       "localizations" : {
         "en" : {
@@ -1709,7 +1727,6 @@
       }
     },
     "健身" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3386,6 +3403,23 @@
         }
       }
     },
+    "图片" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片"
+          }
+        }
+      }
+    },
     "图片 / 视频凭证" : {
       "localizations" : {
         "en" : {
@@ -3415,6 +3449,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "图片凭证"
+          }
+        }
+      }
+    },
+    "图片哈希命中历史记录，本次不计入有效学时。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image matches a previous record, so these hours do not count."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片哈希命中历史记录，本次不计入有效学时。"
+          }
+        }
+      }
+    },
+    "图片处理失败，请重新拍摄。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image processing failed. Take the photo again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片处理失败，请重新拍摄。"
           }
         }
       }
@@ -3871,6 +3938,23 @@
         }
       }
     },
+    "媒体文件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media File"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "媒体文件"
+          }
+        }
+      }
+    },
     "学号" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4027,6 +4111,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "学生性别尚未同步，暂时无法匹配耐力跑项目。"
+          }
+        }
+      }
+    },
+    "学生未填写补充说明。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No additional note was provided."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学生未填写补充说明。"
           }
         }
       }
@@ -7250,6 +7351,23 @@
         }
       }
     },
+    "拍摄占位" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera Placeholder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拍摄占位"
+          }
+        }
+      }
+    },
     "拍摄完成后，照片和视频会立即显示在这里。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7606,6 +7724,23 @@
         }
       }
     },
+    "摄像头" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摄像头"
+          }
+        }
+      }
+    },
     "摄像头受系统限制" : {
       "localizations" : {
         "en" : {
@@ -7650,6 +7785,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "操作过于频繁，请稍后再试。"
+          }
+        }
+      }
+    },
+    "操场跑步，全程计时 2 小时。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ran on the track for a full 2-hour session."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操场跑步，全程计时 2 小时。"
+          }
+        }
+      }
+    },
+    "操场跑步记录。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Track running record."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操场跑步记录。"
           }
         }
       }
@@ -8554,6 +8723,23 @@
         }
       }
     },
+    "服务器" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器"
+          }
+        }
+      }
+    },
     "服务器：学生成绩接口" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9390,6 +9576,23 @@
         }
       }
     },
+    "校队身份抵扣" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varsity Team Credit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校队身份抵扣"
+          }
+        }
+      }
+    },
     "核对信息后再加入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9899,7 +10102,6 @@
       }
     },
     "游泳" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10484,6 +10686,23 @@
         }
       }
     },
+    "相册" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相册"
+          }
+        }
+      }
+    },
     "相册使用系统选择器，仅共享您选中的项目；拍摄时才会请求摄像头权限。" : {
       "localizations" : {
         "en" : {
@@ -10733,6 +10952,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "社团免打卡"
+          }
+        }
+      }
+    },
+    "视频" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频"
           }
         }
       }
@@ -11036,7 +11272,6 @@
       }
     },
     "篮球" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11274,6 +11509,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "组织认证与抵扣记录"
+          }
+        }
+      }
+    },
+    "组织认证抵扣，B 类最多计 10 小时。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified organization credit; up to 10 hours count toward Category B."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "组织认证抵扣，B 类最多计 10 小时。"
           }
         }
       }
@@ -11561,7 +11813,6 @@
       }
     },
     "羽毛球" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11577,6 +11828,23 @@
         }
       }
     },
+    "羽毛球队官方名单" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Official badminton team roster"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "羽毛球队官方名单"
+          }
+        }
+      }
+    },
     "老师会提供课程二维码或邀请码。扫码或手动输入后，即可找到对应课程。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11584,6 +11852,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your teacher provides a course QR code or invitation code. Scan it or enter it manually to find the right course."
+          }
+        }
+      }
+    },
+    "老师已将该记录标记为无效，本次学时不计入。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The teacher marked this record invalid. These hours do not count."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "老师已将该记录标记为无效，本次学时不计入。"
           }
         }
       }
@@ -11678,6 +11963,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Self-Directed"
+          }
+        }
+      }
+    },
+    "自主运动打卡" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Independent Exercise Check-in"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自主运动打卡"
           }
         }
       }
@@ -13208,6 +13510,23 @@
         }
       }
     },
+    "课程相关运动打卡" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Course Exercise Check-in"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "课程相关运动打卡"
+          }
+        }
+      }
+    },
     "课程相关运动由课程安排决定，不能自行更改。" : {
       "localizations" : {
         "en" : {
@@ -13399,7 +13718,6 @@
       }
     },
     "足球" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13416,7 +13734,6 @@
       }
     },
     "跑步" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13702,6 +14019,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运动打卡动态演示：展示定位、计时、暂停和继续运动。"
+          }
+        }
+      }
+    },
+    "运动拍摄" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise Capture"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动拍摄"
           }
         }
       }
@@ -14874,7 +15208,6 @@
       }
     },
     "骑行" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
