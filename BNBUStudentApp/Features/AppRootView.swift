@@ -64,11 +64,6 @@ struct AppRootView: View {
                 .tag(tab)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .bnbuOpenDestination)) { notification in
-            if let destination = notification.object as? AppTab {
-                selectedTab = destination
-            }
-        }
         .onChange(of: appState.opensExemptionCentre) { _, isRequested in
             if isRequested { selectedTab = .profile }
         }

@@ -4,6 +4,172 @@
     "" : {
 
     },
+    "为保护隐私，本次仅提交问题类型、描述和基础 App/系统版本；不会上传截图、联系方式、日志或设备标识。处理回复会显示在反馈记录中。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "To protect your privacy, only the category, description, and basic app/OS versions are submitted. Screenshots, contact details, logs, and device identifiers are not uploaded. Replies appear in Feedback History." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "为保护隐私，本次仅提交问题类型、描述和基础 App/系统版本；不会上传截图、联系方式、日志或设备标识。处理回复会显示在反馈记录中。" } }
+      }
+    },
+    "功能建议" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feature suggestion" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "功能建议" } }
+      }
+    },
+    "反馈服务暂未开放，请稍后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback is not available yet. Try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "反馈服务暂未开放，请稍后重试。" } }
+      }
+    },
+    "反馈记录加载失败，请稍后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback history could not be loaded. Try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "反馈记录加载失败，请稍后重试。" } }
+      }
+    },
+    "当前反馈接口不接收截图，请移除截图后提交。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The current feedback service does not accept screenshots. Remove them before submitting." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前反馈接口不接收截图，请移除截图后提交。" } }
+      }
+    },
+    "无障碍问题" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Accessibility issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无障碍问题" } }
+      }
+    },
+    "云端偏好同步暂未开放，本机语言设置仍然有效。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cloud preference sync is not available yet. Your on-device language setting remains active." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "云端偏好同步暂未开放，本机语言设置仍然有效。" } }
+      }
+    },
+    "云端偏好暂未同步，本机语言设置已保留。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cloud preferences could not be synchronized. Your on-device language setting was preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "云端偏好暂未同步，本机语言设置已保留。" } }
+      }
+    },
+    "语言已在本机生效，但云端同步失败，请稍后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The language changed on this device, but cloud sync failed. Try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语言已在本机生效，但云端同步失败，请稍后重试。" } }
+      }
+    },
+    "隐私问题" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Privacy issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "隐私问题" } }
+      }
+    },
+    "发送中…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送中…" } }
+      }
+    },
+    "当前邮箱验证码" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current email code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前邮箱验证码" } }
+      }
+    },
+    "新邮箱验证码" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New email code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新邮箱验证码" } }
+      }
+    },
+    "验证中…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Verifying…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "验证中…" } }
+      }
+    },
+    "验证码已分别发送到当前邮箱和新邮箱，10 分钟内有效。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Codes were sent to both the current and new email addresses and remain valid for 10 minutes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "验证码已分别发送到当前邮箱和新邮箱，10 分钟内有效。" } }
+      }
+    },
+    "账号版本尚未同步，请重新登录后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The account version is not synchronized. Sign in again and retry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "账号版本尚未同步，请重新登录后重试。" } }
+      }
+    },
+    "请输入当前邮箱收到的 6 位验证码。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter the 6-digit code sent to the current email address." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入当前邮箱收到的 6 位验证码。" } }
+      }
+    },
+    "当前账号不是学生账号，无法进入学生端。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is not a student account. Please contact an administrator."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前账号不是学生账号，无法进入学生端。"
+          }
+        }
+      }
+    },
+    "当前账号不可用，请联系管理员。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is unavailable. Please contact an administrator."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前账号不可用，请联系管理员。"
+          }
+        }
+      }
+    },
+    "登录成功，但服务器未返回学生资料，请联系管理员。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in succeeded, but the server did not return a student profile. Please contact an administrator."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录成功，但服务器未返回学生资料，请联系管理员。"
+          }
+        }
+      }
+    },
+    "学生端仅支持邮箱验证码登录。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student sign-in supports email verification codes only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学生端仅支持邮箱验证码登录。"
+          }
+        }
+      }
+    },
     " / %@ 小时" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -976,18 +1142,18 @@
         }
       }
     },
-    "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。" : {
+    "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。业务消息目前仅在 App 内通知中心展示，不申请系统通知权限，也不上传推送标识。上述信息不用于广告或个性化推荐。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To provide sports teaching services, we process your student number, name, courses, grades, and exercise check-in records. We use the camera and access photos or videos only when you actively use those features. The current release does not request location access or collect raw coordinates. Recording an on-site video also uses the microphone to capture audio. System notifications are currently generated on this device and no push identifier is uploaded. This information is not used for advertising or personalized recommendations."
+            "value" : "To provide sports teaching services, we process your student number, name, courses, grades, and exercise check-in records. We use the camera and access photos or videos only when you actively use those features. The current release does not request location access or collect raw coordinates. Recording an on-site video also uses the microphone to capture audio. Business messages are currently shown only in the in-app notification center; the app does not request system-notification permission or upload a push identifier. This information is not used for advertising or personalized recommendations."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。"
+            "value" : "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。业务消息目前仅在 App 内通知中心展示，不申请系统通知权限，也不上传推送标识。上述信息不用于广告或个性化推荐。"
           }
         }
       }
@@ -1845,6 +2011,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "免测与免打卡"
+          }
+        }
+      }
+    },
+    "免测申请服务暂未开放，当前保留最近一次同步结果。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The exemption service is not available yet. The most recently synced results remain visible."
           }
         }
       }
@@ -5017,6 +5194,22 @@
         }
       }
     },
+    "本机已退出，但服务器会话撤销失败。如账号存在风险，请联系管理员。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed out on this device, but the server session could not be revoked. Contact an administrator if the account may be at risk."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机已退出，但服务器会话撤销失败。如账号存在风险，请联系管理员。"
+          }
+        }
+      }
+    },
     "已退回" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7855,13 +8048,13 @@
         }
       }
     },
-    "支持离线缓存和系统通知，便于及时查看业务状态。" : {
+    "支持离线缓存和 App 内通知中心，便于查看业务状态。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Offline caching and system notifications help you stay up to date."
+            "value" : "Offline caching and the in-app notification center make it easier to review service status."
           }
         }
       }
@@ -8734,6 +8927,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务不可用或运动未满 1 小时时，本机可保留允许恢复的草稿。回到打卡页检查草稿并在服务恢复后重新提交；主动放弃运动或退出登录会清除相应本地内容。"
+          }
+        }
+      }
+    },
+    "服务端证明材料" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server supporting document"
           }
         }
       }
@@ -12065,6 +12269,17 @@
         }
       }
     },
+    "草稿" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draft"
+          }
+        }
+      }
+    },
     "草稿列表无法安全更新，请检查设备存储空间。" : {
       "localizations" : {
         "en" : {
@@ -12679,19 +12894,19 @@
         }
       }
     },
-    "请在 iPhone“设置 → 通知”中允许本 App 发送通知。通知不会包含姓名、具体成绩等个人信息；关键事项也可能通过学校邮箱送达。" : {
+    "当前版本的业务消息仅在 App 内通知中心展示，不会申请 iOS 系统通知权限，也不会注册 APNs 或上传推送令牌。请进入首页通知中心查看最新消息；关键事项也可能通过学校邮箱送达。" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Allow notifications in iPhone Settings → Notifications. Notifications do not include names or specific grades; important items may also be sent to your school email."
+            "value" : "Business messages are currently shown only in the in-app notification center. This release does not request iOS notification permission, register for APNs, or upload a push token. Open Notifications on the Home page to see the latest messages; important items may also be sent to your university email."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在 iPhone“设置 → 通知”中允许本 App 发送通知。通知不会包含姓名、具体成绩等个人信息；关键事项也可能通过学校邮箱送达。"
+            "value" : "当前版本的业务消息仅在 App 内通知中心展示，不会申请 iOS 系统通知权限，也不会注册 APNs 或上传推送令牌。请进入首页通知中心查看最新消息；关键事项也可能通过学校邮箱送达。"
           }
         }
       }
@@ -14038,6 +14253,17 @@
         }
       }
     },
+    "运动打卡免测" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise Check-in Exemption"
+          }
+        }
+      }
+    },
     "运动打卡动态演示：展示定位、计时、暂停和继续运动。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -15338,6 +15564,61 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "The upload session expired. Upload this evidence again." } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上传会话已过期，请重新上传该凭证。" } }
+      }
+    },
+    "特殊情况免测" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Special-circumstance Exemption"
+          }
+        }
+      }
+    },
+    "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请。若无法使用原邮箱，请联系任课教师或系统管理员核验身份。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student accounts use email verification codes and cannot file a password-recovery request in the app. If the linked email is unavailable, contact your course teacher or a system administrator for identity verification."
+          }
+        }
+      }
+    },
+    "登录与账号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in and account"
+          }
+        }
+      }
+    },
+    "无法使用绑定邮箱怎么办？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What if I cannot use my linked email?"
+          }
+        }
+      }
+    },
+    "学生账号使用学校邮箱验证码登录，没有学生密码恢复流程。若原邮箱不可用，请联系任课教师或系统管理员，由学校线下核验身份后处理。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Students sign in with a university email verification code; there is no student password-recovery flow. If the linked email is unavailable, contact your course teacher or a system administrator so the university can verify your identity offline."
+          }
+        }
       }
     },
     "默认使用浅色模式；选择跟随系统后会随设备设置切换。" : {

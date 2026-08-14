@@ -56,7 +56,7 @@ struct ContactManagementView: View {
     private func seedFromProfile() {
         guard verifiedEmail == nil else { return }
         let boundEmail = appState.workspace.student.email
-        if ContactBindingRule.isValid(boundEmail, for: .email) {
+        if appState.isEmailVerified, !boundEmail.isEmpty {
             verifiedEmail = boundEmail
         }
     }

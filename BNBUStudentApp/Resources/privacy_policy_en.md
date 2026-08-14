@@ -18,7 +18,7 @@ To provide account and teaching services, we may process your student ID, name, 
 
 ## 3. iOS permissions
 
-Camera access is used to scan a course invitation code and to capture proof photos or videos at the time of the activity. The microphone is used only while you record a video with sound. The released app does not request location access; it does not collect raw coordinates or build a track. Selecting existing media uses the system photo picker, so the app receives only the items you pick and never requests access to your whole library. Notification permission is used for course deadlines, review results and service reminders. The app does not request contacts, calendars, reminders, health or fitness data, motion data, Bluetooth, local network, speech recognition or App Tracking Transparency, and it does not read the clipboard.
+Camera access is used to scan a course invitation code and to capture proof photos or videos at the time of the activity. The microphone is used only while you record a video with sound. The released app does not request location or system-notification access; it does not collect raw coordinates, build a track or register for APNs. Selecting existing media uses the system photo picker, so the app receives only the items you pick and never requests access to your whole library. The app does not request contacts, calendars, reminders, health or fitness data, motion data, Bluetooth, local network, speech recognition or App Tracking Transparency, and it does not read the clipboard.
 
 ## 4. Course, check-in and application processing
 
@@ -30,7 +30,7 @@ Location and GPS interfaces are contract-only and disabled by default. The relea
 
 ## 6. Notifications and service providers
 
-Reminders are delivered as local notifications scheduled on your device, so no push service is involved and no push token is created. The iOS app integrates no third-party SDKs; it uses Apple system frameworks only. Uploaded proof is stored by our backend in object storage located in mainland China. Service providers that process information on our behalf must follow applicable privacy and security obligations.
+Business messages are currently shown only in the in-app notification centre. This release neither schedules local system notifications nor registers with a push service, so no push token is created or uploaded. The iOS app integrates no third-party SDKs; it uses Apple system frameworks only. Uploaded proof is stored by our backend in object storage located in mainland China. Service providers that process information on our behalf must follow applicable privacy and security obligations.
 
 ## 7. Use, sharing and disclosure
 

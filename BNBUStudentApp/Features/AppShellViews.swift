@@ -130,6 +130,7 @@ struct AppShellView: View {
                     .zIndex(10)
             }
         }
+        .task { await restoreSessionAndResolveStage() }
         .task { await appState.refreshSystemStatus() }
         .task { await dismissStartupArtworkWhenReady() }
         .overlay {
@@ -171,7 +172,9 @@ struct AppShellView: View {
             }
         }
         .animation(.easeInOut(duration: BNBUMotion.standard), value: stage)
-        .onAppear(perform: resolveInitialStage)
+        .onAppear {
+            if isUITesting { resolveInitialStage() }
+        }
         .onChange(of: appState.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {
                 stage = .authenticated
@@ -188,6 +191,13 @@ struct AppShellView: View {
             isUITesting: isUITesting,
             showsStartupGates: showsStartupGatesInUITesting
         )
+    }
+
+    private func restoreSessionAndResolveStage() async {
+        if !isUITesting {
+            await appState.restoreBackendSession()
+        }
+        resolveInitialStage()
     }
 
     private func advanceFromConsent() {
@@ -207,9 +217,9 @@ struct AppShellView: View {
     }
 }
 
-/// The authenticated shell keeps the onboarding cover and notification
-/// permission prompt attached to the tab shell, matching Android's
-/// `AuthenticatedAppContent`.
+/// The authenticated shell keeps the onboarding cover attached to the tab
+/// shell. System-notification permission is intentionally not requested until
+/// a disclosed local-notification or APNs flow actually exists.
 private struct AuthenticatedShellView: View {
     @EnvironmentObject private var appState: AppState
 
@@ -218,14 +228,19 @@ private struct AuthenticatedShellView: View {
 
     var body: some View {
         AppRootView()
+            .task {
+                guard !isUITesting else { return }
+                await appState.refreshSystemStatus()
+                await appState.refreshAPIV1Workspace()
+                await appState.refreshAPIV1Preferences()
+                await appState.refreshAPIV1Notifications()
+            }
             .onAppear {
                 guard !isUITesting else { return }
                 if BNBUOnboarding.completedVersion(
                     studentID: appState.workspace.student.id
                 ) < BNBUOnboarding.currentVersion {
                     showOnboarding = true
-                } else {
-                    BNBUNotificationManager.requestAuthorization()
                 }
             }
             .fullScreenCover(isPresented: $showOnboarding) {
@@ -234,7 +249,6 @@ private struct AuthenticatedShellView: View {
                         studentID: appState.workspace.student.id
                     )
                     showOnboarding = false
-                    BNBUNotificationManager.requestAuthorization()
                 }
             }
     }
@@ -535,9 +549,10 @@ struct PrivacyConsentView: View {
                 // Deliberately not a copy of Android's wording: it promises no
                 // audio recording and names an Android-only push service. This
                 // build declares NSMicrophoneUsageDescription for in-app video and
-                // has no remote push registration yet, so the disclosure has to
+                // has no system-notification delivery or remote push registration
+                // yet, so the disclosure has to
                 // describe what iOS actually does.
-                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
+                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。业务消息目前仅在 App 内通知中心展示，不申请系统通知权限，也不上传推送标识。上述信息不用于广告或个性化推荐。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(BNBUFont.LineSpacing.bodyMedium)

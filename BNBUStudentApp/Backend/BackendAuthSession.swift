@@ -35,6 +35,41 @@ struct KeychainAuthSessionStore: AuthSessionPersisting, @unchecked Sendable {
     }
 }
 
+protocol AuthDeviceIdentifying: Sendable {
+    func identifier() throws -> String
+}
+
+/// A random installation identifier used only as opaque authentication input.
+/// It is device-only Keychain data: it is never derived from hardware, an
+/// account, IDFV, or any other value that could identify the student.
+struct KeychainAuthDeviceIdentifier: AuthDeviceIdentifying, @unchecked Sendable {
+    private let credentialStore: any SecureCredentialStoring
+    private let storageKey: String
+
+    init(
+        environment: BackendEnvironment,
+        credentialStore: any SecureCredentialStoring = KeychainCredentialStore()
+    ) {
+        self.credentialStore = credentialStore
+        let digest = SHA256.hash(data: Data(environment.baseURL.absoluteString.utf8))
+        storageKey = "bnbu.auth.device.v1." + digest.prefix(8)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    func identifier() throws -> String {
+        if let data = try credentialStore.data(forKey: storageKey),
+           let value = String(data: data, encoding: .utf8),
+           !value.isEmpty,
+           value.utf8.count <= 128 {
+            return value
+        }
+        let value = "ios-" + UUID().uuidString.lowercased()
+        try credentialStore.set(Data(value.utf8), forKey: storageKey)
+        return value
+    }
+}
+
 actor IdempotencyIntentRegistry {
     private struct Entry {
         let fingerprint: String
@@ -133,6 +168,14 @@ actor BackendAuthSessionController {
         try install(response.value)
         await intents.clear(scope: scope)
         return response
+    }
+
+    func currentUser() async throws -> APIResponse<APIV1CurrentUserData> {
+        try await sendAuthorized(APIRequest(
+            operationID: "getCurrentUser",
+            method: .get,
+            path: "me"
+        ))
     }
 
     func requestCurrentUserEmailChallenge(
@@ -343,6 +386,13 @@ actor BackendAuthSessionController {
         await intents.clearAll()
     }
 
+    /// Clears a locally installed session when post-authentication projection
+    /// validation fails. It deliberately performs no network fallback or retry.
+    func discardLocalSession() async {
+        try? clearLocalSession()
+        await intents.clearAll()
+    }
+
     private func install(_ newSession: APIV1AuthSession) throws {
         guard !newSession.accessToken.isEmpty, !newSession.refreshToken.isEmpty else {
             throw APITransportError.invalidResponse
@@ -381,5 +431,54 @@ actor BackendAuthSessionController {
 
     private static func statusCodeIsUnauthorized(_ error: APITransportError) -> Bool {
         error.statusCode == 401
+    }
+}
+
+/// One dependency graph for the formal `/api/v1` transport. Creating every
+/// gateway from the same auth controller guarantees that token rotation and
+/// logout are shared across Auth, Session, Media, and Record operations.
+struct BackendAppServices: Sendable {
+    let environment: BackendEnvironment
+    let auth: BackendAuthSessionController
+    let clientCapabilities: BackendClientCapabilityGateway
+    let workspace: AuthoritativeStudentWorkspaceGateway
+    let media: MediaUploadCoordinator
+    let exerciseSessions: AuthoritativeExerciseSessionGateway
+    let exerciseRecords: AuthoritativeExerciseRecordGateway
+    let deviceIdentifier: any AuthDeviceIdentifying
+
+    init(
+        environment: BackendEnvironment,
+        client: StudentAPIClient,
+        authStore: any AuthSessionPersisting,
+        deviceIdentifier: any AuthDeviceIdentifying
+    ) {
+        self.environment = environment
+        let auth = BackendAuthSessionController(client: client, store: authStore)
+        self.auth = auth
+        clientCapabilities = BackendClientCapabilityGateway(client: client, auth: auth)
+        workspace = AuthoritativeStudentWorkspaceGateway(auth: auth)
+        media = MediaUploadCoordinator(client: client, auth: auth)
+        exerciseSessions = AuthoritativeExerciseSessionGateway(auth: auth)
+        exerciseRecords = AuthoritativeExerciseRecordGateway(auth: auth)
+        self.deviceIdentifier = deviceIdentifier
+    }
+
+    static func runtime(
+        environment: BackendEnvironment = .runtime,
+        credentialStore: any SecureCredentialStoring = KeychainCredentialStore()
+    ) -> BackendAppServices {
+        BackendAppServices(
+            environment: environment,
+            client: StudentAPIClient(environment: environment),
+            authStore: KeychainAuthSessionStore(
+                environment: environment,
+                credentialStore: credentialStore
+            ),
+            deviceIdentifier: KeychainAuthDeviceIdentifier(
+                environment: environment,
+                credentialStore: credentialStore
+            )
+        )
     }
 }

@@ -921,6 +921,10 @@ struct ExemptionApplicationSheet: View {
             return exemptionText("体测免测", "Physical-test exemption")
         case .singlePhysicalItem:
             return exemptionText("体测单项免测", "Single-item exemption")
+        case .checkIn:
+            return exemptionText("运动打卡免测", "Exercise check-in exemption")
+        case .specialCircumstance:
+            return exemptionText("特殊情况免测", "Special-circumstance exemption")
         case .team:
             return exemptionText("校队免打卡", "Team check-in exemption")
         case .club:

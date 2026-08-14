@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct MediaUploadOutcome: Equatable {
@@ -9,6 +10,246 @@ struct EphemeralMediaAccess: Equatable {
     let mediaID: String
     let url: URL
     let expiresAt: String
+}
+
+enum MediaUploadPayload: Sendable {
+    case data(Data)
+    case file(URL)
+
+    var byteCount: Int? {
+        switch self {
+        case .data(let data):
+            return data.count
+        case .file(let url):
+            return try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        }
+    }
+}
+
+struct BackendStudentWorkspaceProjection: Equatable {
+    let semester: APIV1Semester
+    let enrollments: [APIV1Enrollment]
+    let classSections: [APIV1ClassSection]
+    let courses: [APIV1Course]
+    let teachers: [APIV1TeacherProfile]
+}
+
+/// Contract 1.5 capabilities used by the authenticated shell and its public
+/// support pages. Keeping these routes outside RemoteStudentRepository makes
+/// it impossible for an API-v1 session to fall back to historical paths.
+actor BackendClientCapabilityGateway {
+    private let client: StudentAPIClient
+    private let auth: BackendAuthSessionController
+    private let intents: IdempotencyIntentRegistry
+
+    init(
+        client: StudentAPIClient,
+        auth: BackendAuthSessionController,
+        intents: IdempotencyIntentRegistry = IdempotencyIntentRegistry()
+    ) {
+        self.client = client
+        self.auth = auth
+        self.intents = intents
+    }
+
+    func systemMode() async throws -> APIResponse<APIV1SystemModeProjection> {
+        try await client.send(APIRequest(
+            operationID: "getSystemMode",
+            method: .get,
+            path: "system-mode"
+        ))
+    }
+
+    func appReleasePolicy(
+        query: IOSAppReleasePolicyQuery
+    ) async throws -> APIResponse<APIV1AppReleasePolicy> {
+        try await client.send(APIRequest(
+            operationID: "getAppReleasePolicy",
+            method: .get,
+            path: "app-release-policy",
+            queryItems: query.queryItems
+        ))
+    }
+
+    func helpArticles(locale: String) async throws -> APIResponse<[APIV1HelpArticle]> {
+        guard locale == "zh-CN" || locale == "en" else {
+            throw APITransportError.invalidRequest
+        }
+        return try await client.send(APIRequest(
+            operationID: "listHelpArticles",
+            method: .get,
+            path: "help-articles",
+            queryItems: [URLQueryItem(name: "locale", value: locale)]
+        ))
+    }
+
+    func notifications() async throws -> APIResponse<[APIV1Notification]> {
+        let response: APIResponse<[APIV1Notification]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listNotifications",
+            method: .get,
+            path: "notifications",
+            queryItems: [URLQueryItem(name: "limit", value: "100")]
+        ))
+        guard response.pagination?.hasMore != true else {
+            throw APITransportError.invalidResponse
+        }
+        return response
+    }
+
+    func currentUserPreferences() async throws -> APIResponse<APIV1UserPreferences> {
+        try await auth.sendAuthorized(APIRequest(
+            operationID: "getCurrentUserPreferences",
+            method: .get,
+            path: "me/preferences"
+        ))
+    }
+
+    func updateCurrentUserPreferences(
+        _ body: APIV1UpdateUserPreferencesRequest
+    ) async throws -> APIResponse<APIV1UserPreferences> {
+        let scope = "preferences:update"
+        let fingerprint = try IntentFingerprint.make(body)
+        let response: APIResponse<APIV1UserPreferences> = try await auth.sendAuthorized(APIRequest(
+            operationID: "updateCurrentUserPreferences",
+            method: .patch,
+            path: "me/preferences",
+            body: try APIRequest.jsonBody(body),
+            idempotencyKey: await intents.key(scope: scope, fingerprint: fingerprint)
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func markNotificationRead(id: String) async throws -> APIResponse<APIV1Notification> {
+        let id = try APIPath.component(id)
+        let scope = "notification:read:\(id)"
+        let response: APIResponse<APIV1Notification> = try await auth.sendAuthorized(APIRequest(
+            operationID: "markNotificationRead",
+            method: .post,
+            path: "notifications/\(id)/read",
+            idempotencyKey: await intents.key(scope: scope, fingerprint: id)
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func feedback() async throws -> APIResponse<[APIV1Feedback]> {
+        let response: APIResponse<[APIV1Feedback]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listFeedback",
+            method: .get,
+            path: "feedback",
+            queryItems: [URLQueryItem(name: "limit", value: "100")]
+        ))
+        guard response.pagination?.hasMore != true else {
+            throw APITransportError.invalidResponse
+        }
+        return response
+    }
+
+    func createFeedback(
+        _ body: APIV1CreateFeedbackRequest
+    ) async throws -> APIResponse<APIV1Feedback> {
+        let scope = "feedback:create"
+        let fingerprint = try IntentFingerprint.make(body)
+        let response: APIResponse<APIV1Feedback> = try await auth.sendAuthorized(APIRequest(
+            operationID: "createFeedback",
+            method: .post,
+            path: "feedback",
+            body: try APIRequest.jsonBody(body),
+            idempotencyKey: await intents.key(scope: scope, fingerprint: fingerprint)
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func exemptionApplications() async throws -> APIResponse<[APIV1ExemptionApplication]> {
+        let response: APIResponse<[APIV1ExemptionApplication]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listExemptionApplications",
+            method: .get,
+            path: "exemption-applications",
+            queryItems: [URLQueryItem(name: "limit", value: "100")]
+        ))
+        guard response.pagination?.hasMore != true else {
+            throw APITransportError.invalidResponse
+        }
+        return response
+    }
+}
+
+/// Reads the minimum authoritative course graph needed by the iOS student
+/// shell. Every collection is role-scoped by Backend; pagination truncation
+/// fails closed so the app never silently picks the wrong enrollment.
+actor AuthoritativeStudentWorkspaceGateway {
+    private let auth: BackendAuthSessionController
+
+    init(auth: BackendAuthSessionController) {
+        self.auth = auth
+    }
+
+    func load(studentID: String) async throws -> BackendStudentWorkspaceProjection {
+        let studentID = try APIPath.component(studentID)
+        let semester: APIResponse<APIV1Semester> = try await auth.sendAuthorized(APIRequest(
+            operationID: "getCurrentSemester",
+            method: .get,
+            path: "semesters/current"
+        ))
+        let enrollments: APIResponse<[APIV1Enrollment]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listEnrollments",
+            method: .get,
+            path: "enrollments",
+            queryItems: [
+                URLQueryItem(name: "limit", value: "100"),
+                URLQueryItem(name: "studentId", value: studentID),
+                URLQueryItem(name: "semesterId", value: semester.value.id),
+                URLQueryItem(name: "status", value: APIV1EnrollmentStatus.active.rawValue),
+                URLQueryItem(name: "sort", value: "-joinedAt")
+            ]
+        ))
+        let sections: APIResponse<[APIV1ClassSection]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listClassSections",
+            method: .get,
+            path: "class-sections",
+            queryItems: [
+                URLQueryItem(name: "limit", value: "100"),
+                URLQueryItem(name: "semesterId", value: semester.value.id),
+                URLQueryItem(name: "status", value: APIV1ClassSectionStatus.active.rawValue)
+            ]
+        ))
+        let courses: APIResponse<[APIV1Course]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listCourses",
+            method: .get,
+            path: "courses",
+            queryItems: [
+                URLQueryItem(name: "limit", value: "100"),
+                URLQueryItem(name: "status", value: APIV1CourseStatus.active.rawValue)
+            ]
+        ))
+        guard enrollments.pagination?.hasMore != true,
+              sections.pagination?.hasMore != true,
+              courses.pagination?.hasMore != true else {
+            throw APITransportError.invalidResponse
+        }
+
+        let activeSectionIDs = Set(enrollments.value.map(\.classSectionId))
+        let authorizedSections = sections.value.filter { activeSectionIDs.contains($0.id) }
+        var teachers: [APIV1TeacherProfile] = []
+        for teacherID in Set(authorizedSections.map(\.teacherId)).sorted() {
+            let teacherID = try APIPath.component(teacherID)
+            let teacher: APIResponse<APIV1TeacherProfile> = try await auth.sendAuthorized(APIRequest(
+                operationID: "getTeacher",
+                method: .get,
+                path: "teachers/\(teacherID)"
+            ))
+            teachers.append(teacher.value)
+        }
+        return BackendStudentWorkspaceProjection(
+            semester: semester.value,
+            enrollments: enrollments.value,
+            classSections: authorizedSections,
+            courses: courses.value,
+            teachers: teachers
+        )
+    }
 }
 
 actor MediaUploadCoordinator {
@@ -35,19 +276,47 @@ actor MediaUploadCoordinator {
     func uploadAndBind(
         bytes: Data,
         request: APIV1InitiateMediaUploadRequest,
-        expectedVersion: Int,
+        idempotencyKeySeed: String? = nil,
         progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
+    ) async throws -> MediaUploadOutcome {
+        try await uploadAndBind(
+            payload: .data(bytes),
+            request: request,
+            idempotencyKeySeed: idempotencyKeySeed,
+            progressHandler: progressHandler
+        )
+    }
+
+    func uploadAndBind(
+        fileURL: URL,
+        request: APIV1InitiateMediaUploadRequest,
+        idempotencyKeySeed: String? = nil,
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
+    ) async throws -> MediaUploadOutcome {
+        try await uploadAndBind(
+            payload: .file(fileURL),
+            request: request,
+            idempotencyKeySeed: idempotencyKeySeed,
+            progressHandler: progressHandler
+        )
+    }
+
+    private func uploadAndBind(
+        payload: MediaUploadPayload,
+        request: APIV1InitiateMediaUploadRequest,
+        idempotencyKeySeed: String?,
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void
     ) async throws -> MediaUploadOutcome {
         guard MediaUploadContractPolicy.accepts(request),
               request.businessPurpose == .exerciseRecord,
-              let sessionID = request.sessionId,
-              expectedVersion > 0 else {
+              let sessionID = request.sessionId else {
             throw APITransportError.invalidRequest
         }
 
         let confirmedUpload = try await uploadAndConfirm(
-            bytes: bytes,
+            payload: payload,
             request: request,
+            idempotencyKeySeed: idempotencyKeySeed,
             progressHandler: progressHandler
         )
         let confirmed = confirmedUpload.response
@@ -55,7 +324,7 @@ actor MediaUploadCoordinator {
         let mediaID = try APIPath.component(confirmed.value.id)
         let bind = APIV1BindMediaRequest(
             sessionId: sessionID,
-            expectedVersion: expectedVersion
+            expectedVersion: confirmed.value.version
         )
         let bindScope = "media:bind:\(mediaID)"
         let bound: APIResponse<APIV1MediaEvidence> = try await auth.sendAuthorized(APIRequest(
@@ -63,9 +332,11 @@ actor MediaUploadCoordinator {
             method: .post,
             path: "media/\(mediaID)/bind",
             body: try APIRequest.jsonBody(bind),
-            idempotencyKey: await intents.key(
+            idempotencyKey: try await idempotencyKey(
+                seed: idempotencyKeySeed,
+                phase: "bind",
                 scope: bindScope,
-                fingerprint: try IntentFingerprint.make(bind)
+                fingerprint: IntentFingerprint.make(bind)
             )
         ))
         await intents.clear(scope: confirmedUpload.initiateScope)
@@ -87,8 +358,9 @@ actor MediaUploadCoordinator {
         }
 
         let confirmedUpload = try await uploadAndConfirm(
-            bytes: bytes,
+            payload: .data(bytes),
             request: request,
+            idempotencyKeySeed: nil,
             progressHandler: progressHandler
         )
         await intents.clear(scope: confirmedUpload.initiateScope)
@@ -100,17 +372,22 @@ actor MediaUploadCoordinator {
     }
 
     private func uploadAndConfirm(
-        bytes: Data,
+        payload: MediaUploadPayload,
         request: APIV1InitiateMediaUploadRequest,
+        idempotencyKeySeed: String?,
         progressHandler: @escaping @Sendable (APIUploadProgress) -> Void
     ) async throws -> ConfirmedUpload {
-        guard bytes.count == request.fileSizeBytes else { throw APITransportError.invalidRequest }
+        guard payload.byteCount == request.fileSizeBytes else {
+            throw APITransportError.invalidRequest
+        }
 
         let targetID = request.sessionId ?? request.enrollmentId ?? ""
         let initiateScope = "media:initiate:\(request.businessPurpose.rawValue):\(targetID)"
-        let initiateKey = await intents.key(
+        let initiateKey = try await idempotencyKey(
+            seed: idempotencyKeySeed,
+            phase: "initiate",
             scope: initiateScope,
-            fingerprint: try IntentFingerprint.make(request)
+            fingerprint: IntentFingerprint.make(request)
         )
         let initiated: APIResponse<APIV1MediaUploadSession> = try await auth.sendAuthorized(APIRequest(
             operationID: "initiateMediaUpload",
@@ -125,13 +402,25 @@ actor MediaUploadCoordinator {
               uploadMethod == .put else {
             throw APITransportError.invalidResponse
         }
-        let uploadResponse = try await client.upload(
-            to: uploadURL,
-            data: bytes,
-            method: uploadMethod,
-            requiredHeaders: initiated.value.requiredHeaders,
-            progressHandler: progressHandler
-        )
+        let uploadResponse: HTTPURLResponse
+        switch payload {
+        case .data(let bytes):
+            uploadResponse = try await client.upload(
+                to: uploadURL,
+                data: bytes,
+                method: uploadMethod,
+                requiredHeaders: initiated.value.requiredHeaders,
+                progressHandler: progressHandler
+            )
+        case .file(let fileURL):
+            uploadResponse = try await client.upload(
+                to: uploadURL,
+                fileURL: fileURL,
+                method: uploadMethod,
+                requiredHeaders: initiated.value.requiredHeaders,
+                progressHandler: progressHandler
+            )
+        }
         guard let etag = uploadResponse.value(forHTTPHeaderField: "ETag"), !etag.isEmpty else {
             throw APITransportError.invalidResponse
         }
@@ -144,9 +433,11 @@ actor MediaUploadCoordinator {
             method: .post,
             path: "media-uploads/\(uploadSessionID)/confirm",
             body: try APIRequest.jsonBody(confirm),
-            idempotencyKey: await intents.key(
+            idempotencyKey: try await idempotencyKey(
+                seed: idempotencyKeySeed,
+                phase: "confirm",
                 scope: confirmScope,
-                fingerprint: try IntentFingerprint.make(confirm)
+                fingerprint: IntentFingerprint.make(confirm)
             )
         ))
         guard confirmed.value.businessPurpose == request.businessPurpose,
@@ -161,6 +452,24 @@ actor MediaUploadCoordinator {
             initiateScope: initiateScope,
             confirmScope: confirmScope
         )
+    }
+
+    private func idempotencyKey(
+        seed: String?,
+        phase: String,
+        scope: String,
+        fingerprint: String
+    ) async throws -> String {
+        guard let seed else {
+            return await intents.key(scope: scope, fingerprint: fingerprint)
+        }
+        guard IdempotencyKeyPolicy.isValid(seed) else {
+            throw APITransportError.invalidRequest
+        }
+        let digest = SHA256.hash(data: Data("\(seed):\(phase)".utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return "ios-\(digest)"
     }
 
     func status(mediaID: String) async throws -> APIResponse<APIV1MediaEvidence> {
@@ -221,6 +530,15 @@ actor AuthoritativeExerciseSessionGateway {
             method: .get,
             path: "exercise-sessions/active",
             queryItems: query
+        ))
+    }
+
+    func get(sessionID: String) async throws -> APIResponse<APIV1ExerciseSession> {
+        let sessionID = try APIPath.component(sessionID)
+        return try await auth.sendAuthorized(APIRequest(
+            operationID: "getExerciseSession",
+            method: .get,
+            path: "exercise-sessions/\(sessionID)"
         ))
     }
 
@@ -332,6 +650,39 @@ actor AuthoritativeExerciseRecordGateway {
             method: .get,
             path: "exercise-records/\(recordID)"
         ))
+    }
+
+    /// Recovers the one record (draft or submitted) owned by a completed
+    /// session. Contract 1.5 has no direct sessionId filter, so the query is
+    /// narrowed by enrollment and frozen business date, then matched locally.
+    func findForSession(
+        sessionID: String,
+        enrollmentID: String,
+        businessDate: String
+    ) async throws -> APIResponse<APIV1ExerciseRecord?> {
+        let response: APIResponse<[APIV1ExerciseRecord]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listExerciseRecords",
+            method: .get,
+            path: "exercise-records",
+            queryItems: [
+                URLQueryItem(name: "limit", value: "100"),
+                URLQueryItem(name: "enrollmentId", value: enrollmentID),
+                URLQueryItem(name: "businessDateFrom", value: businessDate),
+                URLQueryItem(name: "businessDateTo", value: businessDate),
+                URLQueryItem(name: "sort", value: "-businessDate")
+            ]
+        ))
+        guard response.pagination?.hasMore != true else {
+            throw APITransportError.invalidResponse
+        }
+        let matches = response.value.filter { $0.sessionId == sessionID }
+        guard matches.count <= 1 else { throw APITransportError.invalidResponse }
+        return APIResponse(
+            value: matches.first,
+            requestId: response.requestId,
+            pagination: response.pagination,
+            statusCode: response.statusCode
+        )
     }
 
     func submit(

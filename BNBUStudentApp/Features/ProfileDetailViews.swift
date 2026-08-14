@@ -218,6 +218,13 @@ struct ProfileSettingsView: View {
                 Text("更改后将立即更新界面语言。课程名称等由教师或管理员录入的数据内容保持原文。")
                     .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                if let notice = appState.preferenceSyncNotice {
+                    Text(verbatim: notice)
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("profile.language.syncNotice")
+                }
             }
         }
     }
@@ -301,7 +308,22 @@ struct ProfileSettingsView: View {
     private var languageSelection: Binding<String> {
         Binding(
             get: { languageSettings.mode.rawValue },
-            set: { languageSettings.select(rawValue: $0) }
+            set: { rawValue in
+                languageSettings.select(rawValue: rawValue)
+                guard let mode = BNBULanguage(rawValue: rawValue) else { return }
+                let locale: String
+                switch mode {
+                case .simplifiedChinese:
+                    locale = "zh-CN"
+                case .english:
+                    locale = "en"
+                case .system:
+                    locale = BNBULanguage.supportedSystemLocaleIdentifier()
+                        .lowercased()
+                        .hasPrefix("zh") ? "zh-CN" : "en"
+                }
+                Task { await appState.synchronizeAPIV1Locale(locale) }
+            }
         )
     }
 }
@@ -395,7 +417,7 @@ struct ChangelogView: View {
                                 .padding(.bottom, 14)
                             ChangelogItem("支持课程、打卡、成绩和服务申请等核心功能。")
                             ChangelogItem("提供帮助中心、隐私政策和问题反馈入口。")
-                            ChangelogItem("支持离线缓存和系统通知，便于及时查看业务状态。")
+                            ChangelogItem("支持离线缓存和 App 内通知中心，便于查看业务状态。")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }

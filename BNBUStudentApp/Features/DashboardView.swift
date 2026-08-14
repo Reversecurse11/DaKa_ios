@@ -216,10 +216,14 @@ struct DashboardView: View {
     }
 
     private var progressStatusText: String {
-        if locale.identifier.hasPrefix("en"), appState.courseRemaining > 0 {
-            return "Remain \(appState.courseRemaining.localizedHourText)"
+        if appState.courseRemaining > 0 {
+            if locale.identifier.hasPrefix("en") {
+                return "Remain \(appState.courseRemaining.localizedHourText)"
+            }
+            return "差课程 \(appState.courseRemaining.localizedHourText)"
         }
-        return appState.workspace.progress.status
+        let status = appState.workspace.progress.status
+        return status.isEmpty ? BNBUL10n.text("已达到本学期目标") : BNBUL10n.dynamicText(status)
     }
 
     private var progressBreakdown: some View {
@@ -302,7 +306,7 @@ private struct HomeProgressBar: View {
     let height: CGFloat
 
     private var ratio: Double {
-        guard total > 0 else { return 0 }
+        guard value.isFinite, total.isFinite, total > 0 else { return 0 }
         return min(max(value / total, 0), 1)
     }
 
@@ -312,7 +316,10 @@ private struct HomeProgressBar: View {
                 Capsule().fill(BNBUTheme.surfaceVariant)
                 Capsule()
                     .fill(BNBUTheme.primary)
-                    .frame(width: proxy.size.width * ratio)
+                    .frame(width: BNBUProgressGeometry.width(
+                        containerWidth: proxy.size.width,
+                        ratio: ratio
+                    ))
                     .animation(.easeInOut(duration: BNBUMotion.progress), value: ratio)
             }
         }

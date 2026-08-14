@@ -970,6 +970,9 @@ enum ContactBindingRule {
             return "\(digits.prefix(3))****\(digits.suffix(4))"
         case .email:
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            // `/me` deliberately returns an already-masked address. Keep it
+            // stable when a screen asks for display masking a second time.
+            if trimmed.contains("*") { return trimmed }
             guard let atIndex = trimmed.firstIndex(of: "@") else { return trimmed }
             let name = String(trimmed[trimmed.startIndex..<atIndex])
             let domain = String(trimmed[atIndex...])
@@ -2594,6 +2597,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
     case enduranceRun = "800/1000 米耐力跑"
     case physicalTest = "体测免测"
     case singlePhysicalItem = "体测单项免测"
+    /// Contract 1.5 only exposes broad categories for these two values. Keep
+    /// them generic instead of inventing a team, club, or physical-test item.
+    case checkIn = "运动打卡免测"
+    case specialCircumstance = "特殊情况免测"
     case team = "校队免打卡"
     case club = "社团免打卡"
 
@@ -2604,7 +2611,7 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
     /// A check-in exemption waives打卡 rather than a physical test, so it needs
     /// the organization it is claimed through and posts to a different endpoint.
     var isCheckInExemption: Bool {
-        self == .team || self == .club
+        self == .checkIn || self == .team || self == .club
     }
 
     /// Rule: the endurance run a student is tested on follows their gender, so
@@ -2627,6 +2634,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             return "physical_test"
         case .singlePhysicalItem:
             return "single_physical_item"
+        case .checkIn:
+            return "exercise_check_in"
+        case .specialCircumstance:
+            return "special_circumstance"
         case .team:
             return "team"
         case .club:
@@ -2638,10 +2649,12 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
         switch self {
         case .run800m, .run1000m, .enduranceRun:
             return "figure.run"
-        case .physicalTest:
+        case .physicalTest, .specialCircumstance:
             return "heart.text.square"
         case .singlePhysicalItem:
             return "list.clipboard"
+        case .checkIn:
+            return "figure.run.circle"
         case .team:
             return "flag.2.crossed"
         case .club:
@@ -2661,6 +2674,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             return "建议上传医院证明，说明本学期体测整体免测原因。"
         case .singlePhysicalItem:
             return "请在说明中写明申请免测的具体项目，并上传证明。"
+        case .checkIn:
+            return "请按课程要求上传运动打卡免测证明。"
+        case .specialCircumstance:
+            return "请上传能够说明特殊情况的证明材料。"
         case .team, .club:
             return "请上传能够证明校队或社团身份的材料。"
         }
@@ -2680,6 +2697,10 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
             self = .physicalTest
         case "singlePhysicalItem", "single_physical_item", "SINGLE_PHYSICAL_ITEM", "体测单项免测", "单项免测":
             self = .singlePhysicalItem
+        case "exercise_check_in", "EXERCISE_CHECK_IN", "运动打卡免测", "打卡免测":
+            self = .checkIn
+        case "special_circumstance", "SPECIAL_CIRCUMSTANCE", "特殊情况免测":
+            self = .specialCircumstance
         case "team", "TEAM", "校队免打卡", "校队":
             self = .team
         case "club", "CLUB", "社团免打卡", "社团":
@@ -2736,6 +2757,27 @@ enum FeedbackCategory: String, CaseIterable, Identifiable, Hashable, Codable {
 
     var id: String { rawValue }
     var title: String { rawValue }
+
+    /// Contract 1.5 intentionally exposes a smaller privacy-bounded category
+    /// vocabulary than the Android-aligned local form.
+    var apiValue: String {
+        switch self {
+        case .functionality, .checkIn, .system:
+            return "BUG"
+        case .grades, .course, .account, .exemption, .other:
+            return "OTHER"
+        }
+    }
+
+    static func displayTitle(apiValue: String) -> String {
+        switch apiValue.uppercased() {
+        case "BUG": return FeedbackCategory.functionality.title
+        case "SUGGESTION": return BNBUL10n.text("功能建议")
+        case "ACCESSIBILITY": return BNBUL10n.text("无障碍问题")
+        case "PRIVACY": return BNBUL10n.text("隐私问题")
+        default: return FeedbackCategory.other.title
+        }
+    }
 }
 
 enum FeedbackTicketStatus: String, CaseIterable, Identifiable, Hashable, Codable {
@@ -2823,6 +2865,7 @@ enum FeedbackRule {
 }
 
 enum ExemptionStatus: String, CaseIterable, Identifiable, Hashable, Codable {
+    case draft = "草稿"
     case pending = "待审核"
     case approved = "已通过"
     case rejected = "已驳回"
@@ -2833,6 +2876,8 @@ enum ExemptionStatus: String, CaseIterable, Identifiable, Hashable, Codable {
 
     var apiValue: String {
         switch self {
+        case .draft:
+            return "draft"
         case .pending:
             return "pending"
         case .approved:
@@ -2848,6 +2893,8 @@ enum ExemptionStatus: String, CaseIterable, Identifiable, Hashable, Codable {
 
     var symbolName: String {
         switch self {
+        case .draft:
+            return "doc.badge.ellipsis"
         case .pending:
             return "clock"
         case .approved:
@@ -2862,13 +2909,22 @@ enum ExemptionStatus: String, CaseIterable, Identifiable, Hashable, Codable {
     }
 
     var canSupplement: Bool {
-        self == .rejected || self == .supplementRequired
+        self == .draft || self == .rejected || self == .supplementRequired
+    }
+
+    /// Backend 1.5 only permits update while the application is a draft or
+    /// explicitly awaiting more evidence. Legacy/Mock sources historically
+    /// allow a rejected application to enter their supplement endpoint.
+    var canMutateUnderContract15: Bool {
+        self == .draft || self == .supplementRequired
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let value = try container.decode(String.self)
         switch value {
+        case "draft", "DRAFT", "草稿":
+            self = .draft
         case "pending", "PENDING", "reviewing", "REVIEWING", "待审核", "审核中":
             self = .pending
         case "approved", "APPROVED", "pass", "PASSED", "已通过", "通过":

@@ -1,10 +1,8 @@
 import SwiftUI
 import UIKit
-import UserNotifications
 
 @main
 struct BNBUStudentApp: App {
-    @UIApplicationDelegateAdaptor(BNBUAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState: AppState
     @StateObject private var languageSettings: BNBULanguageSettings
@@ -78,13 +76,14 @@ struct BNBUStudentApp: App {
         }
 #endif
         _appState = StateObject(wrappedValue: state)
-        _shellStage = State(
-            initialValue: AppShellStage.resolved(
+        let isUITesting = arguments.contains("-ui-testing-reset")
+        _shellStage = State(initialValue: isUITesting
+            ? AppShellStage.resolved(
                 isAuthenticated: state.isAuthenticated,
-                isUITesting: arguments.contains("-ui-testing-reset"),
+                isUITesting: true,
                 showsStartupGates: arguments.contains("-ui-testing-startup-gates")
             )
-        )
+            : .restoring)
     }
 
     var body: some Scene {
@@ -110,10 +109,12 @@ struct BNBUStudentApp: App {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
                 refreshSystemLocale()
+                synchronizeSystemLocaleIfNeeded()
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     refreshSystemLocale()
+                    synchronizeSystemLocaleIfNeeded()
                     // A scene that just connected brings its own window.
                     appearanceMode.applyToWindows()
                 }
@@ -140,61 +141,15 @@ struct BNBUStudentApp: App {
         systemLocaleIdentifier = Self.preferredSystemLocaleIdentifier
     }
 
+    private func synchronizeSystemLocaleIfNeeded() {
+        guard languageSettings.mode == .system else { return }
+        let locale = Self.preferredSystemLocaleIdentifier.lowercased().hasPrefix("zh")
+            ? "zh-CN"
+            : "en"
+        Task { await appState.synchronizeAPIV1Locale(locale) }
+    }
+
     private var isUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains("-ui-testing-reset")
     }
-}
-
-final class BNBUAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-    ) -> Bool {
-        UNUserNotificationCenter.current().delegate = self
-        return true
-    }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
-    }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let route = BNBUNotificationManager.route(from: response.notification.request.content.userInfo)
-        DispatchQueue.main.async {
-            if let route {
-                NotificationCenter.default.post(name: .bnbuOpenDestination, object: route)
-            }
-            completionHandler()
-        }
-    }
-}
-
-enum BNBUNotificationManager {
-    static func requestAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
-    }
-
-    static func route(from userInfo: [AnyHashable: Any]) -> AppTab? {
-        let value = (userInfo["route"] ?? userInfo["target"] ?? userInfo["type"]) as? String
-        guard let normalized = value?.lowercased() else { return .dashboard }
-        switch normalized {
-        case "course", "courses": return .courses
-        case "checkin", "sport_record", "sport-record": return .checkin
-        case "grade", "grades", "score": return .grades
-        case "profile", "exemption", "application": return .profile
-        default: return .dashboard
-        }
-    }
-}
-
-extension Notification.Name {
-    static let bnbuOpenDestination = Notification.Name("bnbu.open-destination")
 }

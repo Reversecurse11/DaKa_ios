@@ -234,7 +234,7 @@ struct HourProgressBar: View {
     let total: Double
 
     var ratio: Double {
-        guard total > 0 else { return 0 }
+        guard value.isFinite, total.isFinite, total > 0 else { return 0 }
         return min(max(value / total, 0), 1)
     }
 
@@ -245,11 +245,26 @@ struct HourProgressBar: View {
                     .fill(BNBUTheme.surfaceVariant)
                 RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
                     .fill(BNBUTheme.primary)
-                    .frame(width: proxy.size.width * ratio)
+                    .frame(width: BNBUProgressGeometry.width(
+                        containerWidth: proxy.size.width,
+                        ratio: ratio
+                    ))
                     .animation(.easeInOut(duration: BNBUMotion.progress), value: ratio)
             }
         }
         .frame(height: 8)
+    }
+}
+
+/// SwiftUI can briefly propose a negative or non-finite GeometryReader size
+/// while a sheet, locale, Dynamic Type size, or orientation is changing. Never
+/// forward that transient proposal into `frame(width:)`.
+enum BNBUProgressGeometry {
+    static func width(containerWidth: CGFloat, ratio: Double) -> CGFloat {
+        guard containerWidth.isFinite,
+              containerWidth > 0,
+              ratio.isFinite else { return 0 }
+        return containerWidth * CGFloat(min(max(ratio, 0), 1))
     }
 }
 

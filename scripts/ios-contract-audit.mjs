@@ -164,6 +164,8 @@ const dashboardView = read("BNBUStudentApp/Features/DashboardView.swift");
 const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
 const debugInfoPlist = read("BNBUStudentApp/Resources/Info-Debug.plist");
 const privacyManifest = read("BNBUStudentApp/Resources/PrivacyInfo.xcprivacy");
+const privacyPolicyZH = read("BNBUStudentApp/Resources/privacy_policy_zh_cn.md");
+const privacyPolicyEN = read("BNBUStudentApp/Resources/privacy_policy_en.md");
 const releaseValidator = read("scripts/validate-release-config.sh");
 const macReleaseGate = read("scripts/run-macos-release-gate.sh");
 const modelTests = read("BNBUStudentTests/BNBUStudentModelTests.swift");
@@ -382,7 +384,12 @@ rejectText(settingsSource, "验证码登录接口发布后开放", "The contact 
 rejectText(settingsSource, "反馈工单接口发布后开放", "The feedback row is no longer greyed out");
 requireText(loginView, "appState.signInWithCode", "Verification-code sign-in submits instead of reporting a stub");
 requireText(loginView, "verification.sendCode", "Requesting a sign-in code is its own control");
-requireText(loginView, "screen.recoverySubmitted", "A filed recovery request confirms what happens next");
+requireText(loginView, "studentRecoveryInformation", "Student account help does not expose a fake password-recovery form");
+requireText(loginView, "recovery.studentUnsupported", "Student recovery limits are visible to accessibility tests");
+rejectText(loginView, "recovery.submit", "Student account help cannot expose a local-only recovery submit action");
+rejectText(loginView, "恢复申请已提交", "Student account help cannot claim that an unsupported recovery write succeeded");
+requireText(appState, "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请", "Student recovery fails closed instead of reporting a local success");
+requireText(modelTests, "testStudentRecoveryNeverCreatesALocalFalseSuccess", "XCTest covers the student recovery contract boundary");
 rejectText(loginView, "验证码登录接口尚未接入 iOS", "The sign-in stub notice is gone");
 rejectText(loginView, "账号恢复接口尚未接入 iOS", "The recovery stub notice is gone");
 requireText(models, "struct CourseInvite", "An invite lookup has its own model");
@@ -641,6 +648,12 @@ for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent
   requireText(privacyManifest, `NSPrivacyCollectedDataType${dataType}`, `Privacy manifest declares ${dataType}`);
 }
 rejectText(privacyManifest, "NSPrivacyCollectedDataTypePreciseLocation", "Release privacy manifest does not claim disabled precise-location collection");
+rejectText(appSources, "import UserNotifications", "The current release does not link an unused system-notification flow");
+rejectText(appSources, "requestAuthorization(options:", "The current release does not ask for unused notification permission");
+rejectText(appSources, "registerForRemoteNotifications", "The current release does not register for APNs");
+requireText(appShellViews, "业务消息目前仅在 App 内通知中心展示", "The consent summary describes in-app-only notifications");
+requireText(privacyPolicyZH, "不申请系统通知权限", "The Chinese privacy policy matches in-app-only notifications");
+requireText(privacyPolicyEN, "neither schedules local system notifications nor registers with a push service", "The English privacy policy matches in-app-only notifications");
 
 rejectText(debugInfoPlist + releaseInfoPlist, "CFBundleURLTypes", "No custom URL-scheme deep-link surface is registered");
 rejectText(project, "com.apple.developer.associated-domains", "No unreviewed universal-link entitlement is enabled");
@@ -738,6 +751,10 @@ rejectText(
   "BNBUTheme.background.frame(height:",
   "No page-background strip is pinned over scrolling content"
 );
+requireText(components, "enum BNBUProgressGeometry", "Progress bars share a safe layout-width policy");
+requireText(components, "containerWidth.isFinite", "Progress bars reject non-finite geometry proposals");
+rejectText(featureSources, ".frame(width: proxy.size.width *", "Progress bars never forward unchecked geometry into frame width");
+requireText(modelTests, "testProgressGeometryRejectsInvalidLayoutProposals", "XCTest covers negative and non-finite progress geometry");
 
 // Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch
 // course guide, then sign-in.
@@ -754,12 +771,24 @@ requireText(
   "guard BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults) else {",
   "Privacy consent is a gate ahead of sign-in, not a login-form checkbox"
 );
-// Resolving the stage one frame late swapped the root view under the tab bar,
-// which dropped the accessibility identifiers on its items.
+// UI fixtures remain deterministic before the first frame, while production
+// stays on the restoring stage until the rotating session has been validated
+// against `/me`. A cached token alone must never open the authenticated shell.
+const appEntry = read("BNBUStudentApp/BNBUStudentApp.swift");
 requireText(
-  read("BNBUStudentApp/BNBUStudentApp.swift"),
-  "initialValue: AppShellStage.resolved(",
-  "The startup destination is resolved before the first frame"
+  appEntry,
+  "? AppShellStage.resolved(",
+  "UI fixtures resolve their startup destination before the first frame"
+);
+requireText(
+  appEntry,
+  ": .restoring)",
+  "Production starts behind the asynchronous session-restore gate"
+);
+requireOrder(
+  appShellViews,
+  ["await appState.restoreBackendSession()", "        resolveInitialStage()"],
+  "Production validates the Backend session before resolving its destination"
 );
 requireText(
   appShellViews,

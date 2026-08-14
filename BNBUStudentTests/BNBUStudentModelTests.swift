@@ -6,6 +6,15 @@ import UIKit
 
 @MainActor
 final class BNBUStudentModelTests: XCTestCase {
+    func testProgressGeometryRejectsInvalidLayoutProposals() {
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: -20, ratio: 0.5), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: .infinity, ratio: 0.5), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: .nan), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: -1), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: 2), 200)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: 0.25), 50)
+    }
+
     override func setUp() {
         super.setUp()
         // Client-generated messages follow the app language; pin zh-Hans so
@@ -1281,12 +1290,12 @@ final class BNBUStudentModelTests: XCTestCase {
         )
     }
 
-    func testFilingFeedbackPrependsTheTicketAndRefusesTooManyScreenshots() {
+    func testFilingFeedbackPrependsTheTicketAndRefusesTooManyScreenshots() async {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        state.refreshFeedbackTickets()
+        await state.refreshFeedbackTickets()
         let seeded = state.feedbackTickets.count
         XCTAssertGreaterThan(seeded, 0)
 
@@ -1334,25 +1343,31 @@ final class BNBUStudentModelTests: XCTestCase {
     }
 
     // A reinstalled app signs back in with a code, so this is the only way in.
-    func testVerificationCodeSignInOpensTheWorkspace() {
+    func testVerificationCodeSignInOpensTheWorkspace() async {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        XCTAssertFalse(state.sendLoginCode(to: "1380013800", channel: .phone))
+        var succeeded = await state.sendLoginCode(to: "1380013800", channel: .phone)
+        XCTAssertFalse(succeeded)
         XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
-        XCTAssertFalse(state.sendLoginCode(to: "13900139000", channel: .phone))
+        succeeded = await state.sendLoginCode(to: "13900139000", channel: .phone)
+        XCTAssertFalse(succeeded)
         XCTAssertTrue(state.errorMessage?.contains("测试账号") == true)
-        XCTAssertTrue(state.sendLoginCode(to: "13800138000", channel: .phone))
+        succeeded = await state.sendLoginCode(to: "13800138000", channel: .phone)
+        XCTAssertTrue(succeeded)
 
-        XCTAssertFalse(state.signInWithCode("12345", contact: "13800138000", channel: .phone))
+        succeeded = await state.signInWithCode("12345", contact: "13800138000", channel: .phone)
+        XCTAssertFalse(succeeded)
         XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
         XCTAssertFalse(state.isAuthenticated)
 
-        XCTAssertFalse(state.signInWithCode("654321", contact: "13800138000", channel: .phone))
+        succeeded = await state.signInWithCode("654321", contact: "13800138000", channel: .phone)
+        XCTAssertFalse(succeeded)
         XCTAssertFalse(state.isAuthenticated)
 
-        XCTAssertTrue(state.signInWithCode("123456", contact: "13800138000", channel: .phone))
+        succeeded = await state.signInWithCode("123456", contact: "13800138000", channel: .phone)
+        XCTAssertTrue(succeeded)
         XCTAssertTrue(state.isAuthenticated)
         XCTAssertEqual(state.workspace.student.email, "test.student@bnbu.edu.cn")
         XCTAssertEqual(state.workspace.student.name, "测试学生")
@@ -1442,35 +1457,26 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(restored.workspace.progress.rawCourse, originalRawCourseHours + 1)
     }
 
-    func testRecoveryRequestNeedsAnIdentityAndOneReachableContact() {
+    func testStudentRecoveryNeverCreatesALocalFalseSuccess() {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "", name: "林同学", description: "手机丢了", newPhone: "13800138000", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请填写学号。")
-
-        XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请至少填写一个新的手机号或邮箱，供老师换绑。")
-
-        XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "138", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
-
-        XCTAssertTrue(state.submitRecoveryRequest(
             studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: "lin@bnbu.edu.cn"
         ))
-        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(
+            state.errorMessage,
+            BNBUL10n.text(
+                "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请。若无法使用原邮箱，请联系任课教师或系统管理员核验身份。"
+            )
+        )
     }
 
     func testBoundContactsAreShownMasked() {
         XCTAssertEqual(ContactBindingRule.masked("13800138000", for: .phone), "138****8000")
         XCTAssertEqual(ContactBindingRule.masked("lin@bnbu.edu.cn", for: .email), "li***@bnbu.edu.cn")
+        XCTAssertEqual(ContactBindingRule.masked("s***@bnbu.edu.cn", for: .email), "s***@bnbu.edu.cn")
     }
 
     func testCourseJoinRequestSurvivesRelaunchAfterSignIn() throws {
@@ -2102,11 +2108,6 @@ final class BNBUStudentModelTests: XCTestCase {
             CheckInInputRule.contractDescription("  课程训练说明  ", for: .courseRelated),
             "课程训练说明"
         )
-        XCTAssertEqual(BNBUNotificationManager.route(from: ["route": "course"]), .courses)
-        XCTAssertEqual(BNBUNotificationManager.route(from: ["target": "sport_record"]), .checkin)
-        XCTAssertEqual(BNBUNotificationManager.route(from: ["type": "grade"]), .grades)
-        XCTAssertEqual(BNBUNotificationManager.route(from: [:]), .dashboard)
-
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -2353,9 +2354,17 @@ final class BNBUStudentModelTests: XCTestCase {
             XCTAssertEqual(status, .pending)
         }
         let supplementRequired = try decoder.decode(ExemptionStatus.self, from: Data("\"supplement_required\"".utf8))
+        let draft = try decoder.decode(ExemptionStatus.self, from: Data("\"DRAFT\"".utf8))
+        let rejected = try decoder.decode(ExemptionStatus.self, from: Data("\"REJECTED\"".utf8))
         let expired = try decoder.decode(ExemptionStatus.self, from: Data("\"expired\"".utf8))
         XCTAssertEqual(supplementRequired, .supplementRequired)
         XCTAssertTrue(supplementRequired.canSupplement)
+        XCTAssertEqual(draft, .draft)
+        XCTAssertTrue(draft.canSupplement)
+        XCTAssertTrue(draft.canMutateUnderContract15)
+        XCTAssertEqual(rejected, .rejected)
+        XCTAssertTrue(rejected.canSupplement)
+        XCTAssertFalse(rejected.canMutateUnderContract15)
         XCTAssertEqual(expired, .expired)
         XCTAssertFalse(expired.canSupplement)
     }

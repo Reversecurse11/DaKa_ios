@@ -907,7 +907,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Daily check-in hours 06:00–22:00"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["16 hr"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["4 hr remaining toward this semester’s goal"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["4 course hours remaining"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Remain 4 hr"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["每日打卡时间 06:00–22:00"].exists)
         XCTAssertFalse(app.staticTexts["16 小时"].exists)
 
@@ -1173,7 +1173,8 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         app.buttons["login.recoveryRequest"].tap()
         XCTAssertTrue(screen("screen.recoveryRequest").waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["recovery.submit"].isEnabled)
+        XCTAssertTrue(app.descendants(matching: .any)["recovery.studentUnsupported"].exists)
+        XCTAssertFalse(app.buttons["recovery.submit"].exists)
         app.buttons["nav.back"].tap()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
@@ -1189,6 +1190,34 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertFalse(app.buttons["profile.endurance.button"].exists)
+    }
+
+    func testEmailVerificationLoginKeepsMockFlowAfterAsyncAPIWiring() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-login-email",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.login.email").waitForExistence(timeout: 5))
+        let fillButton = app.buttons["verification.fillMockAccount"]
+        XCTAssertTrue(fillButton.waitForExistence(timeout: 3))
+        fillButton.tap()
+
+        let sendButton = app.buttons["verification.sendCode"]
+        XCTAssertTrue(sendButton.isEnabled)
+        sendButton.tap()
+        XCTAssertTrue(app.staticTexts["验证码已发送，10 分钟内有效，且仅可使用一次。"].waitForExistence(timeout: 3))
+
+        let submitButton = app.buttons["verification.submit"]
+        XCTAssertTrue(submitButton.isEnabled)
+        submitButton.tap()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["你好，测试学生"].waitForExistence(timeout: 3))
     }
 
     // Temporary remote E2E check driven by env credentials; skipped when env is absent.

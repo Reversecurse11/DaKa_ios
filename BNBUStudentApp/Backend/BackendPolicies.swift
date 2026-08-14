@@ -316,6 +316,38 @@ enum IOSAppReleaseContractPolicy {
         }
         return true
     }
+
+    static func expectedEnforcement(
+        for policy: APIV1AppReleasePolicy,
+        currentBuildNumber: Int
+    ) -> String? {
+        guard accepts(policy),
+              let minimum = policy.minimumSupportedBuildNumber,
+              let latest = policy.latestBuildNumber else {
+            return nil
+        }
+        if currentBuildNumber < minimum { return "REQUIRED" }
+        if currentBuildNumber < latest { return "RECOMMENDED" }
+        return "NONE"
+    }
+
+    static func requiredUpdate(
+        for policy: APIV1AppReleasePolicy,
+        currentBuildNumber: Int
+    ) -> AppUpdateRequirement? {
+        guard expectedEnforcement(
+            for: policy,
+            currentBuildNumber: currentBuildNumber
+        ) == "REQUIRED",
+        policy.enforcement == "REQUIRED" else {
+            return nil
+        }
+        return AppUpdateRequirement(
+            minimumVersion: policy.minimumSupportedVersion,
+            downloadURL: policy.downloadUrl ?? "",
+            updateMessage: policy.message ?? ""
+        )
+    }
 }
 
 /// Future-proof gate for the six location operations. The current backend

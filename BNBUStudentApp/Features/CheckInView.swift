@@ -183,8 +183,11 @@ struct CheckInView: View {
             healthReminderKey: healthReminderKey,
             confirmEndAction: { performConfirmedEndExercise() },
             abandonAction: {
-                appState.discardExerciseSession()
-                resetFormAfterSubmit()
+                Task {
+                    if await appState.cancelCurrentExerciseSession() {
+                        resetFormAfterSubmit()
+                    }
+                }
             }
         )
     }
@@ -255,7 +258,8 @@ struct CheckInView: View {
 
             if let session = appState.exerciseSession {
                 exerciseSessionPanel(session)
-                if session.status == .completed, session.creditedHours() > 0 {
+                if session.status == .completed,
+                   appState.creditedExerciseHours(for: session) > 0 {
                     evidenceSubmissionForm(session)
                 }
             } else {
@@ -450,7 +454,9 @@ struct CheckInView: View {
                             sessionDetailRow(title: "结束时间", value: formattedTime(displayedSession.endTime ?? context.date))
                             sessionDetailRow(
                                 title: "可计学时",
-                                value: displayedSession.creditedHours().localizedHourText
+                                value: appState.creditedExerciseHours(
+                                    for: displayedSession
+                                ).localizedHourText
                             )
                         }
                     }
@@ -478,12 +484,12 @@ struct CheckInView: View {
 
                     if displayedSession.isPaused {
                         PrimaryActionButton(title: "继续运动", systemImage: "play.fill") {
-                            appState.resumeExerciseSession()
+                            Task { await appState.resumeCurrentExerciseSession() }
                         }
                         .accessibilityIdentifier("checkin.exercise.resume")
                     } else {
                         PrimaryActionButton(title: "暂停运动", systemImage: "pause.fill") {
-                            appState.pauseExerciseSession()
+                            Task { await appState.pauseCurrentExerciseSession() }
                         }
                         .accessibilityIdentifier("checkin.exercise.pause")
                     }
@@ -506,7 +512,7 @@ struct CheckInView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("checkin.exercise.abandon")
-                } else if displayedSession.creditedHours() == 0 {
+                } else if appState.creditedExerciseHours(for: displayedSession) == 0 {
                     Text("本次运动不足 1 小时，不计入体育学时，不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
                         .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.muted)
@@ -552,7 +558,10 @@ struct CheckInView: View {
         HStack(alignment: .top, spacing: BNBUSpacing.space8) {
             sessionStat(value: formattedTime(session.startTime), caption: "开始")
             sessionStat(
-                value: session.creditedHours(at: date).localizedHourText,
+                value: appState.creditedExerciseHours(
+                    for: session,
+                    at: date
+                ).localizedHourText,
                 caption: "预计学时"
             )
             sessionStat(
@@ -687,7 +696,7 @@ struct CheckInView: View {
     }
 
     private func creditSummary(for session: ExerciseSession, at date: Date) -> String {
-        switch session.creditedHours(at: date) {
+        switch appState.creditedExerciseHours(for: session, at: date) {
         case 2: return BNBUL10n.text("当前可计学时：2 小时（已达今日上限）")
         case 1: return BNBUL10n.text("当前可计学时：1 小时 · 满 2 小时自动结束")
         default: return BNBUL10n.text("不足 1 小时不计入 · 满 1 小时计 1 小时")
@@ -704,11 +713,14 @@ struct CheckInView: View {
     /// Runs after 「确认结束」: an under-one-hour end closes the session with a
     /// notice, without a record or quota usage, keeping drafts for later today.
     private func performConfirmedEndExercise() {
-        guard appState.endExerciseSession() else { return }
-        if appState.exerciseSession?.creditedHours() == 0 {
-            appState.finishUncreditedExerciseSession()
-            resetFormAfterSubmit()
-            showUnderHourNotice = true
+        Task {
+            guard await appState.finishCurrentExerciseSession() else { return }
+            if let session = appState.exerciseSession,
+               appState.creditedExerciseHours(for: session) == 0 {
+                appState.finishUncreditedExerciseSession()
+                resetFormAfterSubmit()
+                showUnderHourNotice = true
+            }
         }
     }
 
@@ -933,7 +945,7 @@ struct CheckInView: View {
               let session = appState.exerciseSession,
               session.status == .completed,
               submissionContext != nil else { return false }
-        let creditedHours = session.creditedHours()
+        let creditedHours = appState.creditedExerciseHours(for: session)
         return !appState.hasSubmittedCheckInToday() &&
             (creditedHours == 1 || creditedHours == 2) &&
             CheckInInputRule.validationMessage(
@@ -953,7 +965,8 @@ struct CheckInView: View {
         if submissionContext == nil {
             return BNBUL10n.text("本次运动关联的课程已失效，请刷新课程后重试。")
         }
-        if session.creditedHours() != 1 && session.creditedHours() != 2 {
+        let creditedHours = appState.creditedExerciseHours(for: session)
+        if creditedHours != 1 && creditedHours != 2 {
             return BNBUL10n.text("运动不足 1 小时，不能提交。")
         }
         if let inputMessage = CheckInInputRule.validationMessage(
@@ -1002,8 +1015,8 @@ struct CheckInView: View {
             BNBUL10n.dynamicText(session.resolvedSportName),
             startText,
             endText,
-            formatDuration(session.elapsed()),
-            session.creditedHours().localizedHourText,
+            formatDuration(appState.elapsedExerciseDuration(for: session)),
+            appState.creditedExerciseHours(for: session).localizedHourText,
             proofSummary
         )
     }
@@ -1013,7 +1026,7 @@ struct CheckInView: View {
         return appState.canResumePendingCheckIn(
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
-            hours: session.creditedHours(),
+            hours: appState.creditedExerciseHours(for: session),
             note: submissionNote(for: session),
             sportType: resolvedSportType,
             proofAttachments: proofAttachments
@@ -1080,7 +1093,7 @@ struct CheckInView: View {
         appState.saveDraft(
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
-            hours: session.creditedHours(),
+            hours: appState.creditedExerciseHours(for: session),
             note: submissionNote(for: session),
             sportType: session.sportType.rawValue,
             customSportType: session.customSportName ?? "",
@@ -1117,7 +1130,7 @@ struct CheckInView: View {
             let success = await appState.submitCheckIn(
                 creditType: submissionContext.creditType,
                 courseId: submissionContext.courseId,
-                hours: session.creditedHours(),
+                hours: appState.creditedExerciseHours(for: session),
                 note: submissionNote(for: session),
                 sportType: resolvedSportType,
                 proofAttachments: proofAttachments,
@@ -1161,11 +1174,12 @@ struct CheckInView: View {
         rebuildProofAttachments()
         note = ""
         draftSaved = false
-        guard appState.startExerciseSession(
-            category: selectedCategory,
-            sportType: selectedSportType,
-            customSportName: customSportType
-        ) else { return }
+        Task {
+            guard await appState.beginExerciseSession(
+                category: selectedCategory,
+                sportType: selectedSportType,
+                customSportName: customSportType
+            ) else { return }
         // OpenAPI 1.1 publishes GPS routes as stable default-deny contracts.
         // Keep only the explicit Debug permission fixture until both the
         // backend gate and the privacy policy are approved.
@@ -1179,6 +1193,7 @@ struct CheckInView: View {
             }
         }
         #endif
+        }
     }
 
     private var resolvedSportType: String? {

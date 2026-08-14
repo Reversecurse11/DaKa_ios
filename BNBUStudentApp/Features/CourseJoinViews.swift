@@ -370,6 +370,7 @@ struct ContactBindingView: View {
 /// out the server's resend window before it can be used again.
 struct ContactChannelPanel: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
     let channel: ContactChannel
     @Binding var value: String
     @Binding var verifiedValue: String?
@@ -378,9 +379,12 @@ struct ContactChannelPanel: View {
     var allowsReplacement = false
 
     @State private var code = ""
+    @State private var currentEmailCode = ""
     @State private var codeSent = false
     @State private var resendSeconds = 0
     @State private var notice: String?
+    @State private var isRequestingCode = false
+    @State private var isVerifyingCode = false
     @FocusState private var isFocused: Bool
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -395,7 +399,12 @@ struct ContactChannelPanel: View {
                     verifiedRow(verifiedValue)
                 } else {
                     contactRow
-                    if codeSent { codeRow }
+                    if codeSent {
+                        if appState.contactVerificationRequiresCurrentEmailCode {
+                            currentEmailCodeRow
+                        }
+                        codeRow
+                    }
                     if let notice {
                         Text(verbatim: notice)
                             .font(BNBUFont.labelMedium)
@@ -437,6 +446,7 @@ struct ContactChannelPanel: View {
                     verifiedValue = nil
                     value = ""
                     code = ""
+                    currentEmailCode = ""
                     codeSent = false
                     notice = nil
                 }
@@ -479,7 +489,12 @@ struct ContactChannelPanel: View {
         HStack(spacing: 10) {
             Image(systemName: "lock.fill")
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            TextField(channel.codeTitle, text: $code)
+            TextField(
+                appState.contactVerificationRequiresCurrentEmailCode
+                    ? "新邮箱验证码"
+                    : channel.codeTitle,
+                text: $code
+            )
                 .bnbuInputText()
                 .keyboardType(.numberPad)
                 .onChange(of: code) { _, entered in
@@ -488,16 +503,37 @@ struct ContactChannelPanel: View {
                 .accessibilityLabel(Text(LocalizedStringKey(channel.codeTitle)))
                 .accessibilityIdentifier("contactBinding.\(channel.rawValue).code")
 
-            Button("确认验证") { verify() }
+            Button(isVerifyingCode ? "验证中…" : "确认验证") { verify() }
                 .font(BNBUFont.labelMedium)
                 .foregroundStyle(
-                    ContactBindingRule.isValidCode(code)
+                    canVerify
                         ? BNBUTheme.primary
                         : BNBUTheme.onSurfaceVariant.opacity(0.55)
                 )
-                .disabled(!ContactBindingRule.isValidCode(code))
+                .disabled(!canVerify)
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("contactBinding.\(channel.rawValue).verify")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: BNBUSpacing.touchTarget)
+        .background(BNBUTheme.surface)
+        .bnbuOutlinedSurface(lineWidth: 1)
+    }
+
+    private var currentEmailCodeRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "envelope.badge.shield.half.filled")
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            TextField("当前邮箱验证码", text: $currentEmailCode)
+                .bnbuInputText()
+                .keyboardType(.numberPad)
+                .onChange(of: currentEmailCode) { _, entered in
+                    currentEmailCode = String(
+                        entered.filter(\.isNumber).prefix(ContactBindingRule.codeLength)
+                    )
+                }
+                .accessibilityLabel(Text("当前邮箱验证码"))
+                .accessibilityIdentifier("contactBinding.email.currentCode")
         }
         .padding(.horizontal, 14)
         .frame(minHeight: BNBUSpacing.touchTarget)
@@ -510,33 +546,75 @@ struct ContactChannelPanel: View {
     }
 
     private var sendTitle: String {
-        resendSeconds > 0
+        if isRequestingCode { return BNBUL10n.text("发送中…") }
+        return resendSeconds > 0
             ? BNBUL10n.formatted("%lld 秒后可重发", resendSeconds)
             : BNBUL10n.text("获取验证码")
     }
 
     private var canSend: Bool {
-        resendSeconds == 0 && ContactBindingRule.isValid(value, for: channel)
+        !isRequestingCode && !isVerifyingCode && resendSeconds == 0
+            && ContactBindingRule.isValid(value, for: channel)
+    }
+
+    private var canVerify: Bool {
+        !isRequestingCode && !isVerifyingCode
+            && ContactBindingRule.isValidCode(code)
+            && (!appState.contactVerificationRequiresCurrentEmailCode
+                || ContactBindingRule.isValidCode(currentEmailCode))
     }
 
     private func sendCode() {
         isFocused = false
-        guard appState.sendContactVerificationCode(to: value, channel: channel) else {
-            notice = appState.errorMessage
-            return
+        Task { @MainActor in
+            guard !isRequestingCode else { return }
+            isRequestingCode = true
+            defer { isRequestingCode = false }
+            let success: Bool
+            if channel == .email {
+                success = await appState.requestContactEmailVerification(
+                    email: value,
+                    locale: locale.identifier
+                )
+            } else {
+                success = appState.sendContactVerificationCode(to: value, channel: channel)
+            }
+            guard success else {
+                notice = appState.errorMessage
+                return
+            }
+            currentEmailCode = ""
+            code = ""
+            codeSent = true
+            resendSeconds = ContactBindingRule.resendInterval
+            notice = appState.contactVerificationRequiresCurrentEmailCode
+                ? BNBUL10n.text("验证码已分别发送到当前邮箱和新邮箱，10 分钟内有效。")
+                : BNBUL10n.text("验证码已发送，10 分钟内有效。")
         }
-        codeSent = true
-        resendSeconds = ContactBindingRule.resendInterval
-        notice = BNBUL10n.text("验证码已发送，10 分钟内有效。")
     }
 
     private func verify() {
-        guard appState.verifyContactCode(code, for: value, channel: channel) else {
-            notice = appState.errorMessage
-            return
+        Task { @MainActor in
+            guard canVerify else { return }
+            isVerifyingCode = true
+            defer { isVerifyingCode = false }
+            let success: Bool
+            if channel == .email {
+                success = await appState.completeContactEmailVerification(
+                    newEmailCode: code,
+                    currentEmailCode: currentEmailCode,
+                    email: value
+                )
+            } else {
+                success = appState.verifyContactCode(code, for: value, channel: channel)
+            }
+            guard success else {
+                notice = appState.errorMessage
+                return
+            }
+            verifiedValue = value
+            notice = nil
         }
-        verifiedValue = value
-        notice = nil
     }
 }
 

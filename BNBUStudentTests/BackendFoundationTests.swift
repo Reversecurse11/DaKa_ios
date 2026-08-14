@@ -748,6 +748,647 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertEqual(currentUser.value.user.id, "user-1")
     }
 
+    @MainActor
+    func testAppStateUsesContract15EmailSignInWithoutLegacyFallback() async throws {
+        let authStore = MemoryAuthSessionStore()
+        let lock = NSLock()
+        var paths: [String] = []
+        var requestedBody: [String: Any] = [:]
+        var verifiedBody: [String: Any] = [:]
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            let body = Self.bodyData(from: request)
+            if request.url?.path == "/api/v1/auth/student-sign-in-codes" {
+                requestedBody = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+            } else if request.url?.path == "/api/v1/auth/student-sign-in-codes/verify" {
+                verifiedBody = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+            }
+            lock.unlock()
+
+            switch request.url?.path {
+            case "/api/v1/auth/student-sign-in-codes":
+                return .json(
+                    status: 202,
+                    headers: ["X-Request-ID": "req-app-code"],
+                    body: #"{"data":{"challengeId":"challenge-app","expiresAt":"2026-08-14T01:00:00Z"},"meta":{"requestId":"req-app-code"}}"#
+                )
+            case "/api/v1/auth/student-sign-in-codes/verify":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-app-verify"],
+                    body: Self.authEnvelopeJSON(
+                        access: "app-access",
+                        refresh: "app-refresh",
+                        requestID: "req-app-verify"
+                    )
+                )
+            case "/api/v1/me":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer app-access")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-app-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-app-me")
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let client = StudentAPIClient(
+            baseURL: BackendEnvironment.local.baseURL,
+            urlSession: session,
+            maximumSafeRetries: 0
+        )
+        let services = BackendAppServices(
+            environment: .local,
+            client: client,
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-test-installation")
+        )
+        let suiteName = "BackendFoundationTests.app-state-auth.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        let didRequestCode = await state.sendLoginCode(
+            to: "Student@Example.edu ",
+            channel: .email,
+            locale: "en-US"
+        )
+        XCTAssertTrue(didRequestCode)
+        let didSignIn = await state.signInWithCode(
+            "123456",
+            contact: "student@example.edu",
+            channel: .email
+        )
+        XCTAssertTrue(didSignIn)
+
+        XCTAssertEqual(paths, [
+            "/api/v1/auth/student-sign-in-codes",
+            "/api/v1/auth/student-sign-in-codes/verify",
+            "/api/v1/me"
+        ])
+        XCTAssertEqual(requestedBody["organizationCode"] as? String, "BNBU")
+        XCTAssertEqual(requestedBody["account"] as? String, "student@example.edu")
+        XCTAssertEqual(requestedBody["channel"] as? String, "EMAIL")
+        XCTAssertEqual(requestedBody["locale"] as? String, "en")
+        XCTAssertEqual(verifiedBody["challengeId"] as? String, "challenge-app")
+        XCTAssertEqual(verifiedBody["deviceId"] as? String, "ios-test-installation")
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isRemoteMode)
+        XCTAssertTrue(state.isAPIV1Session)
+        XCTAssertTrue(state.isEmailVerified)
+        XCTAssertEqual(state.workspace.student.id, "student-1")
+        XCTAssertEqual(state.workspace.student.name, "测试学生")
+        XCTAssertEqual(state.workspace.student.email, "student@example.edu")
+        XCTAssertEqual(authStore.session?.accessToken, "app-access")
+    }
+
+    @MainActor
+    func testAppStateRestoresAndRevokesContract15Session() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "restored-access", refresh: "restored-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/me":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer restored-access")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-restore-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-restore-me")
+                )
+            case "/api/v1/auth/logout":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer restored-access")
+                let body = (try? JSONSerialization.jsonObject(with: Self.bodyData(from: request))) as? [String: Any]
+                XCTAssertEqual(body?["refreshToken"] as? String, "restored-refresh")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-restore-logout"],
+                    body: #"{"data":{},"meta":{"requestId":"req-restore-logout"}}"#
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let client = StudentAPIClient(
+            baseURL: BackendEnvironment.local.baseURL,
+            urlSession: session,
+            maximumSafeRetries: 0
+        )
+        let services = BackendAppServices(
+            environment: .local,
+            client: client,
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-restore-installation")
+        )
+        let suiteName = "BackendFoundationTests.app-state-restore.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isAPIV1Session)
+        XCTAssertTrue(state.isEmailVerified)
+        XCTAssertEqual(state.workspace.student.id, "student-1")
+        XCTAssertEqual(state.workspace.student.email, "s***@example.edu")
+
+        await state.logout()
+        XCTAssertFalse(state.isAuthenticated)
+        XCTAssertFalse(state.isAPIV1Session)
+        XCTAssertNil(authStore.session)
+        XCTAssertEqual(paths, ["/api/v1/me", "/api/v1/auth/logout"])
+    }
+
+    @MainActor
+    func testAPIV1PreferenceSyncPreservesLocalLanguageAndServerCommunicationFlags() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "preference-access", refresh: "preference-refresh")
+        )
+        let lock = NSLock()
+        var operations: [String] = []
+        var updateBody: [String: Any] = [:]
+        let session = makeSession { request in
+            let operation = "\(request.httpMethod ?? "") \(request.url?.path ?? "")"
+            lock.lock()
+            operations.append(operation)
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-preference-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-preference-me")
+                )
+            case "/api/v1/me/preferences":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer preference-access")
+                if request.httpMethod == "GET" {
+                    return .json(
+                        status: 200,
+                        headers: ["X-Request-ID": "req-preference-load"],
+                        body: """
+                        {"data":{"locale":"zh-CN","pushEnabled":false,"emailEnabled":true,"version":4},"meta":{"requestId":"req-preference-load"}}
+                        """
+                    )
+                }
+                XCTAssertEqual(request.httpMethod, "PATCH")
+                XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+                updateBody = ((try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]) ?? [:]
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-preference-update"],
+                    body: """
+                    {"data":{"locale":"en","pushEnabled":false,"emailEnabled":true,"version":5},"meta":{"requestId":"req-preference-update"}}
+                    """
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-preference-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-preference-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-preference-installation")
+        )
+        let suiteName = "BackendFoundationTests.preferences.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(BNBULanguage.english.rawValue, forKey: BNBULanguage.defaultsKey)
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        await state.refreshAPIV1Preferences()
+        XCTAssertEqual(defaults.string(forKey: BNBULanguage.defaultsKey), BNBULanguage.english.rawValue)
+        await state.synchronizeAPIV1Locale("en")
+
+        XCTAssertEqual(updateBody["locale"] as? String, "en")
+        XCTAssertEqual(updateBody["pushEnabled"] as? Bool, false)
+        XCTAssertEqual(updateBody["emailEnabled"] as? Bool, true)
+        XCTAssertEqual(updateBody["expectedVersion"] as? Int, 4)
+        XCTAssertNil(state.preferenceSyncNotice)
+        XCTAssertEqual(operations, [
+            "GET /api/v1/me",
+            "GET /api/v1/me/preferences",
+            "PATCH /api/v1/me/preferences"
+        ])
+    }
+
+    @MainActor
+    func testAPIV1Preference503KeepsTheOnDeviceLanguageSelection() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "preference-503-access", refresh: "preference-503-refresh")
+        )
+        let session = makeSession { request in
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-preference-503-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-preference-503-me")
+                )
+            case "/api/v1/me/preferences":
+                return .json(
+                    status: 503,
+                    headers: ["X-Request-ID": "req-preference-503"],
+                    body: Self.errorJSON(
+                        code: "SYSTEM_MODE_UNSUPPORTED",
+                        requestID: "req-preference-503"
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-preference-503-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-preference-503-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-preference-503")
+        )
+        let suiteName = "BackendFoundationTests.preferences-503.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(BNBULanguage.english.rawValue, forKey: BNBULanguage.defaultsKey)
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        await state.refreshAPIV1Preferences()
+        await state.synchronizeAPIV1Locale("zh-CN")
+
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertEqual(defaults.string(forKey: BNBULanguage.defaultsKey), BNBULanguage.english.rawValue)
+        XCTAssertEqual(
+            state.preferenceSyncNotice,
+            BNBUL10n.text("云端偏好同步暂未开放，本机语言设置仍然有效。")
+        )
+    }
+
+    @MainActor
+    func testAPIV1ExemptionListUsesGenericContractTypesAndServerLifecycle() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "exemption-access", refresh: "exemption-refresh")
+        )
+        let lock = NSLock()
+        var operations: [String] = []
+        let session = makeSession { request in
+            lock.lock()
+            operations.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")")
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exemption-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-exemption-me")
+                )
+            case "/api/v1/exemption-applications":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer exemption-access")
+                XCTAssertEqual(request.url?.query, "limit=100")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exemption-list"],
+                    body: """
+                    {"data":[
+                      {"id":"draft-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Medical documentation","mediaIds":["media-1"],"status":"DRAFT","publicComment":null,"submittedAt":null,"decidedAt":null,"version":1},
+                      {"id":"submitted-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"EXERCISE_CHECK_IN","reason":"Approved team activity","mediaIds":[],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T01:00:00Z","decidedAt":null,"version":2},
+                      {"id":"supplement-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"SPECIAL_CIRCUMSTANCE","reason":"Special circumstance","mediaIds":[],"status":"SUPPLEMENT_REQUIRED","publicComment":"Please add one document","submittedAt":"2026-08-14T02:00:00Z","decidedAt":null,"version":3}
+                    ],"meta":{"requestId":"req-exemption-list","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+                    """
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-exemption-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-exemption-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-exemption-installation")
+        )
+        let suiteName = "BackendFoundationTests.exemptions.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        await state.refreshRemoteExemptions()
+
+        XCTAssertFalse(state.canSubmitExemptions)
+        XCTAssertEqual(state.workspace.exemptions.map(\.item), [.physicalTest, .checkIn, .specialCircumstance])
+        XCTAssertEqual(state.workspace.exemptions.map(\.status), [.draft, .pending, .supplementRequired])
+        XCTAssertEqual(state.workspace.exemptions.first?.proofFiles.first?.id, "media-1")
+        XCTAssertEqual(state.workspace.exemptions.last?.teacherFeedback, "Please add one document")
+        XCTAssertEqual(operations, [
+            "GET /api/v1/me",
+            "GET /api/v1/exemption-applications"
+        ])
+    }
+
+    @MainActor
+    func testAPIV1Exemption503PreservesTheLastSuccessfulProjection() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "exemption-503-access", refresh: "exemption-503-refresh")
+        )
+        let lock = NSLock()
+        var listCallCount = 0
+        let session = makeSession { request in
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exemption-503-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-exemption-503-me")
+                )
+            case "/api/v1/exemption-applications":
+                lock.lock()
+                listCallCount += 1
+                let call = listCallCount
+                lock.unlock()
+                if call == 1 {
+                    return .json(
+                        status: 200,
+                        headers: ["X-Request-ID": "req-exemption-first"],
+                        body: """
+                        {"data":[{"id":"kept-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Keep this projection","mediaIds":[],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T01:00:00Z","decidedAt":null,"version":1}],"meta":{"requestId":"req-exemption-first","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+                        """
+                    )
+                }
+                return .json(
+                    status: 503,
+                    headers: ["X-Request-ID": "req-exemption-503"],
+                    body: Self.errorJSON(
+                        code: "SYSTEM_MODE_UNSUPPORTED",
+                        requestID: "req-exemption-503"
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-exemption-503-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-exemption-503-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-exemption-503")
+        )
+        let suiteName = "BackendFoundationTests.exemptions-503.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        await state.refreshRemoteExemptions()
+        XCTAssertEqual(state.workspace.exemptions.map(\.id), ["kept-1"])
+
+        await state.refreshRemoteExemptions()
+
+        XCTAssertEqual(state.workspace.exemptions.map(\.id), ["kept-1"])
+        XCTAssertEqual(
+            state.errorMessage,
+            BNBUL10n.text("免测申请服务暂未开放，当前保留最近一次同步结果。")
+        )
+        XCTAssertEqual(listCallCount, 2)
+    }
+
+    @MainActor
+    func testAPIV1LogoutFailureStillClearsDeviceSessionAndReportsRemoteRevocation() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "restored-access", refresh: "restored-refresh")
+        )
+        let session = makeSession { request in
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-restore-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-restore-me")
+                )
+            case "/api/v1/auth/logout":
+                return .json(
+                    status: 503,
+                    headers: ["X-Request-ID": "req-logout-failed"],
+                    body: Self.errorJSON(
+                        code: "SYSTEM_MODE_UNSUPPORTED",
+                        requestID: "req-logout-failed"
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-logout-installation")
+        )
+        let suiteName = "BackendFoundationTests.app-state-failed-logout.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        await state.logout()
+
+        XCTAssertFalse(state.isAuthenticated)
+        XCTAssertNil(authStore.session)
+        XCTAssertEqual(
+            state.errorMessage,
+            BNBUL10n.text("本机已退出，但服务器会话撤销失败。如账号存在风险，请联系管理员。")
+        )
+    }
+
+    @MainActor
+    func testAPIV1EmailRebindRequiresCurrentAndNewCodes() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "rebind-access", refresh: "rebind-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        var requestBody: [String: Any] = [:]
+        var verifyBody: [String: Any] = [:]
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-rebind-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-rebind-me")
+                )
+            case "/api/v1/me/email-verification-challenges":
+                requestBody = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any] ?? [:]
+                return .json(
+                    status: 202,
+                    headers: ["X-Request-ID": "req-rebind-start"],
+                    body: #"{"data":{"challengeId":"challenge-rebind","mode":"REBIND","expiresAt":"2099-08-14T01:00:00Z"},"meta":{"requestId":"req-rebind-start"}}"#
+                )
+            case "/api/v1/me/email-verification-challenges/challenge-rebind/verify":
+                verifyBody = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any] ?? [:]
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-rebind-finish"],
+                    body: Self.studentCurrentUserEnvelopeJSON(
+                        requestID: "req-rebind-finish",
+                        emailMasked: "n***@example.edu",
+                        userVersion: 3
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-rebind-installation")
+        )
+        let suiteName = "BackendFoundationTests.app-state-email-rebind.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        let didRequestRebind = await state.requestContactEmailVerification(
+            email: " New@Example.edu ",
+            locale: "en-US"
+        )
+        XCTAssertTrue(didRequestRebind)
+        XCTAssertTrue(state.contactVerificationRequiresCurrentEmailCode)
+        XCTAssertEqual(requestBody["email"] as? String, "new@example.edu")
+        XCTAssertEqual(requestBody["locale"] as? String, "en")
+        XCTAssertEqual(requestBody["expectedVersion"] as? Int, 2)
+
+        let didAcceptMissingCurrentCode = await state.completeContactEmailVerification(
+            newEmailCode: "222222",
+            currentEmailCode: nil,
+            email: "new@example.edu"
+        )
+        XCTAssertFalse(didAcceptMissingCurrentCode)
+        XCTAssertEqual(paths.count, 2, "Missing current proof must fail before HTTP")
+
+        let didCompleteRebind = await state.completeContactEmailVerification(
+            newEmailCode: "222222",
+            currentEmailCode: "111111",
+            email: "new@example.edu"
+        )
+        XCTAssertTrue(didCompleteRebind)
+        XCTAssertEqual(verifyBody["currentEmailCode"] as? String, "111111")
+        XCTAssertEqual(verifyBody["newEmailCode"] as? String, "222222")
+        XCTAssertEqual(state.workspace.student.email, "new@example.edu")
+        XCTAssertTrue(state.isEmailVerified)
+        XCTAssertFalse(state.contactVerificationRequiresCurrentEmailCode)
+        XCTAssertEqual(paths, [
+            "/api/v1/me",
+            "/api/v1/me/email-verification-challenges",
+            "/api/v1/me/email-verification-challenges/challenge-rebind/verify"
+        ])
+    }
+
     func testContract15RecordDraftAndSubmitAllowEmptyCourseDescription() async throws {
         let store = MemoryAuthSessionStore(session: Self.authSession(access: "record-access", refresh: "record-refresh"))
         let lock = NSLock()
@@ -947,7 +1588,6 @@ final class BackendFoundationTests: XCTestCase {
                 declaredContentSha256: nil,
                 durationSeconds: nil
             ),
-            expectedVersion: 3,
             progressHandler: { uploadProgress.record($0) }
         )
 
@@ -1019,6 +1659,706 @@ final class BackendFoundationTests: XCTestCase {
             ExerciseSessionAdmissionPolicy.startError(from: windowError),
             .outsideBeijingWindow(requestId: "req-window")
         )
+    }
+
+    func testStudentWorkspaceGatewayLoadsOnlyActiveAuthorizedCourseGraph() async throws {
+        let store = MemoryAuthSessionStore(
+            session: Self.authSession(access: "workspace-access", refresh: "workspace-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        var queries: [String: [String: String]] = [:]
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            paths.append(path)
+            queries[path] = Dictionary(uniqueKeysWithValues: URLComponents(
+                url: request.url!,
+                resolvingAgainstBaseURL: false
+            )?.queryItems?.map { ($0.name, $0.value ?? "") } ?? [])
+            lock.unlock()
+            switch path {
+            case "/api/v1/semesters/current":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-semester"],
+                    body: #"{"data":{"id":"semester-1","organizationId":"org-1","academicYear":"2026-2027","termCode":"FIRST","displayName":"2026 秋季","startDate":"2026-09-01","endDate":"2027-01-15","status":"CURRENT","isCurrent":true,"createdBy":null,"createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","version":1},"meta":{"requestId":"req-semester"}}"#
+                )
+            case "/api/v1/enrollments":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-enrollments"],
+                    body: #"{"data":[{"id":"enrollment-1","organizationId":"org-1","semesterId":"semester-1","classSectionId":"section-1","studentId":"student-1","source":"QR_CODE","sourceReferenceId":null,"status":"ACTIVE","joinedAt":"2026-09-01T00:00:00Z","endedAt":null,"endReason":null,"createdBy":"user-1","createdAt":"2026-09-01T00:00:00Z","updatedAt":"2026-09-01T00:00:00Z","version":1}],"meta":{"requestId":"req-enrollments","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}"#
+                )
+            case "/api/v1/class-sections":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-sections"],
+                    body: #"{"data":[{"id":"section-1","organizationId":"org-1","courseId":"course-1","semesterId":"semester-1","teacherId":"teacher-1","classCode":"001","displayName":"羽毛球 001","status":"ACTIVE","isEnrollmentOpen":true,"checkInWindowMode":"AVAILABLE","checkInStartDate":null,"checkInEndDate":null,"dailyStartTime":"06:00:00","dailyEndTime":"22:00:00","submissionDeadlineAt":null,"excludedDates":[],"createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","version":1}],"meta":{"requestId":"req-sections","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}"#
+                )
+            case "/api/v1/courses":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-courses"],
+                    body: #"{"data":[{"id":"course-1","organizationId":"org-1","courseCode":"GEPE101","courseName":"大学体育（羽毛球）","description":null,"status":"ACTIVE","createdBy":null,"createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","deletedAt":null,"version":1}],"meta":{"requestId":"req-courses","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}"#
+                )
+            case "/api/v1/teachers/teacher-1":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-teacher"],
+                    body: #"{"data":{"id":"teacher-1","organizationId":"org-1","userId":"teacher-user-1","employeeNumber":"T001","fullName":"合成教师","collegeName":null,"departmentName":"体育部","title":null,"status":"ACTIVE","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","deletedAt":null,"version":1},"meta":{"requestId":"req-teacher"}}"#
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let client = StudentAPIClient(
+            baseURL: BackendEnvironment.local.baseURL,
+            urlSession: session,
+            maximumSafeRetries: 0
+        )
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let projection = try await AuthoritativeStudentWorkspaceGateway(auth: auth)
+            .load(studentID: "student-1")
+
+        XCTAssertEqual(projection.semester.id, "semester-1")
+        XCTAssertEqual(projection.enrollments.map(\.id), ["enrollment-1"])
+        XCTAssertEqual(projection.classSections.map(\.id), ["section-1"])
+        XCTAssertEqual(projection.courses.map(\.id), ["course-1"])
+        XCTAssertEqual(projection.teachers.map(\.fullName), ["合成教师"])
+        XCTAssertEqual(queries["/api/v1/enrollments"]?["studentId"], "student-1")
+        XCTAssertEqual(queries["/api/v1/enrollments"]?["status"], "ACTIVE")
+        XCTAssertEqual(queries["/api/v1/class-sections"]?["semesterId"], "semester-1")
+        XCTAssertEqual(paths, [
+            "/api/v1/semesters/current",
+            "/api/v1/enrollments",
+            "/api/v1/class-sections",
+            "/api/v1/courses",
+            "/api/v1/teachers/teacher-1"
+        ])
+    }
+
+    @MainActor
+    func testContract15SystemModeHelpAndNotificationsNeverUseLegacyRoutes() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "capability-access", refresh: "capability-refresh")
+        )
+        let lock = NSLock()
+        var operations: [String] = []
+        let session = makeSession { request in
+            let operation = "\(request.httpMethod ?? "") \(request.url?.path ?? "")"
+            lock.lock()
+            operations.append(operation)
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/system-mode":
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-system-mode"],
+                    body: #"{"data":{"mode":"READ_ONLY","policyVersion":3,"updatedAt":"2026-08-14T00:00:00Z"},"meta":{"requestId":"req-system-mode"}}"#
+                )
+            case "/api/v1/app-release-policy":
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+                let components = request.url.flatMap {
+                    URLComponents(url: $0, resolvingAgainstBaseURL: false)
+                }
+                let query = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).compactMap { item in
+                    item.value.map { (item.name, $0) }
+                })
+                XCTAssertEqual(query["platform"], "IOS")
+                XCTAssertEqual(query["currentVersion"], "1.0.4")
+                XCTAssertEqual(query["currentBuildNumber"], "104")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-release-policy"],
+                    body: """
+                    {"data":{"platform":"IOS","minimumSupportedVersion":"1.0.0","latestVersion":"1.2.0","minimumSupportedBuildNumber":100,"latestBuildNumber":120,"enforcement":"RECOMMENDED","message":"Update available","downloadUrl":"https://apps.apple.com/app/id123","effectiveAt":"2026-08-07T00:00:00Z","expiresAt":null,"policyVersion":"ios-policy-1"},"meta":{"requestId":"req-release-policy"}}
+                    """
+                )
+            case "/api/v1/help-articles":
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+                XCTAssertEqual(request.url?.query, "locale=en")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-help"],
+                    body: #"{"data":[{"id":"help-1","category":"CHECK_IN","locale":"en","title":"Upload proof","bodyMarkdown":"Use the in-app camera.","publishedAt":"2026-08-14T00:00:00Z","version":1}],"meta":{"requestId":"req-help"}}"#
+                )
+            case "/api/v1/notifications":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capability-access")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-notifications"],
+                    body: #"{"data":[{"id":"notice-1","recipientUserId":"user-1","notificationType":"REVIEW_RESULT","title":"Review complete","body":"Your record was reviewed.","targetType":"EXERCISE_RECORD","targetId":"record-1","createdAt":"2026-08-14T00:00:00Z","readAt":null}],"meta":{"requestId":"req-notifications","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}"#
+                )
+            case "/api/v1/notifications/notice-1/read":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capability-access")
+                XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-notification-read"],
+                    body: #"{"data":{"id":"notice-1","recipientUserId":"user-1","notificationType":"REVIEW_RESULT","title":"Review complete","body":"Your record was reviewed.","targetType":"EXERCISE_RECORD","targetId":"record-1","createdAt":"2026-08-14T00:00:00Z","readAt":"2026-08-14T00:01:00Z"},"meta":{"requestId":"req-notification-read"}}"#
+                )
+            case "/api/v1/me/preferences":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capability-access")
+                if request.httpMethod == "GET" {
+                    return .json(
+                        status: 200,
+                        headers: ["X-Request-ID": "req-preferences-get"],
+                        body: """
+                        {"data":{"locale":"en","pushEnabled":false,"emailEnabled":true,"version":2},"meta":{"requestId":"req-preferences-get"}}
+                        """
+                    )
+                }
+                XCTAssertEqual(request.httpMethod, "PATCH")
+                XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+                let object = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(object?["locale"] as? String, "zh-CN")
+                XCTAssertEqual(object?["pushEnabled"] as? Bool, false)
+                XCTAssertEqual(object?["emailEnabled"] as? Bool, true)
+                XCTAssertEqual(object?["expectedVersion"] as? Int, 2)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-preferences-update"],
+                    body: """
+                    {"data":{"locale":"zh-CN","pushEnabled":false,"emailEnabled":true,"version":3},"meta":{"requestId":"req-preferences-update"}}
+                    """
+                )
+            case "/api/v1/feedback":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capability-access")
+                if request.httpMethod == "GET" {
+                    XCTAssertEqual(request.url?.query, "limit=100")
+                    return .json(
+                        status: 200,
+                        headers: ["X-Request-ID": "req-feedback-list"],
+                        body: """
+                        {"data":[{"id":"feedback-1","category":"BUG","content":"The timer stopped.","status":"OPEN","publicReply":null,"createdAt":"2026-08-14T00:00:00Z","updatedAt":"2026-08-14T00:00:00Z","version":1}],"meta":{"requestId":"req-feedback-list","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+                        """
+                    )
+                }
+                XCTAssertEqual(request.httpMethod, "POST")
+                XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+                let object = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(object?["category"] as? String, "BUG")
+                XCTAssertEqual(object?["content"] as? String, "The timer stopped again.")
+                let context = object?["clientContext"] as? [String: Any]
+                XCTAssertEqual(context?["platform"] as? String, "IOS")
+                XCTAssertNil(object?["email"])
+                XCTAssertNil(object?["phone"])
+                XCTAssertNil(object?["screenshots"])
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-feedback-create"],
+                    body: """
+                    {"data":{"id":"feedback-2","category":"BUG","content":"The timer stopped again.","status":"OPEN","publicReply":null,"createdAt":"2026-08-14T00:02:00Z","updatedAt":"2026-08-14T00:02:00Z","version":1},"meta":{"requestId":"req-feedback-create"}}
+                    """
+                )
+            case "/api/v1/exemption-applications":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capability-access")
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.query, "limit=100")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exemptions"],
+                    body: """
+                    {"data":[{"id":"exemption-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Medical certificate","mediaIds":["media-1"],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T00:03:00Z","decidedAt":null,"version":1}],"meta":{"requestId":"req-exemptions","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+                    """
+                )
+            default:
+                XCTFail("Contract 1.5 capability gateway reached an unexpected route: \(operation)")
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-capability-installation")
+        )
+        _ = try await services.auth.restore()
+
+        let mode = try await services.clientCapabilities.systemMode()
+        let releasePolicy = try await services.clientCapabilities.appReleasePolicy(
+            query: try XCTUnwrap(IOSAppReleasePolicyQuery(infoDictionary: [
+                "CFBundleVersion": "104",
+                "CFBundleShortVersionString": "1.0.4"
+            ]))
+        )
+        let help = try await services.clientCapabilities.helpArticles(locale: "en")
+        let notices = try await services.clientCapabilities.notifications()
+        let read = try await services.clientCapabilities.markNotificationRead(id: "notice-1")
+        let preferences = try await services.clientCapabilities.currentUserPreferences()
+        let updatedPreferences = try await services.clientCapabilities.updateCurrentUserPreferences(
+            APIV1UpdateUserPreferencesRequest(
+                locale: "zh-CN",
+                pushEnabled: preferences.value.pushEnabled,
+                emailEnabled: preferences.value.emailEnabled,
+                expectedVersion: preferences.value.version
+            )
+        )
+        let feedback = try await services.clientCapabilities.feedback()
+        let createdFeedback = try await services.clientCapabilities.createFeedback(
+            APIV1CreateFeedbackRequest(
+                category: "BUG",
+                content: "The timer stopped again.",
+                clientContext: [
+                    "platform": .string(IOSPlatformContractPolicy.wireValue),
+                    "appVersion": .string("1.0.4"),
+                    "osVersion": .string("iOS 26.5")
+                ]
+            )
+        )
+        let exemptions = try await services.clientCapabilities.exemptionApplications()
+
+        XCTAssertEqual(mode.value.mode, .readOnly)
+        XCTAssertEqual(releasePolicy.value.platform, "IOS")
+        XCTAssertEqual(releasePolicy.value.enforcement, "RECOMMENDED")
+        XCTAssertEqual(help.value.first?.title, "Upload proof")
+        XCTAssertNil(notices.value.first?.readAt)
+        XCTAssertNotNil(read.value.readAt)
+        XCTAssertEqual(preferences.value.locale, "en")
+        XCTAssertEqual(updatedPreferences.value.locale, "zh-CN")
+        XCTAssertEqual(updatedPreferences.value.version, 3)
+        XCTAssertEqual(feedback.value.first?.id, "feedback-1")
+        XCTAssertEqual(createdFeedback.value.id, "feedback-2")
+        XCTAssertEqual(exemptions.value.first?.applicationType, "PHYSICAL_TEST")
+        XCTAssertEqual(exemptions.value.first?.status, "SUBMITTED")
+        XCTAssertEqual(operations, [
+            "GET /api/v1/system-mode",
+            "GET /api/v1/app-release-policy",
+            "GET /api/v1/help-articles",
+            "GET /api/v1/notifications",
+            "POST /api/v1/notifications/notice-1/read",
+            "GET /api/v1/me/preferences",
+            "PATCH /api/v1/me/preferences",
+            "GET /api/v1/feedback",
+            "POST /api/v1/feedback",
+            "GET /api/v1/exemption-applications"
+        ])
+    }
+
+    func testIOSReleasePolicyUsesNumericBuildAndOnlyBlocksRequiredUpdates() throws {
+        let required = try JSONDecoder().decode(
+            APIV1AppReleasePolicy.self,
+            from: Data("""
+            {"platform":"IOS","minimumSupportedVersion":"2.0","latestVersion":"2.1","minimumSupportedBuildNumber":200,"latestBuildNumber":210,"enforcement":"REQUIRED","message":"Please update","downloadUrl":"https://apps.apple.com/app/id123","effectiveAt":"2026-08-14T00:00:00Z","expiresAt":null,"policyVersion":"ios-2"}
+            """.utf8)
+        )
+        XCTAssertEqual(
+            IOSAppReleaseContractPolicy.expectedEnforcement(
+                for: required,
+                currentBuildNumber: 199
+            ),
+            "REQUIRED"
+        )
+        let requirement = try XCTUnwrap(
+            IOSAppReleaseContractPolicy.requiredUpdate(
+                for: required,
+                currentBuildNumber: 199
+            )
+        )
+        XCTAssertEqual(requirement.minimumVersion, "2.0")
+        XCTAssertEqual(requirement.downloadURL, "https://apps.apple.com/app/id123")
+        XCTAssertNil(
+            IOSAppReleaseContractPolicy.requiredUpdate(
+                for: required,
+                currentBuildNumber: 200
+            )
+        )
+    }
+
+    @MainActor
+    func testUnauthenticatedProductionShellUsesPublicContract15StatusRoutes() async {
+        let lock = NSLock()
+        var paths: [String] = []
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            paths.append(path)
+            lock.unlock()
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            switch path {
+            case "/api/v1/system-mode":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-public-system"],
+                    body: """
+                    {"data":{"mode":"NORMAL","policyVersion":4,"updatedAt":"2026-08-14T00:00:00Z"},"meta":{"requestId":"req-public-system"}}
+                    """
+                )
+            case "/api/v1/app-release-policy":
+                XCTAssertTrue(request.url?.query?.contains("platform=IOS") == true)
+                XCTAssertTrue(request.url?.query?.contains("currentBuildNumber=") == true)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-public-release"],
+                    body: """
+                    {"data":{"platform":"IOS","minimumSupportedVersion":"1.0","latestVersion":"1.0","minimumSupportedBuildNumber":1,"latestBuildNumber":1,"enforcement":"NONE","message":null,"downloadUrl":null,"effectiveAt":"2026-08-14T00:00:00Z","expiresAt":null,"policyVersion":"ios-public-1"},"meta":{"requestId":"req-public-release"}}
+                    """
+                )
+            default:
+                XCTFail("Pre-login shell reached an unexpected route: \(path)")
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-public-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-public-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: MemoryAuthSessionStore(),
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-public-capabilities")
+        )
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: UserDefaults(
+                suiteName: "BackendFoundationTests.public-capabilities.\(UUID().uuidString)"
+            )!),
+            backendServices: services
+        )
+
+        await state.refreshSystemStatus()
+
+        XCTAssertEqual(state.systemMode, .normal)
+        XCTAssertNil(state.updateRequirement)
+        XCTAssertEqual(paths, [
+            "/api/v1/system-mode",
+            "/api/v1/app-release-policy"
+        ])
+    }
+
+    @MainActor
+    func testAPIV1AppStateExerciseLifecycleUsesServerIDsAndVersions() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "exercise-access", refresh: "exercise-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        var expectedVersions: [Int] = []
+        var mediaIdempotencyKeys: [String] = []
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            paths.append(path)
+            lock.unlock()
+            if path == "/private/exercise-upload" {
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            } else {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer exercise-access")
+            }
+            switch path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-exercise-me")
+                )
+            case "/api/v1/semesters/current":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-semester"],
+                    body: Self.currentSemesterEnvelopeJSON(requestID: "req-exercise-semester")
+                )
+            case "/api/v1/enrollments":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-enrollments"],
+                    body: Self.activeEnrollmentListEnvelopeJSON(requestID: "req-exercise-enrollments")
+                )
+            case "/api/v1/class-sections":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-sections"],
+                    body: Self.activeClassSectionListEnvelopeJSON(requestID: "req-exercise-sections")
+                )
+            case "/api/v1/courses":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-courses"],
+                    body: Self.activeCourseListEnvelopeJSON(requestID: "req-exercise-courses")
+                )
+            case "/api/v1/teachers/teacher-1":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-teacher"],
+                    body: Self.teacherEnvelopeJSON(requestID: "req-exercise-teacher")
+                )
+            case "/api/v1/notifications":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-notifications"],
+                    body: #"{"data":[],"meta":{"requestId":"req-exercise-notifications","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}"#
+                )
+            case "/api/v1/exercise-sessions":
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(body?["enrollmentId"] as? String, "enrollment-1")
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-exercise-start"],
+                    body: Self.exerciseSessionEnvelopeJSON(
+                        status: "IN_PROGRESS",
+                        version: 1,
+                        actualDurationSeconds: 0,
+                        pausedDurationSeconds: 0,
+                        endedAt: nil,
+                        endReason: nil,
+                        requestID: "req-exercise-start"
+                    )
+                )
+            case "/api/v1/exercise-sessions/exercise-session-1/pause":
+                Self.captureExpectedVersion(from: request, into: &expectedVersions, lock: lock)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-pause"],
+                    body: Self.exerciseSessionEnvelopeJSON(
+                        status: "PAUSED",
+                        version: 2,
+                        actualDurationSeconds: 600,
+                        pausedDurationSeconds: 0,
+                        endedAt: nil,
+                        endReason: nil,
+                        requestID: "req-exercise-pause"
+                    )
+                )
+            case "/api/v1/exercise-sessions/exercise-session-1/resume":
+                Self.captureExpectedVersion(from: request, into: &expectedVersions, lock: lock)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-resume"],
+                    body: Self.exerciseSessionEnvelopeJSON(
+                        status: "IN_PROGRESS",
+                        version: 3,
+                        actualDurationSeconds: 600,
+                        pausedDurationSeconds: 600,
+                        endedAt: nil,
+                        endReason: nil,
+                        requestID: "req-exercise-resume"
+                    )
+                )
+            case "/api/v1/exercise-sessions/exercise-session-1/finish":
+                Self.captureExpectedVersion(from: request, into: &expectedVersions, lock: lock)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exercise-finish"],
+                    body: Self.exerciseSessionEnvelopeJSON(
+                        status: "COMPLETED",
+                        version: 4,
+                        actualDurationSeconds: 3_600,
+                        pausedDurationSeconds: 600,
+                        endedAt: "2026-08-14T01:10:00Z",
+                        endReason: "USER_COMPLETED",
+                        requestID: "req-exercise-finish"
+                    )
+                )
+            case "/api/v1/exercise-records" where request.httpMethod == "GET":
+                XCTAssertTrue(request.url?.query?.contains("enrollmentId=enrollment-1") == true)
+                XCTAssertTrue(request.url?.query?.contains("businessDateFrom=2026-08-14") == true)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-record-list"],
+                    body: #"{"data":[],"meta":{"requestId":"req-record-list","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}"#
+                )
+            case "/api/v1/exercise-records" where request.httpMethod == "POST":
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(body?["sessionId"] as? String, "exercise-session-1")
+                XCTAssertEqual(body?["creditType"] as? String, "COURSE_RELATED")
+                XCTAssertEqual(body?["sportType"] as? String, "BADMINTON")
+                XCTAssertNil(body?["description"])
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-record-create"],
+                    body: Self.exerciseRecordEnvelopeJSON(
+                        status: "DRAFT",
+                        description: nil,
+                        version: 1,
+                        requestID: "req-record-create",
+                        classSectionID: "section-1",
+                        businessDate: "2026-08-14",
+                        sportType: "BADMINTON"
+                    )
+                )
+            case "/api/v1/media-uploads":
+                if let key = request.value(forHTTPHeaderField: "Idempotency-Key") {
+                    lock.lock()
+                    mediaIdempotencyKeys.append(key)
+                    lock.unlock()
+                }
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(body?["sessionId"] as? String, "exercise-session-1")
+                XCTAssertEqual(body?["businessPurpose"] as? String, "EXERCISE_RECORD")
+                XCTAssertEqual(body?["captureSource"] as? String, "IN_APP_CAMERA")
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-media-init"],
+                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/exercise-upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2026-08-14T02:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
+                )
+            case "/private/exercise-upload":
+                XCTAssertEqual(Self.bodyData(from: request), Data([0xff, 0xd8, 0xff, 0xd9]))
+                return .json(status: 200, headers: ["ETag": "etag-exercise-1"], body: "{}")
+            case "/api/v1/media-uploads/upload-session-1/confirm":
+                if let key = request.value(forHTTPHeaderField: "Idempotency-Key") {
+                    lock.lock()
+                    mediaIdempotencyKeys.append(key)
+                    lock.unlock()
+                }
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-confirm"],
+                    body: Self.mediaEnvelopeJSON(status: "UPLOADED", requestID: "req-media-confirm")
+                )
+            case "/api/v1/media/media-1/bind":
+                if let key = request.value(forHTTPHeaderField: "Idempotency-Key") {
+                    lock.lock()
+                    mediaIdempotencyKeys.append(key)
+                    lock.unlock()
+                }
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(body?["sessionId"] as? String, "exercise-session-1")
+                XCTAssertEqual(body?["expectedVersion"] as? Int, 1)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-bind"],
+                    body: Self.mediaEnvelopeJSON(status: "AVAILABLE", requestID: "req-media-bind")
+                )
+            case "/api/v1/exercise-records/record-1/submit":
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(body?["mediaIds"] as? [String], ["media-1"])
+                XCTAssertEqual(body?["expectedVersion"] as? Int, 1)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-record-submit"],
+                    body: Self.exerciseRecordEnvelopeJSON(
+                        status: "SUBMITTED",
+                        description: nil,
+                        version: 2,
+                        requestID: "req-record-submit",
+                        classSectionID: "section-1",
+                        businessDate: "2026-08-14",
+                        sportType: "BADMINTON"
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-exercise-installation")
+        )
+        let suiteName = "BackendFoundationTests.app-state-exercise.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+        state.enforcesCheckInTimeWindow = false
+
+        await state.restoreBackendSession()
+        await state.refreshRemoteWorkspace()
+        let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:00:00Z"))
+        let pause = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:10:00Z"))
+        let resume = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:20:00Z"))
+        let finish = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T01:10:00Z"))
+
+        let didStart = await state.beginExerciseSession(
+            category: .courseRelated,
+            sportType: .badminton,
+            customSportName: "",
+            at: start
+        )
+        XCTAssertTrue(didStart)
+        XCTAssertEqual(state.exerciseSession?.id, "exercise-session-1")
+        let didPause = await state.pauseCurrentExerciseSession(at: pause)
+        XCTAssertTrue(didPause)
+        XCTAssertTrue(state.exerciseSession?.isPaused == true)
+        let didResume = await state.resumeCurrentExerciseSession(at: resume)
+        XCTAssertTrue(didResume)
+        XCTAssertFalse(state.exerciseSession?.isPaused == true)
+        let didFinish = await state.finishCurrentExerciseSession(at: finish)
+        XCTAssertTrue(didFinish)
+        XCTAssertEqual(state.exerciseSession?.status, .completed)
+        XCTAssertEqual(state.exerciseSession?.creditedHours(), 1)
+        XCTAssertEqual(expectedVersions, [1, 2, 3])
+        XCTAssertEqual(Array(paths.suffix(4)), [
+            "/api/v1/exercise-sessions",
+            "/api/v1/exercise-sessions/exercise-session-1/pause",
+            "/api/v1/exercise-sessions/exercise-session-1/resume",
+            "/api/v1/exercise-sessions/exercise-session-1/finish"
+        ])
+
+        let bytes = Data([0xff, 0xd8, 0xff, 0xd9])
+        XCTAssertTrue(state.addExercisePhotoDraft(imageData: bytes, thumbnailData: nil, at: finish))
+        let mediaDraft = try XCTUnwrap(state.exerciseMediaDrafts.first)
+        let proof = try XCTUnwrap(state.proofAttachment(from: mediaDraft))
+        let didSubmit = await state.submitCheckIn(
+            creditType: .courseRelated,
+            courseId: "section-1",
+            hours: 1,
+            note: "",
+            proofAttachments: [proof],
+            exerciseSession: state.exerciseSession
+        )
+        XCTAssertTrue(didSubmit)
+        XCTAssertEqual(state.workspace.records.first?.id, "record-1")
+        XCTAssertEqual(state.workspace.records.first?.hours, 1)
+        XCTAssertNil(state.errorMessage)
+        XCTAssertTrue(state.pendingRemoteMutationSummaries.isEmpty)
+        XCTAssertEqual(mediaIdempotencyKeys.count, 3)
+        XCTAssertEqual(Set(mediaIdempotencyKeys).count, 3)
+        XCTAssertEqual(Array(paths.suffix(7)), [
+            "/api/v1/exercise-records",
+            "/api/v1/exercise-records",
+            "/api/v1/media-uploads",
+            "/private/exercise-upload",
+            "/api/v1/media-uploads/upload-session-1/confirm",
+            "/api/v1/media/media-1/bind",
+            "/api/v1/exercise-records/record-1/submit"
+        ])
     }
 
     func testExemptionMediaPipelineStopsAfterConfirmWithoutExerciseBind() async throws {
@@ -1172,6 +2512,19 @@ final class BackendFoundationTests: XCTestCase {
         return data
     }
 
+    private static func captureExpectedVersion(
+        from request: URLRequest,
+        into versions: inout [Int],
+        lock: NSLock
+    ) {
+        let body = (try? JSONSerialization.jsonObject(
+            with: bodyData(from: request)
+        )) as? [String: Any]
+        lock.lock()
+        versions.append(body?["expectedVersion"] as? Int ?? -1)
+        lock.unlock()
+    }
+
     private static func authSession(access: String, refresh: String) -> APIV1AuthSession {
         try! JSONDecoder().decode(
             APIV1AuthSession.self,
@@ -1195,15 +2548,74 @@ final class BackendFoundationTests: XCTestCase {
         """
     }
 
+    private static func studentCurrentUserEnvelopeJSON(
+        requestID: String,
+        emailMasked: String = "s***@example.edu",
+        userVersion: Int = 2
+    ) -> String {
+        """
+        {"data":{"user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"ACTIVE","primaryEmailMasked":"\(emailMasked)","emailVerified":true,"version":\(userVersion)},"studentProfile":{"id":"student-1","organizationId":"org-1","userId":"user-1","studentNumber":"2400123456","fullName":"测试学生","gender":"FEMALE","gradeYear":2024,"collegeName":"商学院","majorName":"工商管理","administrativeClassName":"2024A","status":"ACTIVE","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-14T00:00:00Z","deletedAt":null,"version":1},"teacherProfile":null,"adminProfile":null},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func currentSemesterEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":{"id":"semester-1","organizationId":"org-1","academicYear":"2026-2027","termCode":"FIRST","displayName":"2026 秋季","startDate":"2026-08-01","endDate":"2027-01-15","status":"CURRENT","isCurrent":true,"createdBy":null,"createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","version":1},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func activeEnrollmentListEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":[{"id":"enrollment-1","organizationId":"org-1","semesterId":"semester-1","classSectionId":"section-1","studentId":"student-1","source":"QR_CODE","sourceReferenceId":null,"status":"ACTIVE","joinedAt":"2026-08-01T00:00:00Z","endedAt":null,"endReason":null,"createdBy":"user-1","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","version":1}],"meta":{"requestId":"\(requestID)","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+        """
+    }
+
+    private static func activeClassSectionListEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":[{"id":"section-1","organizationId":"org-1","courseId":"course-1","semesterId":"semester-1","teacherId":"teacher-1","classCode":"001","displayName":"羽毛球 001","status":"ACTIVE","isEnrollmentOpen":true,"checkInWindowMode":"AVAILABLE","checkInStartDate":null,"checkInEndDate":null,"dailyStartTime":"06:00:00","dailyEndTime":"22:00:00","submissionDeadlineAt":null,"excludedDates":[],"createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","version":1}],"meta":{"requestId":"\(requestID)","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+        """
+    }
+
+    private static func activeCourseListEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":[{"id":"course-1","organizationId":"org-1","courseCode":"GEPE101","courseName":"大学体育（羽毛球）","description":null,"status":"ACTIVE","createdBy":null,"createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","deletedAt":null,"version":1}],"meta":{"requestId":"\(requestID)","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+        """
+    }
+
+    private static func teacherEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":{"id":"teacher-1","organizationId":"org-1","userId":"teacher-user-1","employeeNumber":"T001","fullName":"合成教师","collegeName":null,"departmentName":"体育部","title":null,"status":"ACTIVE","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z","deletedAt":null,"version":1},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func exerciseSessionEnvelopeJSON(
+        status: String,
+        version: Int,
+        actualDurationSeconds: Int,
+        pausedDurationSeconds: Int,
+        endedAt: String?,
+        endReason: String?,
+        requestID: String
+    ) -> String {
+        let endedAtJSON = endedAt.map { "\"\($0)\"" } ?? "null"
+        let endReasonJSON = endReason.map { "\"\($0)\"" } ?? "null"
+        return """
+        {"data":{"id":"exercise-session-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","status":"\(status)","startedAt":"2026-08-14T00:00:00Z","endedAt":\(endedAtJSON),"actualDurationSeconds":\(actualDurationSeconds),"pausedDurationSeconds":\(pausedDurationSeconds),"businessDate":"2026-08-14","lastHeartbeatAt":"2026-08-14T00:00:00Z","endReason":\(endReasonJSON),"version":\(version)},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
     private static func exerciseRecordEnvelopeJSON(
         status: String,
         description: String?,
         version: Int,
-        requestID: String
+        requestID: String,
+        classSectionID: String = "class-section-1",
+        businessDate: String = "2026-08-13",
+        sportType: String = "RUNNING"
     ) -> String {
         let descriptionJSON = description.map { "\"\($0)\"" } ?? "null"
         return """
-        {"data":{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"class-section-1","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"2026-08-13","creditType":"COURSE_RELATED","sportType":"RUNNING","sportName":null,"description":\(descriptionJSON),"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":null,"version":\(version)},"meta":{"requestId":"\(requestID)"}}
+        {"data":{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"\(classSectionID)","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"\(businessDate)","creditType":"COURSE_RELATED","sportType":"\(sportType)","sportName":null,"description":\(descriptionJSON),"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":null,"version":\(version)},"meta":{"requestId":"\(requestID)"}}
         """
     }
 
@@ -1354,6 +2766,12 @@ private final class MemoryAuthSessionStore: AuthSessionPersisting, @unchecked Se
         storage = nil
         lock.unlock()
     }
+}
+
+private struct FixedAuthDeviceIdentifier: AuthDeviceIdentifying {
+    let value: String
+
+    func identifier() throws -> String { value }
 }
 
 private final class RecordingCredentialStore: SecureCredentialStoring, @unchecked Sendable {

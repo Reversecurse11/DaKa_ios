@@ -491,6 +491,14 @@ private struct ExemptionCenterSheet: View {
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                             .fixedSize(horizontal: false, vertical: true)
+                    } else if appState.isAPIV1Session {
+                        Text(verbatim: exemptionCenterText(
+                            "当前已接入 Backend 1.5 的申请列表；新建和补交仍需先补齐课程选择及免测类型映射，暂不开放提交。",
+                            "The Backend 1.5 application list is connected. Creating or supplementing an application remains unavailable until course selection and exemption-type mapping are complete."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else if !appState.canSubmitExemptions {
                         Text(verbatim: exemptionCenterText(
                             "当前账号不能提交申请，请使用 Mock 运行方案或已连接服务器的学生账号。",
@@ -599,7 +607,7 @@ private struct ExemptionCenterSheet: View {
                 ) {
                     showApplicationForm = true
                 }
-                .disabled(appState.isSubmittingExemption)
+                .disabled(appState.isSubmittingExemption || !appState.canSubmitExemptions)
             }
         }
     }
@@ -698,7 +706,7 @@ private struct ExemptionCenterSheet: View {
                 }
             }
 
-            if application.status.canSupplement {
+            if application.status.canSupplement && appState.canSubmitExemptions {
                 PrimaryActionButton(
                     title: exemptionCenterText("补交证明材料", "Submit additional documents"),
                     systemImage: "arrow.up.doc.fill",
@@ -793,6 +801,15 @@ private struct EnduranceScoringSheet: View {
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                         .fixedSize(horizontal: false, vertical: true)
                                         .accessibilityIdentifier("endurance.mock.message")
+                                } else if appState.isAPIV1Session {
+                                    Text(verbatim: enduranceText(
+                                        "Backend 1.5 的运动项目与换算规则当前仍为稳定拒绝；本机不会使用旧接口或内置规则生成正式成绩。",
+                                        "Backend 1.5 currently keeps sport catalog and conversion rules in stable default-deny mode. This device will not use legacy endpoints or built-in rules to produce an official score."
+                                    ))
+                                        .font(BNBUFont.bodySmall)
+                                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("endurance.availability.message")
                                 } else if isPreview {
                                     Text(verbatim: enduranceText(
                                         "当前账号不能执行成绩换算。请使用 Mock 运行方案或已连接校园体育服务器的正式账号。",

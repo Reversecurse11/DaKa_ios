@@ -293,7 +293,7 @@ struct StudentAPIClient: @unchecked Sendable {
         progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
     ) async throws -> HTTPURLResponse {
         guard method == .put || method == .post,
-              signedURL.scheme?.lowercased() == "https",
+              isAllowedSignedUploadURL(signedURL),
               signedURL.user == nil,
               signedURL.password == nil,
               !data.isEmpty else {
@@ -320,6 +320,57 @@ struct StudentAPIClient: @unchecked Sendable {
         }
     }
 
+    /// File-backed signed upload used by short videos. Keeping the body on
+    /// disk avoids materialising a potentially large MOV as one Data value.
+    func upload(
+        to signedURL: URL,
+        fileURL: URL,
+        method: HTTPMethod,
+        requiredHeaders: [String: String],
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
+    ) async throws -> HTTPURLResponse {
+        guard method == .put || method == .post,
+              isAllowedSignedUploadURL(signedURL),
+              signedURL.user == nil,
+              signedURL.password == nil,
+              fileURL.isFileURL,
+              let values = try? fileURL.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .fileSizeKey
+              ]),
+              values.isRegularFile == true,
+              let fileSize = values.fileSize,
+              fileSize > 0 else {
+            throw APITransportError.invalidRequest
+        }
+        var request = URLRequest(url: signedURL, timeoutInterval: requestTimeout)
+        request.httpMethod = method.rawValue
+        requiredHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let totalBytes = Int64(fileSize)
+        progressHandler(APIUploadProgress(bytesSent: 0, totalBytes: totalBytes))
+        let delegate = APIUploadProgressDelegate(progressHandler: progressHandler)
+        do {
+            let (_, response) = try await urlSession.upload(
+                for: request,
+                fromFile: fileURL,
+                delegate: delegate
+            )
+            guard let response = response as? HTTPURLResponse else {
+                throw APITransportError.invalidResponse
+            }
+            guard (200...299).contains(response.statusCode) else {
+                throw APITransportError.undecodableFailure(
+                    statusCode: response.statusCode,
+                    requestId: nil
+                )
+            }
+            progressHandler(APIUploadProgress(bytesSent: totalBytes, totalBytes: totalBytes))
+            return response
+        } catch let error as URLError {
+            throw APITransportError.network(error.code)
+        }
+    }
+
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let method = HTTPMethod(rawValue: request.httpMethod ?? "GET") ?? .get
         let response = try await perform(request, safeToRetry: method.isSafeToRetry)
@@ -336,6 +387,27 @@ struct StudentAPIClient: @unchecked Sendable {
         } catch let error as URLError {
             throw APITransportError.network(error.code)
         }
+    }
+
+    private func isAllowedSignedUploadURL(_ url: URL) -> Bool {
+        if url.scheme?.lowercased() == "https" { return true }
+        guard environmentName == .local,
+              url.scheme?.lowercased() == "http",
+              Self.isTrustedLocalUploadHost(url.host, relativeTo: baseURL.host) else {
+            return false
+        }
+        return true
+    }
+
+    private static func isTrustedLocalUploadHost(_ uploadHost: String?, relativeTo apiHost: String?) -> Bool {
+        guard let uploadHost = uploadHost?.lowercased(),
+              let apiHost = apiHost?.lowercased() else { return false }
+        return uploadHost == apiHost || (isLoopbackHost(uploadHost) && isLoopbackHost(apiHost))
+    }
+
+    private static func isLoopbackHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     private func makeURLRequest(from apiRequest: APIRequest) throws -> URLRequest {
