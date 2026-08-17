@@ -205,6 +205,11 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertFalse(FixturePolicy.isEnabled(arguments: ["BNBUStudent"]))
         XCTAssertTrue(FixturePolicy.isEnabled(arguments: ["BNBUStudent", "-mock-test-account"]))
         XCTAssertTrue(FixturePolicy.isEnabled(arguments: ["BNBUStudent", "-ui-testing-reset"]))
+        XCTAssertFalse(UITestingPolicy.isEnabled(arguments: ["BNBUStudent"]))
+        XCTAssertTrue(UITestingPolicy.isEnabled(arguments: ["BNBUStudent", "-ui-testing-reset"]))
+        XCTAssertTrue(UITestingPolicy.shouldResetState(arguments: ["BNBUStudent", "-ui-testing-reset"]))
+        XCTAssertTrue(UITestingPolicy.isEnabled(arguments: ["BNBUStudent", "-ui-testing-preserve-state"]))
+        XCTAssertFalse(UITestingPolicy.shouldResetState(arguments: ["BNBUStudent", "-ui-testing-preserve-state"]))
         XCTAssertTrue(SensitiveLoggingPolicy.isAllowed(metadata: [
             "operationId": "getSystemMode",
             "requestId": "req-safe",
@@ -1389,7 +1394,7 @@ final class BackendFoundationTests: XCTestCase {
         ])
     }
 
-    func testContract15RecordDraftAndSubmitAllowEmptyCourseDescription() async throws {
+    func testContract15RecordDraftSubmitAndDiscardAllowEmptyCourseDescription() async throws {
         let store = MemoryAuthSessionStore(session: Self.authSession(access: "record-access", refresh: "record-refresh"))
         let lock = NSLock()
         var paths: [String] = []
@@ -1413,6 +1418,17 @@ final class BackendFoundationTests: XCTestCase {
                     headers: ["X-Request-ID": "req-record-submit"],
                     body: Self.exerciseRecordEnvelopeJSON(status: "SUBMITTED", description: nil, version: 2, requestID: "req-record-submit")
                 )
+            case "/api/v1/exercise-records/record-1/discard":
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                XCTAssertEqual(body?["reason"] as? String, "STUDENT_ABANDONED_DRAFT")
+                XCTAssertEqual(body?["expectedVersion"] as? Int, 1)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-record-discard"],
+                    body: Self.exerciseRecordEnvelopeJSON(status: "CANCELLED", description: nil, version: 2, requestID: "req-record-discard")
+                )
             default:
                 return .json(status: 404, headers: ["X-Request-ID": "req-404"], body: Self.errorJSON(code: "USER_NOT_FOUND", requestID: "req-404"))
             }
@@ -1434,11 +1450,32 @@ final class BackendFoundationTests: XCTestCase {
             recordID: draft.value.id,
             request: APIV1SubmitExerciseRecordRequest(mediaIds: ["media-1"], expectedVersion: draft.value.version)
         )
+        let discardableDraft = try await gateway.createDraft(APIV1CreateExerciseRecordRequest(
+            sessionId: "exercise-session-3",
+            creditType: .courseRelated,
+            sportType: "RUNNING",
+            sportName: nil,
+            description: nil,
+            clientRequestId: "ios-record-3"
+        ))
+        let discarded = try await gateway.discard(
+            recordID: discardableDraft.value.id,
+            request: APIV1VersionedReasonRequest(
+                reason: "STUDENT_ABANDONED_DRAFT",
+                expectedVersion: discardableDraft.value.version
+            )
+        )
 
-        XCTAssertEqual(paths, ["/api/v1/exercise-records", "/api/v1/exercise-records/record-1/submit"])
-        XCTAssertEqual(idempotencyKeys.count, 2)
+        XCTAssertEqual(paths, [
+            "/api/v1/exercise-records",
+            "/api/v1/exercise-records/record-1/submit",
+            "/api/v1/exercise-records",
+            "/api/v1/exercise-records/record-1/discard"
+        ])
+        XCTAssertEqual(idempotencyKeys.count, 4)
         XCTAssertNil(draft.value.description)
         XCTAssertEqual(submitted.value.status, .submitted)
+        XCTAssertEqual(discarded.value.status, .cancelled)
 
         do {
             _ = try await gateway.createDraft(APIV1CreateExerciseRecordRequest(
@@ -1453,7 +1490,253 @@ final class BackendFoundationTests: XCTestCase {
         } catch let error as APITransportError {
             XCTAssertEqual(error, .invalidRequest)
         }
-        XCTAssertEqual(paths.count, 2)
+        XCTAssertEqual(paths.count, 4)
+    }
+
+    @MainActor
+    func testAPIV1LocalOnlyDraftCanBeDiscardedWithoutNetwork() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "local-discard-access", refresh: "local-discard-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            paths.append(path)
+            lock.unlock()
+            guard path == "/api/v1/me" else {
+                XCTFail("A local-only draft discard must not call \(path)")
+                return .json(
+                    status: 500,
+                    headers: ["X-Request-ID": "req-local-discard-unexpected"],
+                    body: Self.errorJSON(code: "UNEXPECTED_REQUEST", requestID: "req-local-discard-unexpected")
+                )
+            }
+            return .json(
+                status: 200,
+                headers: ["X-Request-ID": "req-local-discard-me"],
+                body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-local-discard-me")
+            )
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-local-discard-installation")
+        )
+        let suiteName = "BackendFoundationTests.local-only-discard.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let localStore = AppLocalStore(defaults: defaults, legacyDefaults: defaults)
+        let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:00:00Z"))
+        let completedSession = ExerciseSession(
+            id: "local-only-session",
+            studentID: "student-1",
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(ExerciseSession.oneHour),
+            status: .completed,
+            locationStatus: .unavailable
+        )
+        let draft = CheckInDraft(
+            id: "local-only-draft",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "Synthetic local draft",
+            proofAttachments: [],
+            updatedAt: "2026-08-14 09:00"
+        )
+        XCTAssertTrue(localStore.saveExerciseSession(completedSession))
+        XCTAssertTrue(localStore.saveDraft(draft))
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: localStore,
+            backendServices: services
+        )
+        await state.restoreBackendSession()
+
+        let discarded = await state.discardCompletedCheckInDraft()
+        XCTAssertTrue(discarded)
+        XCTAssertEqual(paths, ["/api/v1/me"])
+        XCTAssertNil(state.exerciseSession)
+        XCTAssertNil(state.draft)
+    }
+
+    @MainActor
+    func testAPIV1DraftDiscardRefreshesAStaleVersionAfterConflict() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.authSession(access: "discard-access", refresh: "discard-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        var discardVersions: [Int] = []
+        var discardCount = 0
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            paths.append(path)
+            lock.unlock()
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer discard-access")
+
+            switch path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-discard-me"],
+                    body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-discard-me")
+                )
+            case "/api/v1/exercise-sessions/exercise-session-1":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-discard-session"],
+                    body: Self.exerciseSessionEnvelopeJSON(
+                        status: "COMPLETED",
+                        version: 4,
+                        actualDurationSeconds: 3_600,
+                        pausedDurationSeconds: 0,
+                        endedAt: "2026-08-14T01:00:00Z",
+                        endReason: "USER_COMPLETED",
+                        requestID: "req-discard-session"
+                    )
+                )
+            case "/api/v1/exercise-records" where request.httpMethod == "GET":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-discard-list"],
+                    body: Self.exerciseRecordListEnvelopeJSON(
+                        status: "DRAFT",
+                        version: 1,
+                        requestID: "req-discard-list"
+                    )
+                )
+            case "/api/v1/exercise-records/record-1" where request.httpMethod == "GET":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-discard-refresh"],
+                    body: Self.exerciseRecordEnvelopeJSON(
+                        status: "DRAFT",
+                        description: nil,
+                        version: 2,
+                        requestID: "req-discard-refresh",
+                        classSectionID: "section-1",
+                        businessDate: "2026-08-14"
+                    )
+                )
+            case "/api/v1/exercise-records/record-1/discard":
+                let body = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any]
+                let expectedVersion = body?["expectedVersion"] as? Int ?? -1
+                lock.lock()
+                discardVersions.append(expectedVersion)
+                discardCount += 1
+                let currentDiscardCount = discardCount
+                lock.unlock()
+                if currentDiscardCount == 1 {
+                    return .json(
+                        status: 409,
+                        headers: ["X-Request-ID": "req-discard-conflict"],
+                        body: Self.errorJSON(code: "VERSION_CONFLICT", requestID: "req-discard-conflict")
+                    )
+                }
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-discard-success"],
+                    body: Self.exerciseRecordEnvelopeJSON(
+                        status: "CANCELLED",
+                        description: nil,
+                        version: 3,
+                        requestID: "req-discard-success",
+                        classSectionID: "section-1",
+                        businessDate: "2026-08-14"
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-discard-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-discard-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-discard-installation")
+        )
+        let suiteName = "BackendFoundationTests.app-state-discard.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let localStore = AppLocalStore(defaults: defaults, legacyDefaults: defaults)
+        let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:00:00Z"))
+        let completedSession = ExerciseSession(
+            id: "exercise-session-1",
+            studentID: "student-1",
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(ExerciseSession.oneHour),
+            status: .completed,
+            locationStatus: .unavailable
+        )
+        let draft = CheckInDraft(
+            id: "discard-draft",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "Synthetic running session",
+            proofAttachments: [],
+            updatedAt: "2026-08-14 09:00"
+        )
+        let scope = "apiv1-exercise-record:submit:exercise-session-1"
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: scope,
+            fingerprint: "discard-fingerprint",
+            serverIdentity: BackendEnvironment.local.baseURL.absoluteString,
+            studentID: "student-1"
+        )
+        XCTAssertTrue(localStore.saveExerciseSession(completedSession))
+        XCTAssertTrue(localStore.saveDraft(draft))
+        XCTAssertTrue(localStore.savePendingRemoteMutations([scope: attempt]))
+
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: localStore,
+            backendServices: services
+        )
+        await state.restoreBackendSession()
+
+        XCTAssertTrue(state.isAPIV1Session)
+        XCTAssertEqual(state.exerciseSession, completedSession)
+        let discarded = await state.discardCompletedCheckInDraft()
+        XCTAssertTrue(discarded)
+        XCTAssertEqual(discardVersions, [1, 2])
+        XCTAssertEqual(Array(paths.suffix(5)), [
+            "/api/v1/exercise-sessions/exercise-session-1",
+            "/api/v1/exercise-records",
+            "/api/v1/exercise-records/record-1/discard",
+            "/api/v1/exercise-records/record-1",
+            "/api/v1/exercise-records/record-1/discard"
+        ])
+        XCTAssertNil(state.exerciseSession)
+        XCTAssertNil(state.draft)
+        XCTAssertNil(localStore.readPendingRemoteMutations().value?[scope])
     }
 
     func testKeychainSessionBlobRestartRestoreReuseRevocationAndFailedLogoutClear() async throws {
@@ -2616,6 +2899,16 @@ final class BackendFoundationTests: XCTestCase {
         let descriptionJSON = description.map { "\"\($0)\"" } ?? "null"
         return """
         {"data":{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"\(classSectionID)","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"\(businessDate)","creditType":"COURSE_RELATED","sportType":"\(sportType)","sportName":null,"description":\(descriptionJSON),"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":null,"version":\(version)},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func exerciseRecordListEnvelopeJSON(
+        status: String,
+        version: Int,
+        requestID: String
+    ) -> String {
+        """
+        {"data":[{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"2026-08-14","creditType":"COURSE_RELATED","sportType":"RUNNING","sportName":null,"description":null,"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":null,"version":\(version)}],"meta":{"requestId":"\(requestID)","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
         """
     }
 

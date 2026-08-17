@@ -12,7 +12,8 @@ struct BNBUStudentApp: App {
 
     init() {
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-ui-testing-reset") {
+        let isUITesting = UITestingPolicy.isEnabled(arguments: arguments)
+        if UITestingPolicy.shouldResetState(arguments: arguments) {
             AppLocalStore().clearAll()
             BNBUPrivacyConsent.clearAll()
             BNBUDevicePrivacyConsent.clearAll()
@@ -47,7 +48,7 @@ struct BNBUStudentApp: App {
         repository = UnauthenticatedStudentRepository()
 #endif
         let state = AppState(repository: repository)
-        if arguments.contains("-ui-testing-reset") {
+        if isUITesting {
             // Flow tests must not depend on the wall clock.
             state.enforcesCheckInTimeWindow = false
         }
@@ -76,7 +77,6 @@ struct BNBUStudentApp: App {
         }
 #endif
         _appState = StateObject(wrappedValue: state)
-        let isUITesting = arguments.contains("-ui-testing-reset")
         _shellStage = State(initialValue: isUITesting
             ? AppShellStage.resolved(
                 isAuthenticated: state.isAuthenticated,
@@ -150,6 +150,6 @@ struct BNBUStudentApp: App {
     }
 
     private var isUITesting: Bool {
-        ProcessInfo.processInfo.arguments.contains("-ui-testing-reset")
+        UITestingPolicy.isEnabled()
     }
 }

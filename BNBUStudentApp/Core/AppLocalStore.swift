@@ -168,8 +168,9 @@ struct AppLocalStore {
         save(draft, forKey: draftKey)
     }
 
-    func clearDraft() {
-        _ = removeValue(forKey: draftKey)
+    @discardableResult
+    func clearDraft() -> Bool {
+        removeValue(forKey: draftKey)
     }
 
     func readExerciseSession() -> LocalStoreReadResult<ExerciseSession> {
@@ -252,9 +253,16 @@ struct AppLocalStore {
         try? fileManager.removeItem(at: url)
     }
 
-    func removeAllExerciseMediaFiles() {
-        guard let directoryURL = exerciseMediaDirectoryURL else { return }
-        try? fileManager.removeItem(at: directoryURL)
+    @discardableResult
+    func removeAllExerciseMediaFiles() -> Bool {
+        guard let directoryURL = exerciseMediaDirectoryURL else { return true }
+        guard fileManager.fileExists(atPath: directoryURL.path) else { return true }
+        do {
+            try fileManager.removeItem(at: directoryURL)
+            return !fileManager.fileExists(atPath: directoryURL.path)
+        } catch {
+            return false
+        }
     }
 
     private func prepareExerciseMediaDirectory() {

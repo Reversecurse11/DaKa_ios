@@ -947,7 +947,37 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["proof.demo.add"].exists)
         XCTAssertFalse(app.staticTexts["模拟拍摄（调试）"].exists)
         scrollToAndTap(app.buttons["保存草稿"])
-        XCTAssertTrue(app.buttons["草稿已保存"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["checkin.draft.banner"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(app.staticTexts["提交运动凭证"].exists)
+        XCTAssertFalse(app.buttons["checkin.submit.button"].exists)
+
+        // Saving must survive process death. Relaunch in a UI-test mode that
+        // deliberately preserves protected local state, then restore into the
+        // editor from the persisted draft.
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-preserve-state",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        login()
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["checkin.draft.banner"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(app.staticTexts["提交运动凭证"].exists)
+
+        scrollToAndTap(app.buttons["checkin.draft.restore"])
+        XCTAssertTrue(app.staticTexts["提交运动凭证"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["checkin.draft.banner"].exists)
+        XCTAssertEqual(app.textViews["运动说明"].value as? String, "操场跑步一小时")
 
         scrollToAndTap(app.buttons["checkin.submit.button"])
         XCTAssertTrue(app.staticTexts["确认提交打卡"].waitForExistence(timeout: 3))
@@ -960,6 +990,47 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         // Android's record card summarises the session instead of badging it.
         XCTAssertTrue(app.staticTexts["计入学时"].exists)
         XCTAssertTrue(app.staticTexts["运动凭证"].exists)
+    }
+
+    func testDiscardingSavedCheckInDraftReturnsToTheStartForm() throws {
+        login()
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+
+        let noteEditor = app.textViews["运动说明"]
+        XCTAssertTrue(noteEditor.waitForExistence(timeout: 3))
+        noteEditor.tap()
+        noteEditor.typeText("准备稍后提交")
+        let noteDoneButton = app.toolbars.buttons["完成"]
+        if noteDoneButton.waitForExistence(timeout: 2) {
+            noteDoneButton.tap()
+        }
+        scrollToAndTap(app.buttons["checkin.draft.save"])
+        XCTAssertTrue(app.buttons["checkin.draft.discard"].waitForExistence(timeout: 3))
+
+        scrollToAndTap(app.buttons["checkin.draft.discard"])
+        XCTAssertFalse(app.descendants(matching: .any)["checkin.draft.banner"].exists)
+        XCTAssertFalse(app.staticTexts["提交运动凭证"].exists)
+        XCTAssertFalse(app.buttons["checkin.submit.button"].exists)
+        XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 3))
+
+        // Relaunch without the reset/completed-session fixtures. The discarded
+        // metadata must stay gone instead of reviving a hidden draft or the
+        // evidence form from protected local storage.
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-preserve-state",
+            "-ui-testing-authenticated",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+        login()
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        XCTAssertFalse(app.descendants(matching: .any)["checkin.draft.banner"].exists)
+        XCTAssertFalse(app.staticTexts["提交运动凭证"].exists)
+        XCTAssertFalse(app.buttons["checkin.submit.button"].exists)
+        XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 3))
     }
 
     // Business rules 3.2.1/5.5/5.6: pause/resume, in-session capture drafts,

@@ -449,6 +449,368 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(materialized.type, .image)
     }
 
+    func testDiscardingSavedCompletedCheckInClearsTheWholeLocalCandidate() async throws {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        appState.enforcesCheckInTimeWindow = false
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(
+            imageData: Data([0x01, 0x02]),
+            thumbnailData: nil,
+            at: start.addingTimeInterval(10)
+        ))
+        let mediaDraft = try XCTUnwrap(appState.exerciseMediaDrafts.first)
+        let attachment = try XCTUnwrap(appState.proofAttachment(from: mediaDraft))
+        XCTAssertTrue(appState.endExerciseSession(
+            at: start.addingTimeInterval(ExerciseSession.oneHour)
+        ))
+        appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: [attachment]
+        )
+
+        XCTAssertEqual(appState.exerciseSession?.status, .completed)
+        XCTAssertNotNil(appState.draft)
+        XCTAssertEqual(appState.exerciseMediaDrafts.count, 1)
+        XCTAssertNotNil(store.readDraft().value)
+        XCTAssertNotNil(store.readExerciseSession().value)
+        XCTAssertNotNil(store.readExerciseMediaDrafts().value)
+
+        let discarded = await appState.discardCompletedCheckInDraft()
+        XCTAssertTrue(discarded)
+        XCTAssertNil(appState.exerciseSession)
+        XCTAssertNil(appState.draft)
+        XCTAssertTrue(appState.exerciseMediaDrafts.isEmpty)
+        XCTAssertNil(store.readDraft().value)
+        XCTAssertNil(store.readExerciseSession().value)
+        XCTAssertNil(store.readExerciseMediaDrafts().value)
+    }
+
+    func testDraftSaveFailureDoesNotPublishAnInMemoryDraft() {
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailWrite: { $0 == AppLocalStore.draftStorageKey }
+        )
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+
+        let saved = appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: []
+        )
+
+        XCTAssertFalse(saved)
+        XCTAssertNil(appState.draft)
+        XCTAssertNil(store.readDraft().value)
+        XCTAssertEqual(appState.storeHealth.lastWriteStatus, .failed)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    func testChangedDraftSaveFailureKeepsItsPreviousRetryJournal() throws {
+        let removalFailure = LocalRemovalFailureController(
+            failingKey: AppLocalStore.pendingMutationStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+        )
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "old-draft-fingerprint",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "draft-with-retry",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "原说明",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            sportType: ExerciseSportType.running.rawValue,
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        removalFailure.enable()
+
+        let saved = appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "新说明",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: []
+        )
+
+        XCTAssertFalse(saved)
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+        XCTAssertNotNil(appState.errorMessage)
+
+        removalFailure.disable()
+        XCTAssertTrue(appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "新说明",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: []
+        ))
+        XCTAssertEqual(appState.draft?.note, "新说明")
+        XCTAssertNil(appState.draft?.pendingRemoteMutation)
+        XCTAssertNil(store.readPendingRemoteMutations().value?[attempt.scope])
+    }
+
+    func testChangedDraftWriteFailureRestoresThePreviousRetryJournal() throws {
+        let writeFailure = LocalWriteFailureController(
+            failingKey: AppLocalStore.draftStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailWrite: { writeFailure.shouldFailWrite(forKey: $0) }
+        )
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "old-draft-fingerprint",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "draft-with-retry",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "原说明",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            sportType: ExerciseSportType.running.rawValue,
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        writeFailure.enable()
+
+        let saved = appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "新说明",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: []
+        )
+
+        XCTAssertFalse(saved)
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    func testDraftRemovalFailureKeepsMemoryAndPersistedDraftConsistent() throws {
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { $0 == AppLocalStore.draftStorageKey }
+        )
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        XCTAssertTrue(appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: []
+        ))
+
+        XCTAssertFalse(appState.clearDraft())
+
+        XCTAssertNotNil(appState.draft)
+        XCTAssertNotNil(store.readDraft().value)
+        XCTAssertEqual(appState.storeHealth.lastWriteStatus, .failed)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    func testWholeCompletedDraftDiscardRollsBackEveryMetadataRemovalFailure() async throws {
+        let failingKeys = [
+            AppLocalStore.draftStorageKey,
+            AppLocalStore.exerciseMediaDraftsStorageKey,
+            AppLocalStore.exerciseSessionStorageKey
+        ]
+
+        for failingKey in failingKeys {
+            let removalFailure = LocalRemovalFailureController(failingKey: failingKey)
+            let store = AppLocalStore(
+                defaults: isolatedDefaults(),
+                shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+            )
+            let appState = AppState(repository: MockStudentRepository(), localStore: store)
+            appState.enforcesCheckInTimeWindow = false
+            let start = Date(timeIntervalSince1970: 1_800_100_000)
+
+            XCTAssertTrue(appState.startExerciseSession(
+                category: .general,
+                sportType: .running,
+                customSportName: "",
+                at: start
+            ), failingKey)
+            XCTAssertTrue(appState.addExercisePhotoDraft(
+                imageData: Data([0x01, 0x02]),
+                thumbnailData: nil,
+                at: start.addingTimeInterval(10)
+            ), failingKey)
+            let attachment = try XCTUnwrap(
+                appState.exerciseMediaDrafts.first.flatMap { appState.proofAttachment(from: $0) },
+                failingKey
+            )
+            XCTAssertTrue(appState.endExerciseSession(
+                at: start.addingTimeInterval(ExerciseSession.oneHour)
+            ), failingKey)
+            XCTAssertTrue(appState.saveDraft(
+                creditType: .general,
+                courseId: nil,
+                hours: 1,
+                note: "操场跑步",
+                sportType: ExerciseSportType.running.rawValue,
+                proofAttachments: [attachment]
+            ), failingKey)
+
+            let sessionSnapshot = try XCTUnwrap(appState.exerciseSession)
+            let draftSnapshot = try XCTUnwrap(appState.draft)
+            let mediaSnapshot = appState.exerciseMediaDrafts
+            let persistedDraftSnapshot = try XCTUnwrap(store.readDraft().value)
+            removalFailure.enable()
+
+            let failedDiscard = await appState.discardCompletedCheckInDraft()
+            XCTAssertFalse(failedDiscard, failingKey)
+            XCTAssertEqual(appState.exerciseSession, sessionSnapshot, failingKey)
+            XCTAssertEqual(appState.draft, draftSnapshot, failingKey)
+            XCTAssertEqual(appState.exerciseMediaDrafts, mediaSnapshot, failingKey)
+            XCTAssertEqual(store.readExerciseSession().value, sessionSnapshot, failingKey)
+            XCTAssertEqual(store.readDraft().value, persistedDraftSnapshot, failingKey)
+            XCTAssertEqual(store.readExerciseMediaDrafts().value, mediaSnapshot, failingKey)
+            XCTAssertNotNil(appState.errorMessage, failingKey)
+
+            removalFailure.disable()
+            let successfulDiscard = await appState.discardCompletedCheckInDraft()
+            XCTAssertTrue(successfulDiscard, failingKey)
+            XCTAssertNil(appState.exerciseSession, failingKey)
+            XCTAssertNil(appState.draft, failingKey)
+            XCTAssertTrue(appState.exerciseMediaDrafts.isEmpty, failingKey)
+        }
+    }
+
+    func testWholeDraftDiscardKeepsCandidateWhenPendingJournalCannotBeRemoved() async throws {
+        let removalFailure = LocalRemovalFailureController(
+            failingKey: AppLocalStore.pendingMutationStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+        )
+        let setupState = AppState(repository: MockStudentRepository(), localStore: store)
+        setupState.enforcesCheckInTimeWindow = false
+        let start = Date(timeIntervalSince1970: 1_800_200_000)
+        XCTAssertTrue(setupState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(setupState.endExerciseSession(
+            at: start.addingTimeInterval(ExerciseSession.oneHour)
+        ))
+
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "whole-discard-journal",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "whole-discard-draft",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            sportType: ExerciseSportType.running.rawValue,
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        let sessionSnapshot = try XCTUnwrap(appState.exerciseSession)
+        removalFailure.enable()
+
+        let failedDiscard = await appState.discardCompletedCheckInDraft()
+        XCTAssertFalse(failedDiscard)
+        XCTAssertEqual(appState.exerciseSession, sessionSnapshot)
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readExerciseSession().value, sessionSnapshot)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+
+        removalFailure.disable()
+        let successfulDiscard = await appState.discardCompletedCheckInDraft()
+        XCTAssertTrue(successfulDiscard)
+        XCTAssertNil(appState.exerciseSession)
+        XCTAssertNil(appState.draft)
+        XCTAssertNil(store.readPendingRemoteMutations().value?[attempt.scope])
+    }
+
+    func testDraftRemovalFailureRestoresItsLegacyRetryJournal() throws {
+        let removalFailure = LocalRemovalFailureController(
+            failingKey: AppLocalStore.draftStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+        )
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "clear-draft-journal",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "clear-draft",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        removalFailure.enable()
+
+        XCTAssertFalse(appState.clearDraft())
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+    }
+
     // MARK: - Daily open window (business rule 3.3)
 
     func testExerciseCanOnlyStartInsideDailyOpenWindow() throws {
@@ -4426,11 +4788,67 @@ private final class PendingMutationRemovalFailureController: @unchecked Sendable
         lock.unlock()
     }
 
+    func disable() {
+        lock.lock()
+        isEnabled = false
+        lock.unlock()
+    }
+
     func shouldFailRemoval(forKey key: String) -> Bool {
         guard key == AppLocalStore.pendingMutationStorageKey else { return false }
         lock.lock()
         defer { lock.unlock() }
         return isEnabled
+    }
+}
+
+private final class LocalRemovalFailureController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingKey: String
+    private var isEnabled = false
+
+    init(failingKey: String) {
+        self.failingKey = failingKey
+    }
+
+    func enable() {
+        lock.lock()
+        isEnabled = true
+        lock.unlock()
+    }
+
+    func disable() {
+        lock.lock()
+        isEnabled = false
+        lock.unlock()
+    }
+
+    func shouldFailRemoval(forKey key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isEnabled && key == failingKey
+    }
+}
+
+private final class LocalWriteFailureController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingKey: String
+    private var isEnabled = false
+
+    init(failingKey: String) {
+        self.failingKey = failingKey
+    }
+
+    func enable() {
+        lock.lock()
+        isEnabled = true
+        lock.unlock()
+    }
+
+    func shouldFailWrite(forKey key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isEnabled && key == failingKey
     }
 }
 

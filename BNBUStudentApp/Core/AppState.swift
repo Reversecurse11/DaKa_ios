@@ -111,6 +111,7 @@ final class AppState: ObservableObject {
     @Published private(set) var contactVerificationRequiresCurrentEmailCode = false
     @Published private(set) var checkInSubmissionPhase: CheckInSubmissionPhase = .idle
     @Published private(set) var canSafelyRetryCheckIn = false
+    @Published private(set) var isDiscardingCompletedCheckInDraft = false
     @Published private(set) var isSubmittingExemption = false
     @Published private(set) var isLoadingExemptions = false
     @Published private(set) var pendingRemoteMutationSummaries: [PendingRemoteMutationSummary] = []
@@ -1424,6 +1425,7 @@ final class AppState: ObservableObject {
         customSportName: String,
         at startTime: Date = Date()
     ) -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard exerciseSession == nil else {
             errorMessage = BNBUL10n.text("已有进行中或待提交的运动，请先完成当前记录。")
             return false
@@ -1583,6 +1585,7 @@ final class AppState: ObservableObject {
         customSportName: String,
         at startTime: Date = Date()
     ) async -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard isAPIV1Session else {
             return startExerciseSession(
                 category: category,
@@ -2003,9 +2006,13 @@ final class AppState: ObservableObject {
         exerciseMediaDrafts = updated
     }
 
-    func removeAllExerciseMediaDrafts() {
-        clearAllExerciseMediaDrafts()
-        errorMessage = nil
+    @discardableResult
+    func removeAllExerciseMediaDrafts() -> Bool {
+        let cleared = clearAllExerciseMediaDrafts()
+        if cleared {
+            errorMessage = nil
+        }
+        return cleared
     }
 
     /// Abandoning a session clears only the drafts it produced; drafts
@@ -2025,10 +2032,19 @@ final class AppState: ObservableObject {
         exerciseMediaDrafts = remaining
     }
 
-    private func clearAllExerciseMediaDrafts() {
-        _ = localStore.clearExerciseMediaDraftIndex()
-        localStore.removeAllExerciseMediaFiles()
+    @discardableResult
+    private func clearAllExerciseMediaDrafts() -> Bool {
+        guard localStore.clearExerciseMediaDraftIndex() else {
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
+            return false
+        }
+        guard localStore.removeAllExerciseMediaFiles() else {
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
+            exerciseMediaDrafts = []
+            return false
+        }
         exerciseMediaDrafts = []
+        return true
     }
 
     /// Loads persisted drafts for the current student, dropping drafts that
@@ -2038,6 +2054,11 @@ final class AppState: ObservableObject {
         let stored = localStore.readExerciseMediaDrafts().value ?? []
         guard !stored.isEmpty else {
             exerciseMediaDrafts = []
+            // A previous logical discard may have succeeded while the final
+            // directory sweep was temporarily blocked (for example by file
+            // protection). With no metadata references, these files are safe
+            // to remove and can never be attached to another record.
+            _ = localStore.removeAllExerciseMediaFiles()
             return
         }
         let (kept, dropped) = stored.partitioned {
@@ -2132,6 +2153,289 @@ final class AppState: ObservableObject {
         errorMessage = nil
     }
 
+    /// Discards the whole local check-in candidate after an eligible exercise
+    /// has ended. A saved form draft, its retained evidence and the completed
+    /// local session are one user-facing lifecycle: clearing only the form
+    /// would immediately reveal an empty submission form for the same session.
+    ///
+    /// Backend 1.5 keeps the completed session as an immutable audit fact. A
+    /// normal Save Draft action is local-only, but a previous interrupted
+    /// submission may already have created a server DRAFT. That DRAFT must be
+    /// cancelled before device state is released, otherwise it will be found
+    /// again during the next submission attempt.
+    @discardableResult
+    func discardCompletedCheckInDraft() async -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
+        guard let completedSession = exerciseSession,
+              completedSession.status == .completed else { return false }
+        isDiscardingCompletedCheckInDraft = true
+        defer { isDiscardingCompletedCheckInDraft = false }
+
+        let scope = "apiv1-exercise-record:submit:\(completedSession.id)"
+        let cachedRecord = backendExerciseRecord.flatMap {
+            $0.sessionId == completedSession.id ? $0 : nil
+        }
+        // A plain Save Draft is deliberately local-only. Do not make an
+        // offline student contact the API just to throw that local candidate
+        // away. A cached record or durable APIV1 journal proves that a remote
+        // DRAFT may exist and therefore requires authoritative cancellation.
+        let requiresServerRecordReconciliation = cachedRecord != nil
+            || pendingRemoteMutations[scope] != nil
+            || draft?.pendingRemoteMutation?.scope == scope
+        if isAPIV1Session, requiresServerRecordReconciliation {
+            guard !isLoading else { return false }
+            let expectedSessionEpoch = sessionEpoch
+            isLoading = true
+            defer {
+                if expectedSessionEpoch == sessionEpoch {
+                    isLoading = false
+                }
+            }
+            do {
+                let serverSession: APIV1ExerciseSession
+                if let cached = backendExerciseSession, cached.id == completedSession.id {
+                    serverSession = cached
+                } else {
+                    serverSession = try await backendServices.exerciseSessions
+                        .get(sessionID: completedSession.id).value
+                    backendExerciseSession = serverSession
+                }
+                guard expectedSessionEpoch == sessionEpoch,
+                      exerciseSession?.id == completedSession.id,
+                      exerciseSession?.status == .completed,
+                      serverSession.studentId == workspace.student.id,
+                      serverSession.status == .completed else {
+                    throw APITransportError.invalidResponse
+                }
+
+                let record: APIV1ExerciseRecord?
+                if let cachedRecord {
+                    record = cachedRecord
+                } else {
+                    record = try await backendServices.exerciseRecords.findForSession(
+                        sessionID: serverSession.id,
+                        enrollmentID: serverSession.enrollmentId,
+                        businessDate: serverSession.businessDate
+                    ).value
+                }
+                guard expectedSessionEpoch == sessionEpoch,
+                      exerciseSession?.id == completedSession.id,
+                      exerciseSession?.status == .completed else { return false }
+                if let record {
+                    guard record.studentId == workspace.student.id,
+                          record.sessionId == serverSession.id else {
+                        throw APITransportError.invalidResponse
+                    }
+                    backendExerciseRecord = try await reconcileExerciseRecordDiscard(
+                        record,
+                        serverSession: serverSession,
+                        completedSessionID: completedSession.id,
+                        expectedSessionEpoch: expectedSessionEpoch
+                    )
+                }
+                try removePendingRemoteMutationStrict(scope: scope)
+            } catch {
+                guard expectedSessionEpoch == sessionEpoch else { return false }
+                if let transport = error as? APITransportError, transport.statusCode == 401 {
+                    await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+                } else {
+                    errorMessage = apiv1OperationMessage(for: error)
+                }
+                return false
+            }
+        }
+
+        guard exerciseSession?.id == completedSession.id,
+              exerciseSession?.status == .completed else { return false }
+        return clearCompletedCheckInLocalCandidate()
+    }
+
+    /// Cancels a server DRAFT using optimistic concurrency. A stale version is
+    /// refreshed once: an already-cancelled record can finish local cleanup,
+    /// a submitted/reviewed record stays protected, and a still-draft record is
+    /// retried with the server's current version instead of looping forever on
+    /// the same cached `expectedVersion`.
+    private func reconcileExerciseRecordDiscard(
+        _ record: APIV1ExerciseRecord,
+        serverSession: APIV1ExerciseSession,
+        completedSessionID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> APIV1ExerciseRecord {
+        switch record.status {
+        case .cancelled:
+            return record
+        case .submitted, .reviewed:
+            throw APIV1CheckInError.recordStateInvalid
+        case .draft:
+            do {
+                return try await discardExerciseRecordDraft(
+                    record,
+                    serverSession: serverSession,
+                    completedSessionID: completedSessionID,
+                    expectedSessionEpoch: expectedSessionEpoch
+                )
+            } catch {
+                guard let transport = error as? APITransportError,
+                      transport.statusCode == 409 else { throw error }
+                let refreshed = try await backendServices.exerciseRecords
+                    .get(recordID: record.id).value
+                try validateExerciseRecordForDiscard(
+                    refreshed,
+                    serverSession: serverSession,
+                    completedSessionID: completedSessionID,
+                    expectedSessionEpoch: expectedSessionEpoch
+                )
+                backendExerciseRecord = refreshed
+                switch refreshed.status {
+                case .cancelled:
+                    return refreshed
+                case .submitted, .reviewed:
+                    throw APIV1CheckInError.recordStateInvalid
+                case .draft:
+                    return try await discardExerciseRecordDraft(
+                        refreshed,
+                        serverSession: serverSession,
+                        completedSessionID: completedSessionID,
+                        expectedSessionEpoch: expectedSessionEpoch
+                    )
+                }
+            }
+        }
+    }
+
+    private func discardExerciseRecordDraft(
+        _ record: APIV1ExerciseRecord,
+        serverSession: APIV1ExerciseSession,
+        completedSessionID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> APIV1ExerciseRecord {
+        let cancelled = try await backendServices.exerciseRecords.discard(
+            recordID: record.id,
+            request: APIV1VersionedReasonRequest(
+                reason: "STUDENT_ABANDONED_DRAFT",
+                expectedVersion: record.version
+            )
+        ).value
+        try validateExerciseRecordForDiscard(
+            cancelled,
+            serverSession: serverSession,
+            completedSessionID: completedSessionID,
+            expectedSessionEpoch: expectedSessionEpoch
+        )
+        guard cancelled.status == .cancelled else {
+            throw APITransportError.invalidResponse
+        }
+        return cancelled
+    }
+
+    private func validateExerciseRecordForDiscard(
+        _ record: APIV1ExerciseRecord,
+        serverSession: APIV1ExerciseSession,
+        completedSessionID: String,
+        expectedSessionEpoch: UInt64
+    ) throws {
+        guard expectedSessionEpoch == sessionEpoch,
+              exerciseSession?.id == completedSessionID,
+              exerciseSession?.status == .completed,
+              record.studentId == workspace.student.id,
+              record.sessionId == serverSession.id else {
+            throw APITransportError.invalidResponse
+        }
+    }
+
+    /// Clears the three metadata records as one logical operation. Published
+    /// state is changed only after every protected metadata key was removed;
+    /// if a later key fails, earlier removals are rolled back from snapshots so
+    /// the draft cannot become hidden or leak its evidence into a new session.
+    private func clearCompletedCheckInLocalCandidate() -> Bool {
+        let draftSnapshot = draft
+        let mediaSnapshot = exerciseMediaDrafts
+        let legacyAttempt = pendingRemoteMutations["sport-record:create"]
+
+        do {
+            try removePendingRemoteMutationStrict(scope: "sport-record:create")
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        guard localStore.clearDraft() else {
+            reportCompletedCandidateCleanupFailure()
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+        guard localStore.clearExerciseMediaDraftIndex() else {
+            let rollbackSucceeded = restoreCompletedCandidateMetadata(
+                draft: draftSnapshot,
+                mediaDrafts: nil
+            )
+            reportCompletedCandidateCleanupFailure(rollbackSucceeded: rollbackSucceeded)
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+        guard localStore.clearExerciseSession() else {
+            let rollbackSucceeded = restoreCompletedCandidateMetadata(
+                draft: draftSnapshot,
+                mediaDrafts: mediaSnapshot
+            )
+            reportCompletedCandidateCleanupFailure(rollbackSucceeded: rollbackSucceeded)
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+
+        // Metadata is now durably absent. End the user-facing lifecycle in one
+        // synchronous actor turn; the evidence editor can never observe an
+        // eligible completed session with a missing form draft.
+        exerciseSession = nil
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
+        draft = nil
+        exerciseMediaDrafts = []
+        storeHealth.draftReadStatus = .missing
+        storeHealth.lastWriteStatus = .cleared
+        storeHealth.lastEvent = "运动打卡草稿已完整丢弃"
+
+        if !localStore.removeAllExerciseMediaFiles() {
+            // The logical references are gone, so no old evidence can attach to
+            // a future record. Startup retries this best-effort file sweep.
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
+            return true
+        }
+        errorMessage = nil
+        return true
+    }
+
+    private func restoreCompletedCandidateMetadata(
+        draft: CheckInDraft?,
+        mediaDrafts: [ExerciseMediaDraft]?
+    ) -> Bool {
+        var restored = true
+        if let draft {
+            restored = localStore.saveDraft(draft) && restored
+        }
+        if let mediaDrafts, !mediaDrafts.isEmpty {
+            restored = localStore.saveExerciseMediaDrafts(mediaDrafts) && restored
+        }
+        return restored
+    }
+
+    private func restoreLegacyCheckInAttemptIfNeeded(_ attempt: PendingRemoteMutationAttempt?) {
+        guard let attempt else { return }
+        do {
+            try storePendingRemoteMutation(attempt)
+        } catch {
+            errorMessage = combinedWarning(errorMessage, error.localizedDescription)
+        }
+    }
+
+    private func reportCompletedCandidateCleanupFailure(rollbackSucceeded: Bool = true) {
+        storeHealth.lastWriteStatus = .failed
+        storeHealth.lastEvent = rollbackSucceeded
+            ? "运动打卡草稿丢弃失败，已保留原状态"
+            : "运动打卡草稿丢弃失败，且本地状态回滚不完整"
+        errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
+    }
+
     /// The credit bucket a completed session's record belongs to. Course-related
     /// sessions must still reference a course that exists in the workspace.
     func submissionContext(for session: ExerciseSession) -> (creditType: CreditType, courseId: String?)? {
@@ -2216,7 +2520,10 @@ final class AppState: ObservableObject {
             at: startTime
         ) else { return }
         _ = endExerciseSession(at: date)
-        installExerciseProofForUITesting(saveSelection: true, at: date)
+        // A completed-session fixture supplies eligible exercise and retained
+        // evidence only. Saving a form draft is a separate user action and is
+        // exercised explicitly by the draft UI tests.
+        installExerciseProofForUITesting(saveSelection: false, at: date)
     }
 
     func installActiveExerciseSessionForUITesting(at date: Date = Date()) {
@@ -2727,6 +3034,7 @@ final class AppState: ObservableObject {
         proofAttachments: [ProofAttachment],
         exerciseSession: ExerciseSession? = nil
     ) async -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard !isSubmittingCheckIn else { return false }
         guard allowWrite() else { return false }
         canSafelyRetryCheckIn = false
@@ -3018,6 +3326,7 @@ final class AppState: ObservableObject {
         )
     }
 
+    @discardableResult
     func saveDraft(
         creditType: CreditType,
         courseId: String?,
@@ -3026,10 +3335,11 @@ final class AppState: ObservableObject {
         sportType: String? = nil,
         customSportType: String? = nil,
         proofAttachments: [ProofAttachment]
-    ) {
+    ) -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard let submission = validatedSubmission(creditType: creditType, courseId: courseId, hours: hours) else {
             clearDraft()
-            return
+            return false
         }
         let resolvedSportType = sportType == "other"
             ? customSportType?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3054,10 +3364,23 @@ final class AppState: ObservableObject {
         } else {
             retainedAttempt = nil
         }
+        let replacedJournalAttempt: PendingRemoteMutationAttempt?
         if existingAttempt != nil, retainedAttempt == nil {
-            removePendingRemoteMutation(scope: "sport-record:create")
+            replacedJournalAttempt = pendingRemoteMutations["sport-record:create"]
+            do {
+                // A changed form must not report a successful save while an
+                // older request remains durably retryable with stale fields or
+                // evidence. Keep the visible draft unchanged if journal
+                // cleanup cannot be persisted.
+                try removePendingRemoteMutationStrict(scope: "sport-record:create")
+            } catch {
+                errorMessage = error.localizedDescription
+                return false
+            }
+        } else {
+            replacedJournalAttempt = nil
         }
-        let draft = CheckInDraft(
+        let updatedDraft = CheckInDraft(
             id: draft?.id ?? UUID().uuidString,
             creditType: submission.creditType,
             courseId: submission.courseId,
@@ -3069,8 +3392,17 @@ final class AppState: ObservableObject {
             customSportType: customSportType,
             pendingRemoteMutation: retainedAttempt
         )
-        self.draft = draft
-        saveDraft(draft, event: "打卡草稿已保存")
+        guard saveDraft(updatedDraft, event: "打卡草稿已保存") else {
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
+            // Journal cleanup succeeded but the replacement draft did not.
+            // Restore the old retry state so the persisted old draft and its
+            // operation remain a consistent pair.
+            restoreLegacyCheckInAttemptIfNeeded(replacedJournalAttempt)
+            return false
+        }
+        self.draft = updatedDraft
+        errorMessage = nil
+        return true
     }
 
     func canResumePendingCheckIn(
@@ -3104,16 +3436,35 @@ final class AppState: ObservableObject {
         )
     }
 
-    func clearDraft() {
-        removePendingRemoteMutation(scope: "sport-record:create")
-        if let sessionID = exerciseSession?.id {
-            removePendingRemoteMutation(scope: "apiv1-exercise-record:submit:\(sessionID)")
+    @discardableResult
+    func clearDraft() -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
+        let legacyAttempt = pendingRemoteMutations["sport-record:create"]
+        do {
+            // Remove the legacy retry journal before deleting the form file.
+            // If journal persistence fails, keeping the draft intact is safer
+            // than reporting a discard while a retry remains durable.
+            try removePendingRemoteMutationStrict(scope: "sport-record:create")
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
         }
+        guard localStore.clearDraft() else {
+            storeHealth.lastWriteStatus = .failed
+            storeHealth.lastEvent = "打卡草稿清理失败"
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+        // Contract 1.5 owns a separate session-scoped journal. A generic form
+        // clear must never orphan a server DRAFT by deleting that journal;
+        // successful submit and explicit whole-record discard clean it up only
+        // after the server state has been confirmed.
         draft = nil
-        localStore.clearDraft()
         storeHealth.draftReadStatus = .missing
         storeHealth.lastWriteStatus = .cleared
         storeHealth.lastEvent = "打卡草稿已清理"
+        return true
     }
 
     func discardExemptionCreationAttempt() {

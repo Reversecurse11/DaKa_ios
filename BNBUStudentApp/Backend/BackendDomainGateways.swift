@@ -701,6 +701,23 @@ actor AuthoritativeExerciseRecordGateway {
         )
     }
 
+    func discard(
+        recordID: String,
+        request: APIV1VersionedReasonRequest
+    ) async throws -> APIResponse<APIV1ExerciseRecord> {
+        guard !request.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              request.expectedVersion > 0 else {
+            throw APITransportError.invalidRequest
+        }
+        let recordID = try APIPath.component(recordID)
+        return try await mutate(
+            operationID: "discardExerciseRecord",
+            path: "exercise-records/\(recordID)/discard",
+            scope: "exercise-record:discard:\(recordID)",
+            body: request
+        )
+    }
+
     private func mutate<Body: Encodable>(
         operationID: String,
         path: String,

@@ -421,3 +421,16 @@ enum FixturePolicy {
         #endif
     }
 }
+
+enum UITestingPolicy {
+    static let resetArgument = "-ui-testing-reset"
+    static let preserveStateArgument = "-ui-testing-preserve-state"
+
+    static func isEnabled(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
+        arguments.contains(resetArgument) || arguments.contains(preserveStateArgument)
+    }
+
+    static func shouldResetState(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
+        arguments.contains(resetArgument)
+    }
+}

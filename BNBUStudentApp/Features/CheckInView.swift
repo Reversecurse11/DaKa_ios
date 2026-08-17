@@ -56,7 +56,11 @@ struct CheckInView: View {
     @State private var proofAttachments: [ProofAttachment] = []
     @State private var submitted = false
     @State private var draftSaved = false
-    @State private var draftRestored = false
+    /// A completed session has two mutually exclusive presentations: either a
+    /// compact saved-draft summary or the editable evidence submission form.
+    @State private var isEditingCompletedSubmission = true
+    @State private var didPrepareDraftPresentation = false
+    @State private var isDiscardingDraft = false
     @State private var confirmSubmit = false
     @State private var confirmEndExercise = false
     @State private var endWillBeUncredited = false
@@ -142,12 +146,12 @@ struct CheckInView: View {
         }
         .onAppear {
             appState.reconcileExerciseSession()
-            restoreDraftIfNeeded()
+            prepareDraftPresentationIfNeeded()
             rebuildProofAttachments()
             syncSportTypeWithCategory()
             // Business rule 5.4: one-time health reminder per account.
             // Suppressed under UI testing so dialogs stay deterministic.
-            if !ProcessInfo.processInfo.arguments.contains("-ui-testing-reset"),
+            if !UITestingPolicy.isEnabled(),
                !UserDefaults.standard.bool(forKey: healthReminderKey) {
                 showHealthReminder = true
             }
@@ -260,11 +264,24 @@ struct CheckInView: View {
                 exerciseSessionPanel(session)
                 if session.status == .completed,
                    appState.creditedExerciseHours(for: session) > 0 {
-                    evidenceSubmissionForm(session)
+                    completedSubmissionContent(session)
                 }
             } else {
                 exerciseStartForm
             }
+        }
+    }
+
+    @ViewBuilder
+    private func completedSubmissionContent(_ session: ExerciseSession) -> some View {
+        if let draft = appState.draft, !isEditingCompletedSubmission {
+            DraftBanner(draft: draft, isProcessing: isDiscardingDraft) {
+                restoreDraft(draft)
+            } clearAction: {
+                discardSavedDraft()
+            }
+        } else {
+            evidenceSubmissionForm(session)
         }
     }
 
@@ -752,18 +769,11 @@ struct CheckInView: View {
 
     private func evidenceSubmissionForm(_ session: ExerciseSession) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let draft = appState.draft {
-                DraftBanner(draft: draft) {
-                    restoreDraft(draft)
-                } clearAction: {
-                    clearDraftAndForm()
-                }
-            }
-
             SwissPanel {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("提交运动凭证")
                         .font(BNBUFont.titleMedium)
+                        .accessibilityIdentifier("checkin.evidence.form.title")
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
@@ -834,6 +844,7 @@ struct CheckInView: View {
                         SecondaryActionButton(title: draftSaved ? "草稿已保存" : "保存草稿", systemImage: "tray.and.arrow.down") {
                             saveDraft()
                         }
+                        .accessibilityIdentifier("checkin.draft.save")
                         SecondaryActionButton(title: "清空凭证", systemImage: "trash") {
                             clearDraftAndForm()
                         }
@@ -1065,17 +1076,20 @@ struct CheckInView: View {
         }
     }
 
-    private func restoreDraftIfNeeded() {
-        guard !draftRestored else { return }
-        draftRestored = true
-        guard appState.exerciseSession?.status == .completed,
-              let draft = appState.draft else { return }
-        restoreDraft(draft)
+    private func prepareDraftPresentationIfNeeded() {
+        guard !didPrepareDraftPresentation else { return }
+        didPrepareDraftPresentation = true
+        guard appState.exerciseSession?.status == .completed else { return }
+        isEditingCompletedSubmission = appState.draft == nil
     }
 
     private func restoreDraft(_ draft: CheckInDraft) {
-        guard let submissionContext,
-              draft.creditType == submissionContext.creditType,
+        guard !isDiscardingDraft else { return }
+        // Course projection may still be loading when the page first appears.
+        // Keep the saved draft available instead of treating a missing context
+        // as a stale draft and deleting it.
+        guard let submissionContext else { return }
+        guard draft.creditType == submissionContext.creditType,
               draft.courseId == submissionContext.courseId else {
             clearDraftAndForm()
             return
@@ -1085,12 +1099,13 @@ struct CheckInView: View {
         // includes the complete retained set rather than a saved subset.
         rebuildProofAttachments()
         selectedSegment = .submit
+        isEditingCompletedSubmission = true
         draftSaved = false
     }
 
     private func saveDraft() {
         guard let submissionContext, let session = appState.exerciseSession else { return }
-        appState.saveDraft(
+        guard appState.saveDraft(
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
             hours: appState.creditedExerciseHours(for: session),
@@ -1098,17 +1113,32 @@ struct CheckInView: View {
             sportType: session.sportType.rawValue,
             customSportType: session.customSportName ?? "",
             proofAttachments: proofAttachments
-        )
+        ) else { return }
+        focusedField = nil
+        dismissBNBUKeyboard()
         draftSaved = true
+        isEditingCompletedSubmission = false
+    }
+
+    private func discardSavedDraft() {
+        guard !isDiscardingDraft else { return }
+        isDiscardingDraft = true
+        Task {
+            defer { isDiscardingDraft = false }
+            guard await appState.discardCompletedCheckInDraft() else { return }
+            resetFormAfterSubmit()
+            isEditingCompletedSubmission = false
+        }
     }
 
     private func clearDraftAndForm() {
-        appState.clearDraft()
-        appState.removeAllExerciseMediaDrafts()
+        guard appState.clearDraft() else { return }
+        guard appState.removeAllExerciseMediaDrafts() else { return }
         note = ""
         selectedSportType = nil
         customSportType = ""
         proofAttachments = []
+        isEditingCompletedSubmission = true
         draftSaved = false
     }
 
@@ -1139,6 +1169,7 @@ struct CheckInView: View {
             guard success else { return }
             appState.markExerciseSessionSubmitted()
             resetFormAfterSubmit()
+            isEditingCompletedSubmission = false
             submitted = true
         }
     }
@@ -1168,7 +1199,8 @@ struct CheckInView: View {
 
     private func startExercise() {
         guard startValidationMessage == nil else { return }
-        appState.clearDraft()
+        guard appState.clearDraft() else { return }
+        isEditingCompletedSubmission = true
         // Retained media drafts from an earlier <1h attempt stay in the pool and
         // therefore remain part of the next eligible final submission.
         rebuildProofAttachments()
@@ -1568,6 +1600,7 @@ private struct CheckInSubmissionProgressPanel: View {
 
 private struct DraftBanner: View {
     let draft: CheckInDraft
+    let isProcessing: Bool
     let restoreAction: () -> Void
     let clearAction: () -> Void
 
@@ -1578,6 +1611,7 @@ private struct DraftBanner: View {
                     Label("有未提交草稿", systemImage: "doc.badge.clock")
                         .font(BNBUFont.titleMedium)
                         .foregroundStyle(BNBUTheme.ink)
+                        .accessibilityIdentifier("checkin.draft.banner")
                     Spacer()
                     StatusBadge(text: draft.updatedAt)
                 }
@@ -1588,7 +1622,15 @@ private struct DraftBanner: View {
 
                 HStack(spacing: 10) {
                     SecondaryActionButton(title: "恢复草稿", systemImage: "arrow.clockwise", action: restoreAction)
-                    SecondaryActionButton(title: "丢弃", systemImage: "xmark", action: clearAction)
+                        .accessibilityIdentifier("checkin.draft.restore")
+                        .disabled(isProcessing)
+                    SecondaryActionButton(
+                        title: "丢弃",
+                        systemImage: isProcessing ? "hourglass" : "xmark",
+                        action: clearAction
+                    )
+                        .accessibilityIdentifier("checkin.draft.discard")
+                        .disabled(isProcessing)
                 }
             }
         }
