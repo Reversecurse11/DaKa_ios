@@ -179,7 +179,7 @@ final class AppState: ObservableObject {
     /// a writable demo workspace.
     var mockTestAccount: MockTestAccountCredentials? { repository.mockTestAccount }
     var isFullFeatureMockMode: Bool { !isRemoteMode && mockTestAccount != nil }
-    /// Contract 1.5's list projection is safe to display, but its create form
+    /// Contract 2.0.2's list projection is safe to display, but its create form
     /// still needs an explicit Enrollment and a lossless subtype mapping.
     var canSubmitExemptions: Bool {
         isFullFeatureMockMode || (isRemoteMode && !isAPIV1Session)
@@ -376,7 +376,7 @@ final class AppState: ObservableObject {
         newSemesterWelcomeAcademicYear = nil
     }
 
-    /// Sends a sign-in code through Contract 1.5. The public response remains
+    /// Sends a sign-in code through Contract 2.0.2. The public response remains
     /// enumeration-safe; the client retains only the opaque challenge ID.
     @discardableResult
     func sendLoginCode(
@@ -429,7 +429,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Exchanges a code for a rotating Contract 1.5 AuthSession. A successful
+    /// Exchanges a code for a rotating Contract 2.0.2 AuthSession. A successful
     /// verification is not enough on its own: `/me` must also return the same
     /// authenticated STUDENT projection before the app opens its tab shell.
     @discardableResult
@@ -571,7 +571,7 @@ final class AppState: ObservableObject {
         restoreExerciseSession(for: authenticatedWorkspace.student.id)
         restoreExerciseMediaDrafts(for: authenticatedWorkspace.student.id)
         sanitizePersistedRemoteMutations(for: authenticatedWorkspace.student.id)
-        saveWorkspace(event: "已通过 Backend 1.5 恢复学生身份")
+        saveWorkspace(event: "已通过 Backend 2.0.2 恢复学生身份")
         isAuthenticated = true
     }
 
@@ -670,7 +670,7 @@ final class AppState: ObservableObject {
         return transportError.localizedDescription
     }
 
-    /// Loads only role-scoped Contract 1.5 projections. The existing legacy
+    /// Loads only role-scoped Contract 2.0.2 projections. The existing legacy
     /// workspace repository is never consulted in an API-v1 session.
     func refreshAPIV1Workspace() async {
         guard isAPIV1Session, isAuthenticated, !isLoading else { return }
@@ -717,11 +717,118 @@ final class AppState: ObservableObject {
             activeEnrollmentIDsByClassSectionID = enrollmentIDs
             backendClassSectionsByID = sectionsByID
             workspace.courses = mappedCourses.sorted { $0.displayTitle < $1.displayTitle }
-            saveWorkspace(event: "已同步 Backend 1.5 在读课程")
+            saveWorkspace(event: "已同步 Backend 2.0.2 在读课程")
             errorMessage = nil
         } catch {
             await handleAPIV1Error(error)
         }
+    }
+
+    /// Replaces the record list with the role-scoped Contract 2.0.2
+    /// projection. Status and review result always come from Backend; the
+    /// client never re-derives VALID from duration, media, or local history.
+    func refreshAPIV1ExerciseRecords() async {
+        guard isAPIV1Session, isAuthenticated, !isLoading else { return }
+        let refreshEpoch = sessionEpoch
+        isLoading = true
+        defer {
+            if refreshEpoch == sessionEpoch {
+                isLoading = false
+            }
+        }
+        do {
+            let response = try await backendServices.exerciseRecords.listOwned()
+            guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+            var mapped: [CheckInRecord] = []
+            for record in response.value
+                where record.status == .submitted || record.status == .reviewed {
+                guard record.studentId == workspace.student.id else {
+                    throw APITransportError.invalidResponse
+                }
+                let contextResponse = try? await backendServices.exerciseRecords
+                    .evidenceContext(recordID: record.id)
+                guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+                let context = contextResponse?.value
+                if let context,
+                   context.recordId != record.id || context.sessionId != record.sessionId {
+                    throw APITransportError.invalidResponse
+                }
+
+                var media: [APIV1MediaEvidence] = []
+                for mediaID in context?.mediaIds ?? [] {
+                    if let evidence = try? await backendServices.media.status(mediaID: mediaID).value {
+                        guard evidence.ownerStudentId == workspace.student.id,
+                              evidence.recordId == record.id else {
+                            throw APITransportError.invalidResponse
+                        }
+                        media.append(evidence)
+                    }
+                }
+                guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+                mapped.append(Self.checkInRecord(
+                    from: record,
+                    evidenceContext: context,
+                    media: media,
+                    courses: workspace.courses
+                ))
+            }
+            workspace.records = mapped.sorted {
+                ($0.businessDate ?? "", $0.submittedAt) >
+                    ($1.businessDate ?? "", $1.submittedAt)
+            }
+            saveWorkspace(event: "已同步 Backend 2.0.2 打卡记录")
+            errorMessage = nil
+        } catch {
+            await handleAPIV1Error(error, expectedSessionEpoch: refreshEpoch)
+        }
+    }
+
+    private static func checkInRecord(
+        from record: APIV1ExerciseRecord,
+        evidenceContext: APIV1ExerciseRecordEvidenceContext?,
+        media: [APIV1MediaEvidence],
+        courses: [Course]
+    ) -> CheckInRecord {
+        let photoCount = media.filter { $0.mediaType == .image }.count
+        let videoCount = media.filter { $0.mediaType == .video }.count
+        let expectedMediaCount = evidenceContext?.mediaIds.count ?? 0
+        let proofSummary: String
+        if expectedMediaCount == 0 {
+            proofSummary = BNBUL10n.text("未添加凭证")
+        } else if photoCount + videoCount == expectedMediaCount {
+            var parts: [String] = []
+            if photoCount > 0 { parts.append(BNBUL10n.text("\(photoCount) 张图片")) }
+            if videoCount > 0 { parts.append(BNBUL10n.text("\(videoCount) 个短视频")) }
+            proofSummary = parts.joined(separator: BNBUL10n.text("，"))
+        } else {
+            proofSummary = BNBUL10n.text("\(expectedMediaCount) 项现场凭证")
+        }
+        let course = courses.first { $0.id == record.classSectionId }
+        let title = record.creditType == .courseRelated
+            ? (course?.name ?? BNBUL10n.text("课程相关运动"))
+            : (record.sportName ?? record.sportType)
+        return CheckInRecord(
+            id: record.id,
+            courseId: record.creditType == .courseRelated ? record.classSectionId : nil,
+            taskTitle: title,
+            creditType: record.creditType == .courseRelated ? .courseRelated : .general,
+            hours: Double(record.creditedDurationSeconds) / ExerciseSession.oneHour,
+            submittedAt: record.submittedAt ?? record.businessDate,
+            validity: record.currentReview.map {
+                RecordValidity(serverReviewResult: $0.result)
+            } ?? .pending,
+            invalidReason: record.currentReview?.publicComment,
+            proofSummary: proofSummary,
+            proofPhotoCount: photoCount,
+            proofVideoCount: videoCount,
+            proofFiles: [],
+            note: record.description ?? "",
+            sportType: record.sportName ?? record.sportType,
+            businessDate: record.businessDate,
+            startedAt: evidenceContext?.startedAt,
+            endedAt: evidenceContext?.endedAt,
+            activeDuration: durationText(seconds: record.actualDurationSeconds)
+        )
     }
 
     func refreshAPIV1Notifications() async {
@@ -731,7 +838,7 @@ final class AppState: ObservableObject {
             let response = try await backendServices.clientCapabilities.notifications()
             guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
             workspace.notices = response.value.map(Self.studentNotice(from:))
-            saveWorkspace(event: "已同步 Backend 1.5 通知")
+            saveWorkspace(event: "已同步 Backend 2.0.2 通知")
         } catch let error as APITransportError {
             guard refreshEpoch == sessionEpoch else { return }
             if case .failure(503, let envelope) = error,
@@ -749,7 +856,7 @@ final class AppState: ObservableObject {
 
     /// Loads the versioned preference projection needed for later PATCHes.
     /// It intentionally does not overwrite the device's current language:
-    /// Contract 1.5 does not expose whether a returned locale is persisted or
+    /// Contract 2.0.2 does not expose whether a returned locale is persisted or
     /// merely an organization default, nor can it represent Follow System.
     func refreshAPIV1Preferences() async {
         guard isAPIV1Session, isAuthenticated else { return }
@@ -856,7 +963,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Contract 1.5 account recovery is exclusively for TEACHER/ADMIN password
+    /// Contract 2.0.2 account recovery is exclusively for TEACHER/ADMIN password
     /// accounts. Students authenticate with email OTP, so this student client
     /// must never manufacture a locally "submitted" recovery request.
     @discardableResult
@@ -1035,7 +1142,7 @@ final class AppState: ObservableObject {
         feedbackTickets = repository.loadFeedbackTickets()
     }
 
-    /// Contract 1.5 submits only the allowlisted category, content and client
+    /// Contract 2.0.2 submits only the allowlisted category, content and client
     /// context. Contacts, screenshots, logs and device identifiers are never
     /// smuggled into the free-form content field.
     func submitFeedbackForCurrentDataSource(
@@ -1198,7 +1305,7 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Starts Contract 1.5 first-bind or email-rebind verification. Rebinding
+    /// Starts Contract 2.0.2 first-bind or email-rebind verification. Rebinding
     /// sends independent codes to the current and new addresses; the accepted
     /// response tells the UI whether both proofs are required.
     @discardableResult
@@ -1302,7 +1409,7 @@ final class AppState: ObservableObject {
             isEmailVerified = response.value.user.emailVerified
             pendingEmailVerificationChallenge = nil
             contactVerificationRequiresCurrentEmailCode = false
-            saveWorkspace(event: "已通过 Backend 1.5 更新验证邮箱")
+            saveWorkspace(event: "已通过 Backend 2.0.2 更新验证邮箱")
             return true
         } catch {
             await handleAPIV1Error(error)
@@ -1526,7 +1633,7 @@ final class AppState: ObservableObject {
             _ = localStore.clearExerciseSession()
             return
         }
-        // A Contract 1.5 session is owned by Backend. Do not locally turn an
+        // A Contract 2.0.2 session is owned by Backend. Do not locally turn an
         // in-progress server session into a completed one when the app becomes
         // active; the authoritative restore/reconcile endpoint must decide it.
         guard !isAPIV1Session else { return }
@@ -1575,7 +1682,7 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Starts the authoritative Contract 1.5 timer. The local session is only
+    /// Starts the authoritative Contract 2.0.2 timer. The local session is only
     /// installed after Backend accepts the enrollment and returns its session
     /// ID/version; a network failure never creates a fake local timer.
     @discardableResult
@@ -2158,7 +2265,7 @@ final class AppState: ObservableObject {
     /// local session are one user-facing lifecycle: clearing only the form
     /// would immediately reveal an empty submission form for the same session.
     ///
-    /// Backend 1.5 keeps the completed session as an immutable audit fact. A
+    /// Backend 2.0.2 keeps the completed session as an immutable audit fact. A
     /// normal Save Draft action is local-only, but a previous interrupted
     /// submission may already have created a server DRAFT. That DRAFT must be
     /// cancelled before device state is released, otherwise it will be found
@@ -2923,7 +3030,7 @@ final class AppState: ObservableObject {
                     throw APITransportError.invalidResponse
                 }
                 workspace.exemptions = response.value.map(Self.exemptionApplication(from:))
-                saveWorkspace(event: "已同步 Backend 1.5 免测申请")
+                saveWorkspace(event: "已同步 Backend 2.0.2 免测申请")
             } catch let error as APITransportError {
                 guard refreshEpoch == sessionEpoch else { return }
                 if case .failure(503, let envelope) = error,
@@ -3217,7 +3324,7 @@ final class AppState: ObservableObject {
         }
 
         guard !isAPIV1Session else {
-            errorMessage = BNBUL10n.text("免测申请尚未完成 Backend 1.5 整体迁移，当前不会回退旧接口。")
+            errorMessage = BNBUL10n.text("免测申请尚未完成 Backend 2.0.2 整体迁移，当前不会回退旧接口。")
             return false
         }
         return await submitExemptionRemote(
@@ -3314,7 +3421,7 @@ final class AppState: ObservableObject {
         }
 
         guard !isAPIV1Session else {
-            errorMessage = BNBUL10n.text("免测补充材料尚未完成 Backend 1.5 整体迁移，当前不会回退旧接口。")
+            errorMessage = BNBUL10n.text("免测补充材料尚未完成 Backend 2.0.2 整体迁移，当前不会回退旧接口。")
             return false
         }
         return await supplementExemptionRemote(
@@ -3456,7 +3563,7 @@ final class AppState: ObservableObject {
             restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
             return false
         }
-        // Contract 1.5 owns a separate session-scoped journal. A generic form
+        // Contract 2.0.2 owns a separate session-scoped journal. A generic form
         // clear must never orphan a server DRAFT by deleting that journal;
         // successful submit and explicit whole-record discard clean it up only
         // after the server state has been confirmed.
@@ -3846,7 +3953,7 @@ final class AppState: ObservableObject {
             ) else {
                 throw APITransportError.invalidResponse
             }
-            if record.status == .submitted {
+            if record.status == .reviewed {
                 let cleanupWarning = cleanupAPIV1CheckInAttempt(scope: scope, attempt: attempt)
                 return finishAPIV1CheckInSubmission(
                     record: record,
@@ -3920,7 +4027,7 @@ final class AppState: ObservableObject {
                     byteCount: attachment.byteCount,
                     durationSeconds: attachment.durationSeconds,
                     hasAudioTrack: attachment.hasAudioTrack,
-                    source: "Backend 1.5 media",
+                    source: "Backend 2.0.2 media",
                     cosKey: outcome.media.id,
                     mimeType: outcome.media.verifiedMimeType ?? outcome.media.declaredMimeType,
                     contentDigest: outcome.media.verifiedContentSha256 ?? attachment.contentDigest
@@ -3944,7 +4051,8 @@ final class AppState: ObservableObject {
                 )
             ).value
             guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
-            guard record.status == .submitted,
+            guard record.status == .reviewed,
+                  record.currentReview != nil,
                   Self.apiv1Record(
                     record,
                     matches: serverSession,
@@ -3985,14 +4093,15 @@ final class AppState: ObservableObject {
         localSession: ExerciseSession,
         cleanupWarning: String?
     ) -> Bool {
-        guard record.status == .submitted,
+        guard record.status == .reviewed,
+              let currentReview = record.currentReview,
               record.creditedDurationSeconds >= Int(ExerciseSession.oneHour) else {
             errorMessage = APIV1CheckInError.recordStateInvalid.localizedDescription
             return false
         }
         let alreadyPresent = workspace.records.contains { $0.id == record.id }
         let hours = Double(record.creditedDurationSeconds) / ExerciseSession.oneHour
-        let validity: RecordValidity = record.currentReview?.result == .invalid ? .invalid : .valid
+        let validity = RecordValidity(serverReviewResult: currentReview.result)
         let displayed = CheckInRecord(
             id: record.id,
             courseId: record.creditType == .courseRelated ? record.classSectionId : nil,
@@ -4001,7 +4110,7 @@ final class AppState: ObservableObject {
             hours: hours,
             submittedAt: record.submittedAt ?? RecentTimestamp.justNow,
             validity: validity,
-            invalidReason: record.currentReview?.publicComment,
+            invalidReason: currentReview.publicComment,
             proofSummary: proofSummary(proofAttachments: proofAttachments),
             proofPhotoCount: proofAttachments.filter { $0.type == .image }.count,
             proofVideoCount: proofAttachments.filter { $0.type == .video }.count,
@@ -4014,7 +4123,7 @@ final class AppState: ObservableObject {
             activeDuration: Self.durationText(seconds: record.actualDurationSeconds)
         )
         upsertCheckInRecord(displayed)
-        if !alreadyPresent {
+        if !alreadyPresent, validity == .valid {
             creditSubmittedExercise(hours: hours, creditType: displayed.creditType)
         }
         saveExerciseSubmissionDate(localSession.startTime, recordID: record.id)
@@ -4033,7 +4142,7 @@ final class AppState: ObservableObject {
         }
         clearDraft()
         proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
-        saveWorkspace(event: "打卡已通过 Backend 1.5 提交")
+        saveWorkspace(event: "打卡已通过 Backend 2.0.2 提交")
         checkInSubmissionPhase = .syncing
         canSafelyRetryCheckIn = false
         errorMessage = cleanupWarning
@@ -4748,7 +4857,7 @@ final class AppState: ObservableObject {
                   response.value.id == id else { return }
             guard let index = workspace.notices.firstIndex(where: { $0.id == id }) else { return }
             workspace.notices[index] = Self.studentNotice(from: response.value)
-            saveWorkspace(event: "通知已读状态已同步 Backend 1.5")
+            saveWorkspace(event: "通知已读状态已同步 Backend 2.0.2")
             errorMessage = nil
         } catch {
             await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
@@ -4768,7 +4877,7 @@ final class AppState: ObservableObject {
                     workspace.notices[index] = Self.studentNotice(from: response.value)
                 }
             }
-            saveWorkspace(event: "批量通知已读已同步 Backend 1.5")
+            saveWorkspace(event: "批量通知已读已同步 Backend 2.0.2")
             errorMessage = nil
         } catch {
             await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
@@ -4798,18 +4907,31 @@ final class AppState: ObservableObject {
     }
 
     private static func exemptionApplication(
-        from application: APIV1ExemptionApplication
+        from application: APIV1StructuredExemptionApplication
     ) -> ExemptionApplication {
         let item: ExemptionItem
-        switch application.applicationType.uppercased() {
-        case "PHYSICAL_TEST":
-            item = .physicalTest
-        case "EXERCISE_CHECK_IN":
-            item = .checkIn
+        switch application.applicationSubtype?.uppercased() {
+        case "RUN_800M":
+            item = .run800m
+        case "RUN_1000M":
+            item = .run1000m
+        case "SCHOOL_TEAM":
+            item = .team
+        case "STUDENT_CLUB":
+            item = .club
         case "SPECIAL_CIRCUMSTANCE":
             item = .specialCircumstance
         default:
-            item = .specialCircumstance
+            switch application.applicationType.uppercased() {
+            case "PHYSICAL_TEST":
+                item = .physicalTest
+            case "EXERCISE_CHECK_IN":
+                item = .checkIn
+            case "SPECIAL_CIRCUMSTANCE":
+                item = .specialCircumstance
+            default:
+                item = .specialCircumstance
+            }
         }
 
         let status: ExemptionStatus
@@ -4829,7 +4951,7 @@ final class AppState: ObservableObject {
                 type: .image,
                 fileName: BNBUL10n.text("服务端证明材料"),
                 byteCount: nil,
-                source: "Backend 1.5 media",
+                source: "Backend 2.0.2 media",
                 cosKey: mediaID
             )
         }
@@ -4839,6 +4961,7 @@ final class AppState: ObservableObject {
             item: item,
             reason: application.reason,
             detail: "",
+            organization: application.organizationName ?? "",
             submittedAt: timestamp,
             status: status,
             proofFiles: proofs,

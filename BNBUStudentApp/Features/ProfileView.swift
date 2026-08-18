@@ -493,8 +493,8 @@ private struct ExemptionCenterSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     } else if appState.isAPIV1Session {
                         Text(verbatim: exemptionCenterText(
-                            "当前已接入 Backend 1.5 的申请列表；新建和补交仍需先补齐课程选择及免测类型映射，暂不开放提交。",
-                            "The Backend 1.5 application list is connected. Creating or supplementing an application remains unavailable until course selection and exemption-type mapping are complete."
+                            "当前已接入 Backend 2.0.2 的申请列表；新建和补交仍需先补齐课程选择及免测类型映射，暂不开放提交。",
+                            "The Backend 2.0.2 application list is connected. Creating or supplementing an application remains unavailable until course selection and exemption-type mapping are complete."
                         ))
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -803,8 +803,8 @@ private struct EnduranceScoringSheet: View {
                                         .accessibilityIdentifier("endurance.mock.message")
                                 } else if appState.isAPIV1Session {
                                     Text(verbatim: enduranceText(
-                                        "Backend 1.5 的运动项目与换算规则当前仍为稳定拒绝；本机不会使用旧接口或内置规则生成正式成绩。",
-                                        "Backend 1.5 currently keeps sport catalog and conversion rules in stable default-deny mode. This device will not use legacy endpoints or built-in rules to produce an official score."
+                                        "Backend 2.0.2 的运动项目与换算规则当前仍为稳定拒绝；本机不会使用旧接口或内置规则生成正式成绩。",
+                                        "Backend 2.0.2 currently keeps sport catalog and conversion rules in stable default-deny mode. This device will not use legacy endpoints or built-in rules to produce an official score."
                                     ))
                                         .font(BNBUFont.bodySmall)
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)

@@ -2597,20 +2597,26 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertTrue(grades.missingItems.isEmpty)
     }
 
-    func testRecordValidityMapsLegacyReviewStatesOntoValidInvalid() throws {
+    func testRecordValidityPreservesServerReviewStatesWithoutClientDerivation() throws {
         let decoder = JSONDecoder()
         func decode(_ raw: String) throws -> RecordValidity {
             try decoder.decode(RecordValidity.self, from: Data("\"\(raw)\"".utf8))
         }
 
-        // Legacy pending/approved/supplement/offset states all read back as valid.
-        for legacy in ["待审核", "已通过", "待补充", "系统抵扣", "pending", "approved", "supplement", "offset", "有效"] {
-            XCTAssertEqual(try decode(legacy), .valid, "\(legacy) must map to valid")
+        for pending in ["待审核", "审核中", "pending", "PENDING", "待补充", "supplement"] {
+            XCTAssertEqual(try decode(pending), .pending, "\(pending) must remain unresolved")
+        }
+        for valid in ["已通过", "系统抵扣", "approved", "APPROVED", "offset", "有效", "VALID"] {
+            XCTAssertEqual(try decode(valid), .valid, "\(valid) must map to valid")
         }
         // Only explicit invalidation (including the legacy rejected state) reads back as invalid.
         for invalid in ["无效", "invalid", "INVALID", "rejected", "REJECTED", "被驳回", "已驳回"] {
             XCTAssertEqual(try decode(invalid), .invalid, "\(invalid) must map to invalid")
         }
+
+        XCTAssertEqual(RecordValidity(serverReviewResult: .pending), .pending)
+        XCTAssertEqual(RecordValidity(serverReviewResult: .valid), .valid)
+        XCTAssertEqual(RecordValidity(serverReviewResult: .invalid), .invalid)
 
         let record = try decoder.decode(CheckInRecord.self, from: Data(
             """
@@ -2977,7 +2983,7 @@ final class BNBUStudentModelTests: XCTestCase {
         let record = try JSONDecoder().decode(CheckInRecord.self, from: json)
 
         XCTAssertEqual(record.hours, 0.5)
-        XCTAssertEqual(record.validity, .valid)
+        XCTAssertEqual(record.validity, .pending)
         XCTAssertEqual(record.taskTitle, "iOS联调测试：验证学生端提交打卡写入链路")
         XCTAssertEqual(record.proofFiles.count, 1)
         XCTAssertEqual(record.proofSummary, "1 张图片")

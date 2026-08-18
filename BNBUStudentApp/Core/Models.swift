@@ -1461,10 +1461,11 @@ enum CreditType: String, CaseIterable, Identifiable, Hashable, Codable {
     }
 }
 
-/// New business model: a submitted record is immediately valid. Teachers can
-/// only mark a record invalid afterwards; there is no pending-review,
-/// rejected-resubmit or supplement-material state anymore.
+/// Contract 2.0.2 makes a new submission immediately valid. PENDING remains a
+/// real server value only for legacy or explicitly reopened reviews, so it is
+/// preserved instead of being re-derived as VALID on the client.
 enum RecordValidity: String, CaseIterable, Identifiable, Hashable, Codable {
+    case pending = "待审核"
     case valid = "有效"
     case invalid = "无效"
 
@@ -1474,13 +1475,24 @@ enum RecordValidity: String, CaseIterable, Identifiable, Hashable, Codable {
         let container = try decoder.singleValueContainer()
         let value = try container.decode(String.self)
         switch value {
+        case "pending", "PENDING", "待审核", "审核中", "待复核":
+            self = .pending
         case "invalid", "INVALID", "无效", "rejected", "REJECTED", "被驳回", "已驳回":
             self = .invalid
-        default:
-            // Legacy pending/approved/supplement/offset states and any unknown
-            // value all map to valid; only an explicit server invalidation
-            // downgrades a record.
+        case "valid", "VALID", "有效", "approved", "APPROVED", "已通过", "系统抵扣", "offset":
             self = .valid
+        default:
+            // Older caches may contain states removed from the current wire
+            // contract. Preserve them as unresolved instead of granting credit.
+            self = .pending
+        }
+    }
+
+    init(serverReviewResult: APIV1ReviewResult) {
+        switch serverReviewResult {
+        case .pending: self = .pending
+        case .valid: self = .valid
+        case .invalid: self = .invalid
         }
     }
 }
@@ -1503,8 +1515,8 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
     /// Server-frozen Beijing business date. It is a calendar date, not an
     /// instant, and must never be converted through the device timezone.
     var businessDate: String?
-    /// Session timings ship with the OpenAPI document. Until then the server
-    /// omits them and both clients show 未提供, as the Android baseline does.
+    /// Server-authoritative timings are populated from the record evidence
+    /// context when available; older cached records may still omit them.
     var startedAt: String?
     var endedAt: String?
     var activeDuration: String?
@@ -1853,7 +1865,7 @@ enum ExemptionProofRule {
 }
 
 enum CheckInInputRule {
-    /// Contract 1.5 requires a nonblank student description for GENERAL and
+    /// Contract 2.0.2 requires a nonblank student description for GENERAL and
     /// permits COURSE_RELATED to omit it. The server remains authoritative and
     /// normalizes a blank course description to null.
     static let maximumDescriptionLength = 200
@@ -2597,8 +2609,8 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
     case enduranceRun = "800/1000 米耐力跑"
     case physicalTest = "体测免测"
     case singlePhysicalItem = "体测单项免测"
-    /// Contract 1.5 only exposes broad categories for these two values. Keep
-    /// them generic instead of inventing a team, club, or physical-test item.
+    /// Retained for legacy cached applications; Contract 2.0.2 structured
+    /// projections preserve the exact subtype for new server reads.
     case checkIn = "运动打卡免测"
     case specialCircumstance = "特殊情况免测"
     case team = "校队免打卡"
@@ -2758,7 +2770,7 @@ enum FeedbackCategory: String, CaseIterable, Identifiable, Hashable, Codable {
     var id: String { rawValue }
     var title: String { rawValue }
 
-    /// Contract 1.5 intentionally exposes a smaller privacy-bounded category
+    /// Contract 2.0.2 intentionally exposes a smaller privacy-bounded category
     /// vocabulary than the Android-aligned local form.
     var apiValue: String {
         switch self {
@@ -2912,7 +2924,7 @@ enum ExemptionStatus: String, CaseIterable, Identifiable, Hashable, Codable {
         self == .draft || self == .rejected || self == .supplementRequired
     }
 
-    /// Backend 1.5 only permits update while the application is a draft or
+    /// Backend 2.0.2 only permits update while the application is a draft or
     /// explicitly awaiting more evidence. Legacy/Mock sources historically
     /// allow a rejected application to enter their supplement endpoint.
     var canMutateUnderContract15: Bool {

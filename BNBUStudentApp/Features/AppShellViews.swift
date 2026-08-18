@@ -229,9 +229,12 @@ private struct AuthenticatedShellView: View {
     var body: some View {
         AppRootView()
             .task {
-                guard !isUITesting else { return }
+                let exercisesRealBackend = ProcessInfo.processInfo.arguments
+                    .contains("-ui-testing-real-backend")
+                guard !isUITesting || exercisesRealBackend else { return }
                 await appState.refreshSystemStatus()
                 await appState.refreshAPIV1Workspace()
+                await appState.refreshAPIV1ExerciseRecords()
                 await appState.refreshAPIV1Preferences()
                 await appState.refreshAPIV1Notifications()
             }

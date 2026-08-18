@@ -169,6 +169,7 @@ const privacyPolicyEN = read("BNBUStudentApp/Resources/privacy_policy_en.md");
 const releaseValidator = read("scripts/validate-release-config.sh");
 const macReleaseGate = read("scripts/run-macos-release-gate.sh");
 const modelTests = read("BNBUStudentTests/BNBUStudentModelTests.swift");
+const backendFoundationTests = read("BNBUStudentTests/BackendFoundationTests.swift");
 const project = read("BNBUStudent.xcodeproj/project.pbxproj");
 const backendEnvironment = read("BNBUStudentApp/Backend/BackendEnvironment.swift");
 const backendAuth = read("BNBUStudentApp/Backend/BackendAuthSession.swift");
@@ -194,6 +195,9 @@ requireText(backendEnvironment, 'http://127.0.0.1:3000/api/v1', "Local builds ta
 rejectText(remote, "123.207.5.70", "Legacy remote IP is absent from the compatibility repository");
 requireText(backendEnvironment, 'host != "123.207.5.70"', "Environment validation explicitly rejects the legacy host");
 requireText(generatedModels, "APIV1ContractMetadata", "Generated models carry pinned contract metadata");
+requireText(generatedModels, 'static let contractVersion = "2.0.2-contract"', "Generated models bind Contract 2.0.2");
+requireText(generatedModels, 'static let sourceSHA256 = "853e7f5efadb10dcbbe0f446c4c60962ce2fd864360a156343b5740d0c1761a4"', "Generated models bind the published 2.0.2 hash");
+requireText(openapi, "version: 2.0.2-contract", "Pinned OpenAPI is the published 2.0.2 release");
 requireText(remote, '"role": "student"', "Student login explicitly requests the student role");
 requireText(remote, '"clientType": "mobile"', "Student login identifies the mobile client");
 
@@ -219,12 +223,16 @@ for (const endpoint of workspaceEndpoints) {
 for (const endpoint of ["/auth/refresh:", "/auth/logout:", "/course-invites/{inviteToken}/join:", "/media-uploads:"]) {
   requireText(openapi, endpoint, `Pinned OpenAPI publishes ${endpoint.slice(1, -1)}`);
 }
+for (const endpoint of ["/exercise-records/{recordId}/evidence-context:", "/exemption-application-details:"]) {
+  requireText(openapi, endpoint, `Contract 2.0.2 publishes ${endpoint.slice(1, -1)}`);
+}
 
 requireText(remote, "StudentCoursesPayload", "Course-list response has a dedicated decoder");
 requireText(remote, "StudentGradesPayload", "Grades response has a dedicated decoder");
 
-// New business model: no task publishing, no review states. The legacy
-// CourseTask/ReviewStatus chain and the check-in supplement flow are removed.
+// Contract 2.0.2 has no client-authored review state. New submissions are
+// system VALID, while legacy/reopened PENDING and teacher INVALID remain exact
+// server projections.
 rejectText(appSources, "struct CourseTask", "Legacy CourseTask model is removed");
 rejectText(appSources, "enum TaskStatus", "Legacy TaskStatus model is removed");
 rejectText(appSources, "enum ReviewStatus", "Legacy ReviewStatus model is removed");
@@ -233,8 +241,19 @@ rejectText(appSources, 'get("student/tasks")', "iOS no longer requests the remov
 rejectText(appSources, 'getIfBusinessReady("student/tasks")', "iOS no longer requests the removed task list defensively");
 rejectText(remote, '"taskId"', "Check-in submission no longer sends a task reference");
 rejectText(remote, "supplementCheckIn", "The check-in supplement route is removed");
-requireText(models, "enum RecordValidity", "Records use the valid/invalid model");
-requireText(models, "case \"invalid\", \"INVALID\", \"无效\", \"rejected\", \"REJECTED\", \"被驳回\", \"已驳回\":", "Legacy review states map deterministically onto validity");
+requireText(models, "enum RecordValidity", "Records preserve the server review projection");
+requireText(models, "case pending = \"待审核\"", "Legacy or reopened PENDING remains distinct");
+requireText(models, "init(serverReviewResult: APIV1ReviewResult)", "API-v1 review status maps directly from the generated enum");
+requireText(appState, "let validity = RecordValidity(serverReviewResult: currentReview.result)", "Check-in completion uses the Backend review result");
+requireText(appState, "record.status == .reviewed", "Contract 2.0.2 submission expects the reviewed record state");
+requireText(backendGateways, 'operationID: "getExerciseRecordEvidenceContext"', "Record evidence context uses the additive 2.0.2 route");
+requireText(backendGateways, "func listOwned(limit: Int = 100)", "Student records use a role-scoped canonical list gateway");
+rejectText(backendGateways, 'URLQueryItem(name: "studentId", value: studentID)', "Student enrollment reads rely on token-owned role scope instead of a forbidden explicit studentId filter");
+requireText(backendGateways, "enrollments.value.allSatisfy({ $0.studentId == studentID })", "Student enrollment projections are still ownership-checked client-side");
+requireText(appState, "func refreshAPIV1ExerciseRecords()", "API-v1 sessions refresh the server-owned record list");
+requireText(appState, "RecordValidity(serverReviewResult: $0.result)", "Refreshed records preserve the Backend review result");
+requireText(appShellViews, 'contains("-ui-testing-real-backend")', "Local Docker UI tests can bypass deterministic fixtures explicitly");
+requireText(backendGateways, 'operationID: "listStructuredExemptionApplications"', "Exemption reads preserve structured 2.0.2 details");
 requireText(models, "var invalidReason: String?", "Invalid records surface the teacher-provided reason");
 requireText(models, "struct CheckInSubmission", "Check-in submissions have a validated value type");
 requireText(appState, "func validatedSubmission(creditType: CreditType, courseId: String?, hours: Double)", "Submission validation is centralized and fail-closed");
@@ -270,9 +289,9 @@ rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from t
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
 rejectText(checkinView, "selectedDraftIDs", "Students cannot submit only a hand-picked subset of retained evidence");
 requireText(checkinView, "当前保留的全部素材都会上传", "The UI explains complete evidence binding");
-requireText(models, "category == .general", "Contract 1.5 keeps GENERAL descriptions required");
-requireText(models, "creditType == .courseRelated { return nil }", "Contract 1.5 sends an omitted/null COURSE_RELATED description");
-requireText(checkinView, 'session.category == .courseRelated ? "选填" : "必填"', "The note requirement follows the Contract 1.5 credit type");
+requireText(models, "category == .general", "Contract 2.0.2 keeps GENERAL descriptions required");
+requireText(models, "creditType == .courseRelated { return nil }", "Contract 2.0.2 sends an omitted/null COURSE_RELATED description");
+requireText(checkinView, 'session.category == .courseRelated ? "选填" : "必填"', "The note requirement follows the Contract 2.0.2 credit type");
 requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
@@ -892,7 +911,8 @@ requireText(dashboardView, "navigationDestination(item: $openedNotice)", "The no
 requireText(project, "PrivacyInfo.xcprivacy in Resources", "Xcode copies the privacy manifest into the app");
 
 requireText(modelTests, "testCurrentBackendStudentWorkspacePayloadsDecode", "XCTest covers current workspace payload shapes");
-requireText(modelTests, "testRecordValidityMapsLegacyReviewStatesOntoValidInvalid", "XCTest covers legacy review-state mapping onto validity");
+requireText(modelTests, "testRecordValidityPreservesServerReviewStatesWithoutClientDerivation", "XCTest covers exact Backend review-state mapping");
+requireText(backendFoundationTests, "testContract202StudentRecordListUsesTheRoleScopedCanonicalRoute", "XCTest covers the Contract 2.0.2 record-list binding");
 requireText(modelTests, "testMutationResultsAreNotMistakenForCompleteDomainObjects", "XCTest covers mutation-result classification");
 requireText(modelTests, "testStudentProgressWithoutIdentityFailsClosedToEmptyIdentifier", "XCTest covers missing progress identity without a hard-coded student fallback");
 requireText(modelTests, "testSubmissionHoursAlwaysMatchBackendOneOrTwoHourContract", "XCTest covers the hours enum");

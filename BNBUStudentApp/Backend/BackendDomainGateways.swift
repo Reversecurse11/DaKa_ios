@@ -34,7 +34,7 @@ struct BackendStudentWorkspaceProjection: Equatable {
     let teachers: [APIV1TeacherProfile]
 }
 
-/// Contract 1.5 capabilities used by the authenticated shell and its public
+/// Contract 2.0.2 capabilities used by the authenticated shell and its public
 /// support pages. Keeping these routes outside RemoteStudentRepository makes
 /// it impossible for an API-v1 session to fall back to historical paths.
 actor BackendClientCapabilityGateway {
@@ -162,11 +162,11 @@ actor BackendClientCapabilityGateway {
         return response
     }
 
-    func exemptionApplications() async throws -> APIResponse<[APIV1ExemptionApplication]> {
-        let response: APIResponse<[APIV1ExemptionApplication]> = try await auth.sendAuthorized(APIRequest(
-            operationID: "listExemptionApplications",
+    func exemptionApplications() async throws -> APIResponse<[APIV1StructuredExemptionApplication]> {
+        let response: APIResponse<[APIV1StructuredExemptionApplication]> = try await auth.sendAuthorized(APIRequest(
+            operationID: "listStructuredExemptionApplications",
             method: .get,
-            path: "exemption-applications",
+            path: "exemption-application-details",
             queryItems: [URLQueryItem(name: "limit", value: "100")]
         ))
         guard response.pagination?.hasMore != true else {
@@ -199,7 +199,6 @@ actor AuthoritativeStudentWorkspaceGateway {
             path: "enrollments",
             queryItems: [
                 URLQueryItem(name: "limit", value: "100"),
-                URLQueryItem(name: "studentId", value: studentID),
                 URLQueryItem(name: "semesterId", value: semester.value.id),
                 URLQueryItem(name: "status", value: APIV1EnrollmentStatus.active.rawValue),
                 URLQueryItem(name: "sort", value: "-joinedAt")
@@ -227,6 +226,9 @@ actor AuthoritativeStudentWorkspaceGateway {
         guard enrollments.pagination?.hasMore != true,
               sections.pagination?.hasMore != true,
               courses.pagination?.hasMore != true else {
+            throw APITransportError.invalidResponse
+        }
+        guard enrollments.value.allSatisfy({ $0.studentId == studentID }) else {
             throw APITransportError.invalidResponse
         }
 
@@ -652,8 +654,37 @@ actor AuthoritativeExerciseRecordGateway {
         ))
     }
 
+    /// Lists the authenticated student's server-owned record projections. The
+    /// backend applies student scope; the client still verifies ownership
+    /// before publishing any item into the local workspace.
+    func listOwned(limit: Int = 100) async throws -> APIResponse<[APIV1ExerciseRecord]> {
+        guard (1...100).contains(limit) else {
+            throw APITransportError.invalidRequest
+        }
+        return try await auth.sendAuthorized(APIRequest(
+            operationID: "listExerciseRecords",
+            method: .get,
+            path: "exercise-records",
+            queryItems: [
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "sort", value: "-businessDate")
+            ]
+        ))
+    }
+
+    func evidenceContext(
+        recordID: String
+    ) async throws -> APIResponse<APIV1ExerciseRecordEvidenceContext> {
+        let recordID = try APIPath.component(recordID)
+        return try await auth.sendAuthorized(APIRequest(
+            operationID: "getExerciseRecordEvidenceContext",
+            method: .get,
+            path: "exercise-records/\(recordID)/evidence-context"
+        ))
+    }
+
     /// Recovers the one record (draft or submitted) owned by a completed
-    /// session. Contract 1.5 has no direct sessionId filter, so the query is
+    /// session. Contract 2.0.2 has no direct sessionId filter, so the query is
     /// narrowed by enrollment and frozen business date, then matched locally.
     func findForSession(
         sessionID: String,

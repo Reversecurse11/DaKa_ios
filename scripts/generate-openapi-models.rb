@@ -6,7 +6,7 @@ require "fileutils"
 require "optparse"
 require "yaml"
 
-EXPECTED_SHA256 = "f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed"
+EXPECTED_SHA256 = "853e7f5efadb10dcbbe0f446c4c60962ce2fd864360a156343b5740d0c1761a4"
 ROOT = File.expand_path("..", __dir__)
 DEFAULT_INPUT = File.join(ROOT, "Contracts", "openapi.snapshot.yaml")
 DEFAULT_OUTPUT = File.join(ROOT, "BNBUStudentApp", "Backend", "Generated", "APIV1Models.generated.swift")
@@ -35,11 +35,11 @@ document.fetch("paths").each do |path, path_item|
   end
 end
 
-unless document.dig("info", "version") == "1.5.0-contract" &&
-       document.fetch("paths").length == 106 &&
-       operations.length == 123 &&
-       schemas.length == 279
-  abort("error: OpenAPI 1.5 structural baseline mismatch")
+unless document.dig("info", "version") == "2.0.2-contract" &&
+       document.fetch("paths").length == 109 &&
+       operations.length == 126 &&
+       schemas.length == 288
+  abort("error: OpenAPI 2.0.2 structural baseline mismatch")
 end
 
 intentionally_disabled_operations = operations
@@ -70,15 +70,15 @@ expected_intentionally_disabled_operation_ids = %w[
 unless intentionally_disabled_operations.map { |operation| operation.fetch("operationId") } ==
        expected_intentionally_disabled_operation_ids &&
        system_mode_unsupported_operations.length == 13 &&
-       operations.length - intentionally_disabled_operations.length == 106
-  abort("error: OpenAPI 1.5 operation completion matrix changed")
+       operations.length - intentionally_disabled_operations.length == 109
+  abort("error: OpenAPI 2.0.2 operation completion matrix changed")
 end
 
 client_capability_operations = operations.select do |operation|
   Array(operation["tags"]).include?("Client Capabilities")
 end
 client_capability_operations.sort_by! { |operation| operation.fetch("operationId") }
-unless client_capability_operations.length == 30 && client_capability_operations.all? { |operation|
+unless client_capability_operations.length == 31 && client_capability_operations.all? { |operation|
          operation.dig("x-access-policy", "defaultDeny") == true
        }
   abort("error: Client capability access-policy invariants changed")
@@ -104,13 +104,30 @@ expected_default_denied_operation_ids = %w[
 ].freeze
 unless default_denied_client_capability_operations.map { |operation| operation.fetch("operationId") } ==
        expected_default_denied_operation_ids &&
-       local_integration_client_capability_operations.length == 22 &&
+       local_integration_client_capability_operations.length == 23 &&
        local_integration_client_capability_operations.all? { |operation|
          operation["x-enabled-by-default"].nil? &&
            operation["x-default-deny-error"].nil? &&
            operation["x-business-blocker"].nil?
        }
-  abort("error: OpenAPI 1.5 client capability readiness split changed")
+  abort("error: OpenAPI 2.0.2 client capability readiness split changed")
+end
+
+required_202_operations = %w[
+  getAdminHealth
+  getExerciseRecordEvidenceContext
+  listStructuredExemptionApplications
+].freeze
+unless required_202_operations.all? { |operation_id|
+         operations.any? { |operation| operation["operationId"] == operation_id }
+       }
+  abort("error: OpenAPI 2.0.2 additive operations are missing")
+end
+
+submit_record_operation = operations.find { |operation| operation["operationId"] == "submitExerciseRecord" }
+unless submit_record_operation&.fetch("summary", "")&.include?("system VALID ReviewRecord") &&
+       schemas.dig("ReviewRecord", "properties", "teacherId", "description")&.include?("initial system VALID")
+  abort("error: OpenAPI 2.0.2 default-VALID review semantics changed")
 end
 
 runtime_query_parameters = {}
@@ -148,7 +165,7 @@ expected_runtime_unsupported_query_parameters = %w[
 ].freeze
 unless runtime_query_parameters == expected_runtime_query_parameters &&
        runtime_unsupported_query_parameters.sort == expected_runtime_unsupported_query_parameters
-  abort("error: OpenAPI 1.5 query errata constraints changed")
+  abort("error: OpenAPI 2.0.2 query errata constraints changed")
 end
 
 runtime_property_enums = {
@@ -161,7 +178,7 @@ unless runtime_property_enums == {
   ["InitiateMediaUploadRequest", "captureSource"] => %w[IN_APP_CAMERA FILE_PICKER],
   ["MediaAccessRequest", "purpose"] => %w[VIEW_ORIGINAL]
 }
-  abort("error: OpenAPI 1.5 media runtime constraints changed")
+  abort("error: OpenAPI 2.0.2 media runtime constraints changed")
 end
 runtime_property_type_names = {
   ["InitiateMediaUploadRequest", "captureSource"] => "APIV1InitiateMediaUploadCaptureSource",
@@ -176,7 +193,7 @@ unless wall_time_properties.all? { |schema_name, property_name|
            choices.any? { |choice| choice["type"] == "string" && choice["format"] == "time" } &&
            choices.any? { |choice| choice["type"] == "string" && choice["pattern"] }
        }
-  abort("error: OpenAPI 1.5 organization-local wall-time compatibility changed")
+  abort("error: OpenAPI 2.0.2 organization-local wall-time compatibility changed")
 end
 
 student_score_status_parameter = operations
@@ -184,7 +201,7 @@ student_score_status_parameter = operations
   &.fetch("parameters", [])
   &.find { |parameter| parameter["name"] == "status" }
 unless student_score_status_parameter&.fetch("description", "")&.include?("Mutually exclusive")
-  abort("error: OpenAPI 1.5 StudentScore status precedence is missing")
+  abort("error: OpenAPI 2.0.2 StudentScore status precedence is missing")
 end
 
 location_sample = schemas.fetch("LocationSample").fetch("properties")
@@ -388,7 +405,7 @@ lines << ""
     system_mode_unsupported_operations
   ],
   [
-    "All 30 client-capability routes in the 1.5 contract. Membership does not imply remote readiness.",
+    "All 31 client-capability routes in the 2.0.2 contract. Membership does not imply remote readiness.",
     "APIV1ClientCapability",
     client_capability_operations
   ],

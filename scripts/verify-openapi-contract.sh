@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-expected_sha256="f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed"
+expected_sha256="853e7f5efadb10dcbbe0f446c4c60962ce2fd864360a156343b5740d0c1761a4"
 snapshot="${SRCROOT:-$(pwd)}/Contracts/openapi.snapshot.yaml"
 
 if [ ! -f "$snapshot" ]; then

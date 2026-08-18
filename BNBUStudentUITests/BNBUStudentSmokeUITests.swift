@@ -1291,6 +1291,58 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["你好，测试学生"].waitForExistence(timeout: 3))
     }
 
+    /// Local Docker smoke: requests a real student OTP, reads it from the
+    /// local-only Mailpit inbox, and verifies the server-owned VALID projection.
+    /// The default address is the backend repository's documented synthetic
+    /// closure fixture; callers may override it with another local fixture.
+    func testLocalDockerEmailLoginAndValidRecordProjection() throws {
+        let configuredAccount = ProcessInfo.processInfo.environment["BNBU_TEST_ACCOUNT"]
+        let account = configuredAccount.flatMap { $0.isEmpty ? nil : $0 }
+            ?? "student.closure.local.synthetic@bnbu.invalid"
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-real-backend",
+            "-ui-testing-login-email",
+            "-server-base-url", "http://127.0.0.1:3000/api/v1",
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ]
+        app.launch()
+
+        XCTAssertTrue(screen("screen.login.email").waitForExistence(timeout: 5))
+        focusAndType(app.textFields["verification.contact"], text: account)
+        acceptPrivacyIfNeeded()
+        let requestedAt = Date()
+        app.buttons["verification.sendCode"].tap()
+        XCTAssertTrue(
+            app.staticTexts["验证码已发送，10 分钟内有效，且仅可使用一次。"]
+                .waitForExistence(timeout: 10)
+        )
+
+        let code = try waitForLocalMailpitCode(for: account, requestedAt: requestedAt)
+        focusAndType(app.textFields["verification.code"], text: code)
+        let doneButton = app.toolbars.buttons["完成"]
+        if doneButton.waitForExistence(timeout: 2) {
+            doneButton.tap()
+        }
+        app.buttons["verification.submit"].tap()
+
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 30))
+        openTab(label: "课程", screenIdentifier: "screen.courses")
+        XCTAssertTrue(
+            app.staticTexts["Synthetic Active Course 1"].waitForExistence(timeout: 15)
+        )
+        openTab(label: "打卡", screenIdentifier: "screen.checkin")
+        app.buttons["记录"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["待审核"].exists)
+        attachScreenshot(named: "local-docker-valid-record")
+    }
+
     // Temporary remote E2E check driven by env credentials; skipped when env is absent.
     func testRemoteRealLoginFlow() throws {
         guard let account = ProcessInfo.processInfo.environment["BNBU_TEST_ACCOUNT"],
@@ -1486,6 +1538,69 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         }
         field.tap()
         field.typeText(text)
+    }
+
+    private func waitForLocalMailpitCode(
+        for account: String,
+        requestedAt: Date,
+        timeout: TimeInterval = 20
+    ) throws -> String {
+        let rawOrigin = ProcessInfo.processInfo.environment["BNBU_MAILPIT_BASE_URL"]
+            ?? "http://127.0.0.1:8025"
+        guard let origin = URL(string: rawOrigin),
+              origin.scheme == "http",
+              origin.host == "127.0.0.1" || origin.host == "localhost" else {
+            throw NSError(
+                domain: "BNBUStudentUITests.Mailpit",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Mailpit must use a local HTTP origin"]
+            )
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        let normalizedAccount = account.lowercased()
+        let formatter = ISO8601DateFormatter()
+        let codePattern = try NSRegularExpression(
+            pattern: #"(?:code is|验证码是)\s*(\d{6})"#,
+            options: []
+        )
+
+        while Date() < deadline {
+            let listURL = origin.appending(path: "api/v1/messages")
+            var components = URLComponents(url: listURL, resolvingAgainstBaseURL: false)
+            components?.queryItems = [URLQueryItem(name: "limit", value: "50")]
+            if let url = components?.url,
+               let data = try? Data(contentsOf: url),
+               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let messages = payload["messages"] as? [[String: Any]] {
+                for message in messages {
+                    let recipients = String(describing: message["To"] ?? "").lowercased()
+                    guard recipients.contains(normalizedAccount),
+                          let identifier = message["ID"] as? String else { continue }
+                    if let created = message["Created"] as? String,
+                       let createdAt = formatter.date(from: created),
+                       createdAt.addingTimeInterval(2) < requestedAt {
+                        continue
+                    }
+
+                    let detailURL = origin.appending(path: "api/v1/message/\(identifier)")
+                    guard let detailData = try? Data(contentsOf: detailURL),
+                          let detail = try? JSONSerialization.jsonObject(with: detailData) as? [String: Any],
+                          let body = detail["Text"] as? String else { continue }
+                    let range = NSRange(body.startIndex..<body.endIndex, in: body)
+                    guard let match = codePattern.firstMatch(in: body, options: [], range: range),
+                          let codeRange = Range(match.range(at: 1), in: body) else { continue }
+                    return String(body[codeRange])
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+
+        throw NSError(
+            domain: "BNBUStudentUITests.Mailpit",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Mailpit did not receive a fresh OTP for the synthetic account"]
+        )
     }
 
     private func fieldHasKeyboardFocus(_ field: XCUIElement) -> Bool {

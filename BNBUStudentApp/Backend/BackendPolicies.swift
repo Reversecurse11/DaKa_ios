@@ -123,7 +123,7 @@ enum ExportAvailabilityPolicy {
     }
 }
 
-/// OpenAPI 1.5 publishes IOS as the truthful wire value on every platform-
+/// OpenAPI 2.0.2 publishes IOS as the truthful wire value on every platform-
 /// bearing client-capability route. This says nothing about remote readiness.
 enum IOSPlatformContractPolicy {
     static let wireValue = "IOS"
@@ -139,7 +139,7 @@ enum IOSPlatformContractPolicy {
 }
 
 /// A local-integration report is weaker than a deployable Staging capability.
-/// Keep the two states distinct so client code cannot treat the 22 routes as
+/// Keep the two states distinct so client code cannot treat the 23 routes as
 /// remotely available merely because their default-deny markers were removed.
 enum ClientCapabilityReadinessPolicy {
     static let stagingExecutionReady = false
@@ -153,7 +153,7 @@ enum ClientCapabilityReadinessPolicy {
     }
 }
 
-/// Contract 1.5 keeps three score sort strings only for 1.3 wire
+/// Contract 2.0.2 keeps three score sort strings only for 1.3 wire
 /// compatibility. Their runtime order is fixed, so new clients always omit
 /// those parameters instead of suggesting that the value has an effect.
 enum RuntimeQueryContractPolicy {
@@ -250,7 +250,7 @@ enum ExerciseRecordContractPolicy {
     }
 }
 
-/// Stable Contract 1.5 media failures need actionable client copy. In
+/// Stable Contract 2.0.2 media failures need actionable client copy. In
 /// particular, location metadata is not permission-related: the student must
 /// capture a fresh sanitized item rather than grant location access.
 enum MediaValidationErrorPolicy {
@@ -414,6 +414,12 @@ enum SensitiveLoggingPolicy {
 enum FixturePolicy {
     static func isEnabled(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
         #if BNBU_FIXTURES && DEBUG
+        // A UI runner can explicitly exercise the local /api/v1 stack. Keep
+        // every ordinary UI test on deterministic fixtures, but never let the
+        // generic `-ui-testing-*` prefix silently replace this real backend.
+        if arguments.contains("-ui-testing-real-backend") {
+            return false
+        }
         return arguments.contains("-mock-test-account") ||
             arguments.contains(where: { $0.hasPrefix("-ui-testing-") })
         #else

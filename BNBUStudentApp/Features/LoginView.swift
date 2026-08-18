@@ -731,7 +731,7 @@ private struct RecoveryRequestView: View {
         studentRecoveryInformation
     }
 
-    /// Backend 1.5 recovery endpoints intentionally reject STUDENT accounts.
+    /// Backend 2.0.2 recovery endpoints intentionally reject STUDENT accounts.
     /// This page therefore provides an honest handoff instead of a local form
     /// that could claim a request was filed when no server write occurred.
     private var studentRecoveryInformation: some View {

@@ -10,23 +10,23 @@ final class BackendFoundationTests: XCTestCase {
     func testContractMetadataAndLocalEnvironmentArePinned() throws {
         XCTAssertEqual(
             APIV1ContractMetadata.sourceSHA256,
-            "f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed"
+            "853e7f5efadb10dcbbe0f446c4c60962ce2fd864360a156343b5740d0c1761a4"
         )
-        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "1.5.0-contract")
+        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "2.0.2-contract")
         XCTAssertEqual(APIV1ContractMetadata.apiPrefix, "/api/v1")
-        XCTAssertEqual(APIV1ContractMetadata.pathCount, 106)
-        XCTAssertEqual(APIV1ContractMetadata.operationCount, 123)
-        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 279)
-        XCTAssertEqual(APIV1ContractMetadata.implementedOperationCount, 106)
+        XCTAssertEqual(APIV1ContractMetadata.pathCount, 109)
+        XCTAssertEqual(APIV1ContractMetadata.operationCount, 126)
+        XCTAssertEqual(APIV1ContractMetadata.schemaCount, 288)
+        XCTAssertEqual(APIV1ContractMetadata.implementedOperationCount, 109)
         XCTAssertEqual(APIV1ContractMetadata.intentionallyDisabledOperationCount, 17)
         XCTAssertEqual(APIV1ContractMetadata.systemModeUnsupportedOperationCount, 13)
         XCTAssertEqual(APIV1IntentionallyDisabledOperation.allCases.count, 17)
         XCTAssertEqual(APIV1SystemModeUnsupportedOperation.allCases.count, 13)
-        XCTAssertEqual(APIV1ContractMetadata.clientCapabilityCount, 30)
-        XCTAssertEqual(APIV1ContractMetadata.localIntegrationClientCapabilityCount, 22)
+        XCTAssertEqual(APIV1ContractMetadata.clientCapabilityCount, 31)
+        XCTAssertEqual(APIV1ContractMetadata.localIntegrationClientCapabilityCount, 23)
         XCTAssertEqual(APIV1ContractMetadata.defaultDeniedClientCapabilityCount, 8)
-        XCTAssertEqual(APIV1ClientCapability.allCases.count, 30)
-        XCTAssertEqual(APIV1LocalIntegrationClientCapability.allCases.count, 22)
+        XCTAssertEqual(APIV1ClientCapability.allCases.count, 31)
+        XCTAssertEqual(APIV1LocalIntegrationClientCapability.allCases.count, 23)
         XCTAssertEqual(APIV1DefaultDeniedClientCapability.allCases.count, 8)
 
         let local = try BackendEnvironment.resolve(
@@ -205,6 +205,11 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertFalse(FixturePolicy.isEnabled(arguments: ["BNBUStudent"]))
         XCTAssertTrue(FixturePolicy.isEnabled(arguments: ["BNBUStudent", "-mock-test-account"]))
         XCTAssertTrue(FixturePolicy.isEnabled(arguments: ["BNBUStudent", "-ui-testing-reset"]))
+        XCTAssertFalse(FixturePolicy.isEnabled(arguments: [
+            "BNBUStudent",
+            "-ui-testing-reset",
+            "-ui-testing-real-backend"
+        ]))
         XCTAssertFalse(UITestingPolicy.isEnabled(arguments: ["BNBUStudent"]))
         XCTAssertTrue(UITestingPolicy.isEnabled(arguments: ["BNBUStudent", "-ui-testing-reset"]))
         XCTAssertTrue(UITestingPolicy.shouldResetState(arguments: ["BNBUStudent", "-ui-testing-reset"]))
@@ -1078,7 +1083,7 @@ final class BackendFoundationTests: XCTestCase {
     }
 
     @MainActor
-    func testAPIV1ExemptionListUsesGenericContractTypesAndServerLifecycle() async throws {
+    func testAPIV1ExemptionListUsesStructuredContractTypesAndServerLifecycle() async throws {
         let authStore = MemoryAuthSessionStore(
             session: Self.authSession(access: "exemption-access", refresh: "exemption-refresh")
         )
@@ -1095,7 +1100,7 @@ final class BackendFoundationTests: XCTestCase {
                     headers: ["X-Request-ID": "req-exemption-me"],
                     body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-exemption-me")
                 )
-            case "/api/v1/exemption-applications":
+            case "/api/v1/exemption-application-details":
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer exemption-access")
                 XCTAssertEqual(request.url?.query, "limit=100")
                 return .json(
@@ -1103,9 +1108,9 @@ final class BackendFoundationTests: XCTestCase {
                     headers: ["X-Request-ID": "req-exemption-list"],
                     body: """
                     {"data":[
-                      {"id":"draft-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Medical documentation","mediaIds":["media-1"],"status":"DRAFT","publicComment":null,"submittedAt":null,"decidedAt":null,"version":1},
-                      {"id":"submitted-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"EXERCISE_CHECK_IN","reason":"Approved team activity","mediaIds":[],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T01:00:00Z","decidedAt":null,"version":2},
-                      {"id":"supplement-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"SPECIAL_CIRCUMSTANCE","reason":"Special circumstance","mediaIds":[],"status":"SUPPLEMENT_REQUIRED","publicComment":"Please add one document","submittedAt":"2026-08-14T02:00:00Z","decidedAt":null,"version":3}
+                      {"id":"draft-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","applicationSubtype":"RUN_800M","organizationName":null,"reason":"Medical documentation","mediaIds":["media-1"],"status":"DRAFT","publicComment":null,"submittedAt":null,"decidedAt":null,"version":1},
+                      {"id":"submitted-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"EXERCISE_CHECK_IN","applicationSubtype":"SCHOOL_TEAM","organizationName":"BNBU Badminton Team","reason":"Approved team activity","mediaIds":[],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T01:00:00Z","decidedAt":null,"version":2},
+                      {"id":"supplement-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"SPECIAL_CIRCUMSTANCE","applicationSubtype":"SPECIAL_CIRCUMSTANCE","organizationName":null,"reason":"Special circumstance","mediaIds":[],"status":"SUPPLEMENT_REQUIRED","publicComment":"Please add one document","submittedAt":"2026-08-14T02:00:00Z","decidedAt":null,"version":3}
                     ],"meta":{"requestId":"req-exemption-list","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
                     """
                 )
@@ -1140,13 +1145,14 @@ final class BackendFoundationTests: XCTestCase {
         await state.refreshRemoteExemptions()
 
         XCTAssertFalse(state.canSubmitExemptions)
-        XCTAssertEqual(state.workspace.exemptions.map(\.item), [.physicalTest, .checkIn, .specialCircumstance])
+        XCTAssertEqual(state.workspace.exemptions.map(\.item), [.run800m, .team, .specialCircumstance])
         XCTAssertEqual(state.workspace.exemptions.map(\.status), [.draft, .pending, .supplementRequired])
         XCTAssertEqual(state.workspace.exemptions.first?.proofFiles.first?.id, "media-1")
+        XCTAssertEqual(state.workspace.exemptions[1].organization, "BNBU Badminton Team")
         XCTAssertEqual(state.workspace.exemptions.last?.teacherFeedback, "Please add one document")
         XCTAssertEqual(operations, [
             "GET /api/v1/me",
-            "GET /api/v1/exemption-applications"
+            "GET /api/v1/exemption-application-details"
         ])
     }
 
@@ -1165,7 +1171,7 @@ final class BackendFoundationTests: XCTestCase {
                     headers: ["X-Request-ID": "req-exemption-503-me"],
                     body: Self.studentCurrentUserEnvelopeJSON(requestID: "req-exemption-503-me")
                 )
-            case "/api/v1/exemption-applications":
+            case "/api/v1/exemption-application-details":
                 lock.lock()
                 listCallCount += 1
                 let call = listCallCount
@@ -1175,7 +1181,7 @@ final class BackendFoundationTests: XCTestCase {
                         status: 200,
                         headers: ["X-Request-ID": "req-exemption-first"],
                         body: """
-                        {"data":[{"id":"kept-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Keep this projection","mediaIds":[],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T01:00:00Z","decidedAt":null,"version":1}],"meta":{"requestId":"req-exemption-first","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+                        {"data":[{"id":"kept-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","applicationSubtype":"RUN_1000M","organizationName":null,"reason":"Keep this projection","mediaIds":[],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T01:00:00Z","decidedAt":null,"version":1}],"meta":{"requestId":"req-exemption-first","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
                         """
                     )
                 }
@@ -2014,7 +2020,7 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertEqual(projection.classSections.map(\.id), ["section-1"])
         XCTAssertEqual(projection.courses.map(\.id), ["course-1"])
         XCTAssertEqual(projection.teachers.map(\.fullName), ["合成教师"])
-        XCTAssertEqual(queries["/api/v1/enrollments"]?["studentId"], "student-1")
+        XCTAssertNil(queries["/api/v1/enrollments"]?["studentId"])
         XCTAssertEqual(queries["/api/v1/enrollments"]?["status"], "ACTIVE")
         XCTAssertEqual(queries["/api/v1/class-sections"]?["semesterId"], "semester-1")
         XCTAssertEqual(paths, [
@@ -2027,7 +2033,7 @@ final class BackendFoundationTests: XCTestCase {
     }
 
     @MainActor
-    func testContract15SystemModeHelpAndNotificationsNeverUseLegacyRoutes() async throws {
+    func testContract202SystemModeHelpNotificationsAndStructuredExemptionsNeverUseLegacyRoutes() async throws {
         let authStore = MemoryAuthSessionStore(
             session: Self.authSession(access: "capability-access", refresh: "capability-refresh")
         )
@@ -2145,7 +2151,7 @@ final class BackendFoundationTests: XCTestCase {
                     {"data":{"id":"feedback-2","category":"BUG","content":"The timer stopped again.","status":"OPEN","publicReply":null,"createdAt":"2026-08-14T00:02:00Z","updatedAt":"2026-08-14T00:02:00Z","version":1},"meta":{"requestId":"req-feedback-create"}}
                     """
                 )
-            case "/api/v1/exemption-applications":
+            case "/api/v1/exemption-application-details":
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer capability-access")
                 XCTAssertEqual(request.httpMethod, "GET")
                 XCTAssertEqual(request.url?.query, "limit=100")
@@ -2153,11 +2159,11 @@ final class BackendFoundationTests: XCTestCase {
                     status: 200,
                     headers: ["X-Request-ID": "req-exemptions"],
                     body: """
-                    {"data":[{"id":"exemption-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Medical certificate","mediaIds":["media-1"],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T00:03:00Z","decidedAt":null,"version":1}],"meta":{"requestId":"req-exemptions","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
+                    {"data":[{"id":"exemption-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"EXERCISE_CHECK_IN","applicationSubtype":"SCHOOL_TEAM","organizationName":"BNBU Athletics","reason":"Medical certificate","mediaIds":["media-1"],"status":"SUBMITTED","publicComment":null,"submittedAt":"2026-08-14T00:03:00Z","decidedAt":null,"version":1}],"meta":{"requestId":"req-exemptions","pagination":{"nextCursor":null,"hasMore":false,"limit":100}}}
                     """
                 )
             default:
-                XCTFail("Contract 1.5 capability gateway reached an unexpected route: \(operation)")
+                XCTFail("Contract 2.0.2 capability gateway reached an unexpected route: \(operation)")
                 return .json(
                     status: 404,
                     headers: ["X-Request-ID": "req-unexpected"],
@@ -2221,7 +2227,9 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertEqual(updatedPreferences.value.version, 3)
         XCTAssertEqual(feedback.value.first?.id, "feedback-1")
         XCTAssertEqual(createdFeedback.value.id, "feedback-2")
-        XCTAssertEqual(exemptions.value.first?.applicationType, "PHYSICAL_TEST")
+        XCTAssertEqual(exemptions.value.first?.applicationType, "EXERCISE_CHECK_IN")
+        XCTAssertEqual(exemptions.value.first?.applicationSubtype, "SCHOOL_TEAM")
+        XCTAssertEqual(exemptions.value.first?.organizationName, "BNBU Athletics")
         XCTAssertEqual(exemptions.value.first?.status, "SUBMITTED")
         XCTAssertEqual(operations, [
             "GET /api/v1/system-mode",
@@ -2233,7 +2241,7 @@ final class BackendFoundationTests: XCTestCase {
             "PATCH /api/v1/me/preferences",
             "GET /api/v1/feedback",
             "POST /api/v1/feedback",
-            "GET /api/v1/exemption-applications"
+            "GET /api/v1/exemption-application-details"
         ])
     }
 
@@ -2544,13 +2552,14 @@ final class BackendFoundationTests: XCTestCase {
                     status: 200,
                     headers: ["X-Request-ID": "req-record-submit"],
                     body: Self.exerciseRecordEnvelopeJSON(
-                        status: "SUBMITTED",
+                        status: "REVIEWED",
                         description: nil,
                         version: 2,
                         requestID: "req-record-submit",
                         classSectionID: "section-1",
                         businessDate: "2026-08-14",
-                        sportType: "BADMINTON"
+                        sportType: "BADMINTON",
+                        currentReviewResult: "VALID"
                     )
                 )
             default:
@@ -2629,6 +2638,7 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertTrue(didSubmit)
         XCTAssertEqual(state.workspace.records.first?.id, "record-1")
         XCTAssertEqual(state.workspace.records.first?.hours, 1)
+        XCTAssertEqual(state.workspace.records.first?.validity, .valid)
         XCTAssertNil(state.errorMessage)
         XCTAssertTrue(state.pendingRemoteMutationSummaries.isEmpty)
         XCTAssertEqual(mediaIdempotencyKeys.count, 3)
@@ -2731,6 +2741,64 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertEqual(access.mediaID, "media-1")
         XCTAssertEqual(access.url.absoluteString, "https://private-media.example.test/object")
         XCTAssertEqual(access.expiresAt, "2026-08-08T10:00:00Z")
+    }
+
+    func testContract202ExerciseEvidenceContextUsesTheAdditiveReadRoute() async throws {
+        let store = MemoryAuthSessionStore(session: Self.authSession(access: "record-access", refresh: "record-refresh"))
+        let session = makeSession { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/v1/exercise-records/record-1/evidence-context")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer record-access")
+            return .json(
+                status: 200,
+                headers: ["X-Request-ID": "req-evidence-context"],
+                body: #"{"data":{"recordId":"record-1","sessionId":"session-1","startedAt":"2026-08-14T00:00:00Z","endedAt":"2026-08-14T01:00:00Z","mediaIds":["media-1"]},"meta":{"requestId":"req-evidence-context"}}"#
+            )
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+
+        let response = try await AuthoritativeExerciseRecordGateway(auth: auth)
+            .evidenceContext(recordID: "record-1")
+
+        XCTAssertEqual(response.value.recordId, "record-1")
+        XCTAssertEqual(response.value.mediaIds, ["media-1"])
+        XCTAssertEqual(response.requestId, "req-evidence-context")
+    }
+
+    func testContract202StudentRecordListUsesTheRoleScopedCanonicalRoute() async throws {
+        let store = MemoryAuthSessionStore(session: Self.authSession(access: "record-access", refresh: "record-refresh"))
+        let session = makeSession { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/v1/exercise-records")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer record-access")
+            guard let requestURL = request.url else {
+                XCTFail("Record-list request must contain a URL")
+                return .json(status: 400, headers: [:], body: "{}")
+            }
+            let query = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertEqual(query.first(where: { $0.name == "limit" })?.value, "100")
+            XCTAssertEqual(query.first(where: { $0.name == "sort" })?.value, "-businessDate")
+            return .json(
+                status: 200,
+                headers: ["X-Request-ID": "req-record-list"],
+                body: Self.exerciseRecordListEnvelopeJSON(
+                    status: "REVIEWED",
+                    version: 2,
+                    requestID: "req-record-list"
+                )
+            )
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+
+        let response = try await AuthoritativeExerciseRecordGateway(auth: auth).listOwned()
+
+        XCTAssertEqual(response.value.map { $0.id }, ["record-1"])
+        XCTAssertEqual(response.value.first?.status, .reviewed)
+        XCTAssertEqual(response.requestId, "req-record-list")
     }
 
     func testGeneratedReviewVersionsDecimalScoreServerClockAndExport503() throws {
@@ -2894,11 +2962,15 @@ final class BackendFoundationTests: XCTestCase {
         requestID: String,
         classSectionID: String = "class-section-1",
         businessDate: String = "2026-08-13",
-        sportType: String = "RUNNING"
+        sportType: String = "RUNNING",
+        currentReviewResult: String? = nil
     ) -> String {
         let descriptionJSON = description.map { "\"\($0)\"" } ?? "null"
+        let currentReviewJSON = currentReviewResult.map {
+            #"{"id":"review-1","organizationId":"org-1","recordId":"record-1","teacherId":null,"reviewVersion":1,"previousReviewId":null,"result":"\#($0)","creditedDurationOverrideSeconds":null,"reasonCode":null,"reason":null,"publicComment":null,"internalNote":null,"reviewedAt":"2026-08-14T01:11:00Z"}"#
+        } ?? "null"
         return """
-        {"data":{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"\(classSectionID)","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"\(businessDate)","creditType":"COURSE_RELATED","sportType":"\(sportType)","sportName":null,"description":\(descriptionJSON),"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":null,"version":\(version)},"meta":{"requestId":"\(requestID)"}}
+        {"data":{"id":"record-1","organizationId":"org-1","semesterId":"semester-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"\(classSectionID)","courseId":"course-1","teacherId":"teacher-1","sessionId":"exercise-session-1","businessDate":"\(businessDate)","creditType":"COURSE_RELATED","sportType":"\(sportType)","sportName":null,"description":\(descriptionJSON),"actualDurationSeconds":3600,"pausedDurationSeconds":0,"creditedDurationSeconds":3600,"status":"\(status)","submittedAt":null,"cancelledAt":null,"clientRequestId":"ios-record-1","currentReview":\(currentReviewJSON),"version":\(version)},"meta":{"requestId":"\(requestID)"}}
         """
     }
 
