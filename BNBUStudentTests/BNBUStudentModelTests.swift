@@ -953,6 +953,37 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: ""))
     }
 
+    func testOpaqueCourseInviteTokenParsingIsLossless() {
+        let token = "AbCd-opaque_Invite.Token~1234"
+        XCTAssertNil(CourseInviteTokenRule.validationMessage(for: token))
+        XCTAssertEqual(CourseInviteTokenRule.token(fromScannedPayload: token), token)
+        let controlledURL = "https://join.verityai.example/join/\(token)"
+        XCTAssertEqual(
+            CourseInviteTokenRule.token(
+                fromScannedPayload: controlledURL,
+                approvedHTTPSHosts: ["join.verityai.example"]
+            ),
+            token
+        )
+        XCTAssertEqual(CourseInviteTokenRule.token(fromInput: "  \(token)  "), token)
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: controlledURL))
+        XCTAssertNil(CourseInviteTokenRule.token(
+            fromInput: "http://join.verityai.example/join/\(token)",
+            approvedHTTPSHosts: ["join.verityai.example"]
+        ))
+        XCTAssertNil(CourseInviteTokenRule.token(
+            fromInput: "https://sports.example.com/join/\(token)",
+            approvedHTTPSHosts: ["join.verityai.example"]
+        ))
+        XCTAssertNil(CourseInviteTokenRule.token(
+            fromInput: "https://join.verityai.example/other/\(token)",
+            approvedHTTPSHosts: ["join.verityai.example"]
+        ))
+        XCTAssertNotEqual(CourseInviteTokenRule.token(fromScannedPayload: token), token.uppercased())
+        XCTAssertNil(CourseInviteTokenRule.token(fromScannedPayload: "too-short"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromScannedPayload: "opaque token with whitespace"))
+    }
+
     func testPendingEnrollmentBlocksExerciseStartAndSubmission() throws {
         let appState = AppState(
             repository: MockStudentRepository(),

@@ -636,8 +636,8 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         assertProfileServiceEntries()
     }
 
-    /// The startup gates run in Android's order: privacy consent, then the
-    /// first-launch course guide, then the sign-in page.
+    /// Startup asks for privacy consent, explains enrolment-first bootstrap,
+    /// and still allows an existing student to skip to sign-in.
     func testStartupGatesRunConsentThenCourseGuideBeforeLogin() throws {
         app.terminate()
         app = XCUIApplication()
@@ -660,9 +660,9 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["privacy.consent.agree"].tap()
 
         XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["先完成邮箱登录"].exists)
+        XCTAssertTrue(app.staticTexts["先确认课程"].exists)
         app.buttons["guide.next"].tap()
-        XCTAssertTrue(app.staticTexts["再扫码或输入邀请码"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["再完成账号绑定"].waitForExistence(timeout: 3))
         app.buttons["guide.skip"].tap()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -1199,15 +1199,30 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["常用服务"].exists)
     }
 
-    func testCourseJoinRequiresAuthenticatedEmailSession() throws {
+    func testCourseJoinBeginsBeforeEmailBinding() throws {
         app.terminate()
         app = XCUIApplication()
         app.launchArguments = ["-ui-testing-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["login.courseJoin"].exists)
-        XCTAssertFalse(app.staticTexts["扫码加入课程"].exists)
+        XCTAssertTrue(app.buttons["login.initialCourseJoin"].waitForExistence(timeout: 3))
+        app.buttons["login.initialCourseJoin"].tap()
+        XCTAssertTrue(screen("screen.initialCourseJoin").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["initialJoin.scan"].exists)
+        let inviteField = app.secureTextFields["initialJoin.invite.field"]
+        XCTAssertTrue(inviteField.exists)
+        inviteField.tap()
+        inviteField.typeText("https://sports.example.com/join/AbCd-opaque_Invite.Token~1234")
+        XCTAssertTrue(app.buttons["initialJoin.preview"].isEnabled)
+        app.buttons["initialJoin.preview"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["initialJoin.error"].waitForExistence(timeout: 3))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(screen("screen.initialCourseJoin").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.secureTextFields["initialJoin.invite.field"].exists)
+        app.buttons["initialJoin.back"].tap()
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
 
         app.terminate()
         app = XCUIApplication()
@@ -1292,13 +1307,23 @@ final class BNBUStudentSmokeUITests: XCTestCase {
     }
 
     /// Local Docker smoke: requests a real student OTP, reads it from the
-    /// local-only Mailpit inbox, and verifies the server-owned VALID projection.
+    /// local-only Mailpit inbox, and verifies the server-owned review projection.
     /// The default address is the backend repository's documented synthetic
     /// closure fixture; callers may override it with another local fixture.
-    func testLocalDockerEmailLoginAndValidRecordProjection() throws {
+    func testLocalDockerEmailLoginAndServerOwnedRecordProjection() throws {
         let configuredAccount = ProcessInfo.processInfo.environment["BNBU_TEST_ACCOUNT"]
         let account = configuredAccount.flatMap { $0.isEmpty ? nil : $0 }
             ?? "student.closure.local.synthetic@bnbu.invalid"
+        let expectedReviewFromEnvironment = ProcessInfo.processInfo
+            .environment["BNBU_EXPECTED_REVIEW_STATUS"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedReviewFromLocalMarker = try? String(
+            contentsOfFile: "/private/tmp/bnbu-ios-expected-review-status",
+            encoding: .utf8
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedReview = (expectedReviewFromEnvironment?.isEmpty == false
+            ? expectedReviewFromEnvironment
+            : expectedReviewFromLocalMarker)?.uppercased() ?? "VALID"
 
         app.terminate()
         app = XCUIApplication()
@@ -1338,9 +1363,29 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
         app.buttons["记录"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["待审核"].exists)
-        attachScreenshot(named: "local-docker-valid-record")
+
+        switch expectedReview {
+        case "VALID":
+            XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 15))
+            XCTAssertFalse(app.staticTexts["无效"].exists)
+        case "INVALID":
+            XCTAssertTrue(app.staticTexts["无效"].firstMatch.waitForExistence(timeout: 15))
+            XCTAssertTrue(app.staticTexts["未计入学时"].firstMatch.exists)
+            XCTAssertFalse(app.staticTexts["计入学时"].exists)
+
+            let recordLink = app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH %@", "record.")
+            ).firstMatch
+            XCTAssertTrue(recordLink.waitForExistence(timeout: 5))
+            recordLink.tap()
+            XCTAssertTrue(app.staticTexts["记录已被判定无效"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["运动记录异常"].waitForExistence(timeout: 5))
+        default:
+            XCTFail("BNBU_EXPECTED_REVIEW_STATUS must be VALID or INVALID")
+        }
+
+        attachScreenshot(named: "local-docker-\(expectedReview.lowercased())-record")
     }
 
     // Temporary remote E2E check driven by env credentials; skipped when env is absent.

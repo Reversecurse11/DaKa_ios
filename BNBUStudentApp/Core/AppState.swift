@@ -69,6 +69,27 @@ private enum BackendStudentBootstrapError: LocalizedError {
     }
 }
 
+private enum InitialCourseJoinError: LocalizedError {
+    case unavailableInFixtureMode
+    case invalidProfile
+    case previewMismatch
+    case responseMismatch
+    case restrictedSessionMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailableInFixtureMode:
+            return BNBUL10n.text("当前是本地 Mock 模式，请使用 Staging 构建验证真实入课流程。")
+        case .invalidProfile:
+            return BNBUL10n.text("请完整填写姓名、学号、性别和四位入学年份。")
+        case .previewMismatch, .responseMismatch:
+            return BNBUL10n.text("服务器返回的课程信息与已确认内容不一致，本次入课已停止。")
+        case .restrictedSessionMissing:
+            return BNBUL10n.text("入课已返回非预期账号状态，已禁止进入学生端。")
+        }
+    }
+}
+
 private enum APIV1CheckInError: LocalizedError {
     case sessionNotCompleted
     case durationNotEligible
@@ -352,6 +373,156 @@ final class AppState: ObservableObject {
         return invite
     }
 
+    /// Reads the public, minimum course projection before any student account
+    /// or Access Token exists. The opaque invite token is never persisted.
+    func previewInitialCourseJoin(inviteToken rawToken: String) async -> APIV1CourseInvitePreview? {
+        if let validationMessage = CourseInviteTokenRule.validationMessage(for: rawToken) {
+            errorMessage = validationMessage
+            return nil
+        }
+        guard usesAPIV1PublicCapabilities else {
+            errorMessage = InitialCourseJoinError.unavailableInFixtureMode.localizedDescription
+            return nil
+        }
+        guard !isAuthenticated, !isLoading else { return nil }
+
+        let inviteToken = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let response = try await backendServices.auth.previewCourseInvite(inviteToken: inviteToken)
+            guard response.value.enrollmentOpen,
+                  !response.value.classSectionId.isEmpty,
+                  !response.value.courseCode.isEmpty,
+                  !response.value.courseName.isEmpty else {
+                throw InitialCourseJoinError.previewMismatch
+            }
+            return response.value
+        } catch {
+            errorMessage = initialCourseJoinMessage(for: error)
+            return nil
+        }
+    }
+
+    /// Performs the Contract 2.0.10 bootstrap transaction in its required
+    /// order: profile-bound Join Capability, atomic enrolment, then installation
+    /// of the restricted PENDING_CONTACT_BINDING AuthSession. The full app shell
+    /// remains unavailable until the server confirms email binding.
+    @discardableResult
+    func joinCourseBeforeLogin(
+        inviteToken rawToken: String,
+        preview: APIV1CourseInvitePreview,
+        fullName: String,
+        studentNumber: String,
+        gender: APIV1CourseJoinGender,
+        gradeYear: Int
+    ) async -> Bool {
+        let inviteToken = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedName = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedStudentNumber = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard CourseInviteTokenRule.validationMessage(for: inviteToken) == nil,
+              !normalizedName.isEmpty, normalizedName.count <= 100,
+              !normalizedStudentNumber.isEmpty, normalizedStudentNumber.count <= 32,
+              (1000...9999).contains(gradeYear) else {
+            errorMessage = InitialCourseJoinError.invalidProfile.localizedDescription
+            return false
+        }
+        guard usesAPIV1PublicCapabilities else {
+            errorMessage = InitialCourseJoinError.unavailableInFixtureMode.localizedDescription
+            return false
+        }
+        guard !isAuthenticated, allowWrite(), !isLoading else { return false }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let capability = try await backendServices.auth.issueJoinCapability(
+                inviteToken: inviteToken,
+                profile: APIV1IssueJoinCapabilityRequest(
+                    fullName: normalizedName,
+                    studentNumber: normalizedStudentNumber,
+                    gender: gender,
+                    gradeYear: gradeYear
+                )
+            )
+            guard capability.value.classSectionId == preview.classSectionId else {
+                throw InitialCourseJoinError.previewMismatch
+            }
+
+            let response = try await backendServices.auth.joinClassSection(
+                inviteToken: inviteToken,
+                capability: capability.value.joinCapability
+            )
+            let result = response.value
+            guard result.classSection.id == preview.classSectionId,
+                  result.enrollment.classSectionId == preview.classSectionId,
+                  result.enrollment.studentId == result.studentProfile.id,
+                  result.studentProfile.userId == result.authSession.user.id,
+                  result.enrollment.status == .active,
+                  result.enrollment.source == .qrCode else {
+                throw InitialCourseJoinError.responseMismatch
+            }
+            guard result.authSession.user.role == .student,
+                  result.authSession.user.status == .pendingContactBinding,
+                  !result.authSession.user.emailVerified else {
+                throw InitialCourseJoinError.restrictedSessionMissing
+            }
+
+            let currentUser = APIV1CurrentUserData(
+                user: result.authSession.user,
+                studentProfile: result.studentProfile,
+                teacherProfile: nil,
+                adminProfile: nil
+            )
+            let initialWorkspace = try Self.backendBootstrapWorkspace(
+                currentUser,
+                verifiedEmail: ""
+            )
+            installAPIV1Session(
+                workspace: initialWorkspace,
+                emailVerified: false,
+                userVersion: result.authSession.user.version
+            )
+            return true
+        } catch {
+            if error is InitialCourseJoinError {
+                await backendServices.auth.discardLocalSession()
+            }
+            isAPIV1Session = false
+            isRemoteMode = false
+            isAuthenticated = false
+            backendUserVersion = nil
+            errorMessage = initialCourseJoinMessage(for: error)
+            return false
+        }
+    }
+
+    private func initialCourseJoinMessage(for error: Error) -> String {
+        if let joinError = error as? InitialCourseJoinError {
+            return joinError.localizedDescription
+        }
+        if let transport = error as? APITransportError,
+           case .failure(_, let envelope) = transport {
+            switch envelope.knownCode {
+            case .courseInviteInvalid, .courseInviteExpired, .courseInviteRevoked:
+                return BNBUL10n.text("邀请已失效，请向老师获取新的邀请。")
+            case .courseClassSectionNotJoinable, .courseSemesterArchived, .courseDeadlinePassed:
+                return BNBUL10n.text("该教学班当前不可加入，请联系任课老师。")
+            case .enrollmentAlreadyActive:
+                return BNBUL10n.text("该学号已加入当前教学班，请直接使用已绑定邮箱登录。")
+            case .userIdentityConflict, .userProfileInvalid:
+                return BNBUL10n.text("姓名或学号与已有资料冲突，请核对后重试。")
+            case .authRateLimited:
+                return BNBUL10n.text("操作过于频繁，请稍后再试。")
+            default:
+                break
+            }
+        }
+        return backendAuthenticationMessage(for: error)
+    }
+
     /// The academic year rolls over on 1 September. The first time the app runs
     /// in a new one, last term's cached workspace no longer applies, so the
     /// dashboard says so rather than showing stale progress without comment.
@@ -410,7 +581,7 @@ final class AppState: ObservableObject {
         do {
             let response = try await backendServices.auth.requestStudentSignInCode(
                 APIV1StudentSignInCodeRequest(
-                    organizationCode: "BNBU",
+                    organizationCode: BackendEnvironment.approvedOrganizationCode,
                     account: normalizedAccount,
                     channel: "EMAIL",
                     locale: contractLocale

@@ -10,9 +10,9 @@ final class BackendFoundationTests: XCTestCase {
     func testContractMetadataAndLocalEnvironmentArePinned() throws {
         XCTAssertEqual(
             APIV1ContractMetadata.sourceSHA256,
-            "853e7f5efadb10dcbbe0f446c4c60962ce2fd864360a156343b5740d0c1761a4"
+            "56f7f13cdd8122dae630fec93bf198f7ed6d92a5fc4f67ae4f866a3b41c38ad7"
         )
-        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "2.0.2-contract")
+        XCTAssertEqual(APIV1ContractMetadata.contractVersion, "2.0.10-contract")
         XCTAssertEqual(APIV1ContractMetadata.apiPrefix, "/api/v1")
         XCTAssertEqual(APIV1ContractMetadata.pathCount, 109)
         XCTAssertEqual(APIV1ContractMetadata.operationCount, 126)
@@ -47,6 +47,36 @@ final class BackendFoundationTests: XCTestCase {
             URL(string: "https://sports.example.edu/api/v1")!,
             for: .production
         ))
+        XCTAssertTrue(BackendEnvironment.isAllowed(
+            URL(string: "https://api.verityai.cn/api/v1")!,
+            for: .staging
+        ))
+        XCTAssertFalse(BackendEnvironment.isAllowed(
+            URL(string: "https://sports.example.edu/api/v1")!,
+            for: .staging
+        ))
+        let stagingConfiguration = [
+            "BNBU_ENVIRONMENT": "staging",
+            "BNBU_API_BASE_URL": "https://api.verityai.cn/api/v1",
+            "BNBU_ORGANIZATION_CODE": "BNBU",
+            "BNBU_CONTRACT_VERSION": "2.0.10-contract",
+            "BNBU_CONTRACT_SHA256": "56f7f13cdd8122dae630fec93bf198f7ed6d92a5fc4f67ae4f866a3b41c38ad7"
+        ]
+        let staging = try BackendEnvironment.resolve(
+            arguments: ["BNBUStudent"],
+            processEnvironment: stagingConfiguration,
+            bundle: .main
+        )
+        XCTAssertEqual(staging.baseURL.absoluteString, "https://api.verityai.cn/api/v1")
+        var mismatchedContract = stagingConfiguration
+        mismatchedContract["BNBU_CONTRACT_SHA256"] = "wrong"
+        XCTAssertThrowsError(try BackendEnvironment.resolve(
+            arguments: ["BNBUStudent"],
+            processEnvironment: mismatchedContract,
+            bundle: .main
+        )) { error in
+            XCTAssertEqual(error as? BackendEnvironmentError, .contractSHA256Mismatch("wrong"))
+        }
         XCTAssertThrowsError(try BackendEnvironment.resolve(
             arguments: ["BNBUStudent"],
             processEnvironment: ["BNBU_ENVIRONMENT": "typo"],
@@ -675,6 +705,343 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertEqual(idempotencyKeys.count, 2)
         XCTAssertEqual(store.session?.accessToken, "join-access")
         XCTAssertEqual(store.session?.refreshToken, "join-refresh")
+    }
+
+    @MainActor
+    func testAppStateFirstUseJoinAcceptsMissingOptionalSessionEnrollmentAndInstallsOnlyPendingSession() async throws {
+        let authStore = MemoryAuthSessionStore()
+        let lock = NSLock()
+        var paths: [String] = []
+        var profileBody: [String: Any] = [:]
+        var joinCapabilityHeader: String?
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            if request.url?.path.hasSuffix("/join-capabilities") == true {
+                profileBody = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any] ?? [:]
+            }
+            if request.url?.path.hasSuffix("/join") == true {
+                joinCapabilityHeader = request.value(forHTTPHeaderField: "X-Join-Capability")
+            }
+            lock.unlock()
+
+            switch request.url?.path {
+            case "/api/v1/course-invites/Opaque-Invite-Token-1234/preview":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-initial-preview"],
+                    body: #"{"data":{"classSectionId":"cls-1","displayName":"Section 1","courseCode":"PE101","courseName":"PE","semesterDisplayName":"2026","teacherDisplayName":"Teacher","enrollmentOpen":true,"expiresAt":"2026-09-07T00:00:00Z"},"meta":{"requestId":"req-initial-preview"}}"#
+                )
+            case "/api/v1/course-invites/Opaque-Invite-Token-1234/join-capabilities":
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-initial-capability"],
+                    body: #"{"data":{"joinCapability":"one-time-capability","classSectionId":"cls-1","expiresAt":"2026-09-06T01:00:00Z"},"meta":{"requestId":"req-initial-capability"}}"#
+                )
+            case "/api/v1/course-invites/Opaque-Invite-Token-1234/join":
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-initial-join"],
+                    body: Self.pendingContactJoinEnvelopeJSON(requestID: "req-initial-join")
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let client = StudentAPIClient(
+            baseURL: BackendEnvironment.local.baseURL,
+            urlSession: session,
+            maximumSafeRetries: 0
+        )
+        let services = BackendAppServices(
+            environment: .local,
+            client: client,
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-initial-join")
+        )
+        let suiteName = "BackendFoundationTests.initial-join.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        let token = "Opaque-Invite-Token-1234"
+        let loadedPreview = await state.previewInitialCourseJoin(inviteToken: token)
+        let preview = try XCTUnwrap(loadedPreview)
+        let joined = await state.joinCourseBeforeLogin(
+            inviteToken: token,
+            preview: preview,
+            fullName: "Synthetic Student",
+            studentNumber: "SYNTH-001",
+            gender: .female,
+            gradeYear: 2026
+        )
+
+        XCTAssertTrue(joined)
+        XCTAssertEqual(paths, [
+            "/api/v1/course-invites/Opaque-Invite-Token-1234/preview",
+            "/api/v1/course-invites/Opaque-Invite-Token-1234/join-capabilities",
+            "/api/v1/course-invites/Opaque-Invite-Token-1234/join"
+        ])
+        XCTAssertEqual(profileBody["fullName"] as? String, "Synthetic Student")
+        XCTAssertEqual(profileBody["studentNumber"] as? String, "SYNTH-001")
+        XCTAssertEqual(profileBody["gender"] as? String, "FEMALE")
+        XCTAssertEqual(profileBody["gradeYear"] as? Int, 2026)
+        XCTAssertEqual(joinCapabilityHeader, "one-time-capability")
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isAPIV1Session)
+        XCTAssertFalse(state.isEmailVerified)
+        XCTAssertEqual(state.workspace.student.id, "student-1")
+        XCTAssertEqual(state.workspace.student.email, "")
+        XCTAssertEqual(authStore.session?.user.status, .pendingContactBinding)
+        XCTAssertFalse(authStore.session?.user.emailVerified ?? true)
+    }
+
+    @MainActor
+    func testAppStateRestoresPendingContactSessionWithoutOpeningVerifiedWorkspace() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.pendingAuthSession(access: "pending-access", refresh: "pending-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/me":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer pending-access")
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-pending-restore"],
+                    body: Self.pendingStudentCurrentUserEnvelopeJSON(requestID: "req-pending-restore")
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-pending-restore")
+        )
+        let suiteName = "BackendFoundationTests.pending-restore.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+
+        XCTAssertEqual(paths, ["/api/v1/me"])
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isAPIV1Session)
+        XCTAssertFalse(state.isEmailVerified)
+        XCTAssertEqual(state.workspace.student.id, "student-1")
+        XCTAssertEqual(state.workspace.student.email, "")
+        XCTAssertEqual(authStore.session?.accessToken, "pending-access")
+        XCTAssertEqual(authStore.session?.refreshToken, "pending-refresh")
+    }
+
+    @MainActor
+    func testAppStateFirstEmailBindingKeepsJoinSessionAndTrustsServerActivation() async throws {
+        let authStore = MemoryAuthSessionStore(
+            session: Self.pendingAuthSession(access: "pending-access", refresh: "pending-refresh")
+        )
+        let lock = NSLock()
+        var paths: [String] = []
+        var challengeBody: [String: Any] = [:]
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            if request.url?.path == "/api/v1/me/email-verification-challenges" {
+                challengeBody = (try? JSONSerialization.jsonObject(
+                    with: Self.bodyData(from: request)
+                )) as? [String: Any] ?? [:]
+            }
+            lock.unlock()
+
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer pending-access")
+            switch request.url?.path {
+            case "/api/v1/me":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-pending-me"],
+                    body: Self.pendingStudentCurrentUserEnvelopeJSON(requestID: "req-pending-me")
+                )
+            case "/api/v1/me/email-verification-challenges":
+                return .json(
+                    status: 202,
+                    headers: ["X-Request-ID": "req-first-bind"],
+                    body: #"{"data":{"challengeId":"challenge-first-bind","mode":"FIRST_BIND","expiresAt":"2026-08-22T15:00:00Z"},"meta":{"requestId":"req-first-bind"}}"#
+                )
+            case "/api/v1/me/email-verification-challenges/challenge-first-bind/verify":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-first-bind-verify"],
+                    body: Self.studentCurrentUserEnvelopeJSON(
+                        requestID: "req-first-bind-verify",
+                        emailMasked: "i***@example.edu",
+                        userVersion: 2
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-first-bind")
+        )
+        let suiteName = "BackendFoundationTests.first-bind.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        await state.restoreBackendSession()
+        XCTAssertFalse(state.isEmailVerified)
+        let requested = await state.requestContactEmailVerification(
+            email: "IOS.Test@Example.edu ",
+            locale: "en-US"
+        )
+        let verified = await state.completeContactEmailVerification(
+            newEmailCode: "654321",
+            currentEmailCode: nil,
+            email: "IOS.Test@Example.edu "
+        )
+
+        XCTAssertTrue(requested)
+        XCTAssertTrue(verified)
+        XCTAssertEqual(paths, [
+            "/api/v1/me",
+            "/api/v1/me/email-verification-challenges",
+            "/api/v1/me/email-verification-challenges/challenge-first-bind/verify"
+        ])
+        XCTAssertEqual(challengeBody["email"] as? String, "ios.test@example.edu")
+        XCTAssertEqual(challengeBody["locale"] as? String, "en")
+        XCTAssertEqual(challengeBody["expectedVersion"] as? Int, 1)
+        XCTAssertTrue(state.isEmailVerified)
+        XCTAssertEqual(state.workspace.student.email, "ios.test@example.edu")
+        XCTAssertFalse(state.contactVerificationRequiresCurrentEmailCode)
+        XCTAssertEqual(authStore.session?.accessToken, "pending-access")
+        XCTAssertEqual(authStore.session?.refreshToken, "pending-refresh")
+    }
+
+    @MainActor
+    func testInitialJoinMapsStableInviteErrorsWithoutRetryOrSession() async throws {
+        let authStore = MemoryAuthSessionStore()
+        let lock = NSLock()
+        var paths: [String] = []
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            paths.append(path)
+            lock.unlock()
+
+            if path.contains("Invalid-Invite-Token-1234") {
+                return .json(
+                    status: 400,
+                    headers: ["X-Request-ID": "req-invite-invalid"],
+                    body: Self.errorJSON(code: "COURSE_INVITE_INVALID", requestID: "req-invite-invalid")
+                )
+            }
+            if path.contains("Expired-Invite-Token-1234") {
+                return .json(
+                    status: 410,
+                    headers: ["X-Request-ID": "req-invite-expired"],
+                    body: Self.errorJSON(code: "COURSE_INVITE_EXPIRED", requestID: "req-invite-expired")
+                )
+            }
+            if path.contains("Revoked-Invite-Token-1234") {
+                return .json(
+                    status: 410,
+                    headers: ["X-Request-ID": "req-invite-revoked"],
+                    body: Self.errorJSON(code: "COURSE_INVITE_REVOKED", requestID: "req-invite-revoked")
+                )
+            }
+            return .json(
+                status: 429,
+                headers: ["X-Request-ID": "req-invite-rate-limited"],
+                body: Self.errorJSON(code: "AUTH_RATE_LIMITED", requestID: "req-invite-rate-limited")
+            )
+        }
+        let services = BackendAppServices(
+            environment: .local,
+            client: StudentAPIClient(
+                baseURL: BackendEnvironment.local.baseURL,
+                urlSession: session,
+                maximumSafeRetries: 0
+            ),
+            authStore: authStore,
+            deviceIdentifier: FixedAuthDeviceIdentifier(value: "ios-invite-errors")
+        )
+        let suiteName = "BackendFoundationTests.invite-errors.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: defaults, legacyDefaults: defaults),
+            backendServices: services
+        )
+
+        for token in [
+            "Invalid-Invite-Token-1234",
+            "Expired-Invite-Token-1234",
+            "Revoked-Invite-Token-1234"
+        ] {
+            let preview = await state.previewInitialCourseJoin(inviteToken: token)
+            XCTAssertNil(preview)
+            XCTAssertEqual(state.errorMessage, BNBUL10n.text("邀请已失效，请向老师获取新的邀请。"))
+        }
+        let rateLimitedPreview = await state.previewInitialCourseJoin(
+            inviteToken: "Rate-Limited-Invite-Token-1234"
+        )
+        XCTAssertNil(rateLimitedPreview)
+        XCTAssertEqual(state.errorMessage, BNBUL10n.text("操作过于频繁，请稍后再试。"))
+
+        XCTAssertEqual(paths, [
+            "/api/v1/course-invites/Invalid-Invite-Token-1234/preview",
+            "/api/v1/course-invites/Expired-Invite-Token-1234/preview",
+            "/api/v1/course-invites/Revoked-Invite-Token-1234/preview",
+            "/api/v1/course-invites/Rate-Limited-Invite-Token-1234/preview"
+        ])
+        XCTAssertNil(authStore.session)
+        XCTAssertFalse(state.isAuthenticated)
     }
 
     func testContract15EmailSignInAndBindingInstallOneRotatingSession() async throws {
@@ -2163,7 +2530,7 @@ final class BackendFoundationTests: XCTestCase {
                     """
                 )
             default:
-                XCTFail("Contract 2.0.2 capability gateway reached an unexpected route: \(operation)")
+                XCTFail("Contract 2.0.10 capability gateway reached an unexpected route: \(operation)")
                 return .json(
                     status: 404,
                     headers: ["X-Request-ID": "req-unexpected"],
@@ -2883,9 +3250,22 @@ final class BackendFoundationTests: XCTestCase {
         )
     }
 
+    private static func pendingAuthSession(access: String, refresh: String) -> APIV1AuthSession {
+        try! JSONDecoder().decode(
+            APIV1AuthSession.self,
+            from: Data(pendingAuthSessionJSON(access: access, refresh: refresh).utf8)
+        )
+    }
+
     private static func authSessionJSON(access: String, refresh: String) -> String {
         """
         {"sessionId":"session-1","accessToken":"\(access)","refreshToken":"\(refresh)","tokenType":"Bearer","accessTokenExpiresAt":"2099-08-06T00:00:00Z","refreshTokenExpiresAt":"2099-08-07T00:00:00Z","user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"ACTIVE","primaryEmailMasked":null,"primaryPhoneMasked":null,"emailVerified":false,"phoneVerified":false,"version":1}}
+        """
+    }
+
+    private static func pendingAuthSessionJSON(access: String, refresh: String) -> String {
+        """
+        {"sessionId":"session-pending-1","accessToken":"\(access)","refreshToken":"\(refresh)","tokenType":"Bearer","accessTokenExpiresAt":"2099-08-06T00:00:00Z","refreshTokenExpiresAt":"2099-08-07T00:00:00Z","user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"PENDING_CONTACT_BINDING","primaryEmailMasked":null,"emailVerified":false,"version":1}}
         """
     }
 
@@ -2906,6 +3286,12 @@ final class BackendFoundationTests: XCTestCase {
     ) -> String {
         """
         {"data":{"user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"ACTIVE","primaryEmailMasked":"\(emailMasked)","emailVerified":true,"version":\(userVersion)},"studentProfile":{"id":"student-1","organizationId":"org-1","userId":"user-1","studentNumber":"2400123456","fullName":"测试学生","gender":"FEMALE","gradeYear":2024,"collegeName":"商学院","majorName":"工商管理","administrativeClassName":"2024A","status":"ACTIVE","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-14T00:00:00Z","deletedAt":null,"version":1},"teacherProfile":null,"adminProfile":null},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func pendingStudentCurrentUserEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":{"user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"PENDING_CONTACT_BINDING","primaryEmailMasked":null,"emailVerified":false,"version":1},"studentProfile":{"id":"student-1","organizationId":"org-1","userId":"user-1","studentNumber":"SYNTH-001","fullName":"Synthetic Student","gender":"FEMALE","gradeYear":2026,"collegeName":null,"majorName":null,"administrativeClassName":null,"status":"ACTIVE","createdAt":"2026-08-22T00:00:00Z","updatedAt":"2026-08-22T00:00:00Z","deletedAt":null,"version":1},"teacherProfile":null,"adminProfile":null},"meta":{"requestId":"\(requestID)"}}
         """
     }
 
@@ -3005,6 +3391,12 @@ final class BackendFoundationTests: XCTestCase {
     private static func joinEnvelopeJSON(requestID: String) -> String {
         """
         {"data":{"studentProfile":{"id":"student-1","organizationId":"org-1","userId":"user-1","studentNumber":"SYNTH-001","fullName":"Synthetic Student","gender":"OTHER","gradeYear":2026,"collegeName":null,"majorName":null,"administrativeClassName":null,"status":"ACTIVE","createdAt":"2026-08-06T00:00:00Z","updatedAt":"2026-08-06T00:00:00Z","deletedAt":null,"version":1},"enrollment":{"id":"enrollment-1","organizationId":"org-1","semesterId":"semester-1","classSectionId":"cls-1","studentId":"student-1","source":"QR_CODE","sourceReferenceId":null,"status":"ACTIVE","joinedAt":"2026-08-06T00:00:00Z","endedAt":null,"endReason":null,"createdBy":null,"createdAt":"2026-08-06T00:00:00Z","updatedAt":"2026-08-06T00:00:00Z","version":1},"course":{"id":"course-1","organizationId":"org-1","courseCode":"PE101","courseName":"PE","description":null,"status":"ACTIVE","createdBy":null,"createdAt":"2026-08-06T00:00:00Z","updatedAt":"2026-08-06T00:00:00Z","deletedAt":null,"version":1},"classSection":{"id":"cls-1","organizationId":"org-1","courseId":"course-1","semesterId":"semester-1","teacherId":"teacher-1","classCode":"001","displayName":"Section 1","status":"ACTIVE","isEnrollmentOpen":true,"checkInWindowMode":"AVAILABLE","checkInStartDate":null,"checkInEndDate":null,"dailyStartTime":null,"dailyEndTime":null,"submissionDeadlineAt":null,"excludedDates":[],"createdAt":"2026-08-06T00:00:00Z","updatedAt":"2026-08-06T00:00:00Z","version":1},"authSession":\(authSessionJSON(access: "join-access", refresh: "join-refresh"))},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func pendingContactJoinEnvelopeJSON(requestID: String) -> String {
+        """
+        {"data":{"studentProfile":{"id":"student-1","organizationId":"org-1","userId":"user-1","studentNumber":"SYNTH-001","fullName":"Synthetic Student","gender":"FEMALE","gradeYear":2026,"collegeName":null,"majorName":null,"administrativeClassName":null,"status":"ACTIVE","createdAt":"2026-08-22T00:00:00Z","updatedAt":"2026-08-22T00:00:00Z","deletedAt":null,"version":1},"enrollment":{"id":"enrollment-1","organizationId":"org-1","semesterId":"semester-1","classSectionId":"cls-1","studentId":"student-1","source":"QR_CODE","sourceReferenceId":null,"status":"ACTIVE","joinedAt":"2026-08-22T00:00:00Z","endedAt":null,"endReason":null,"createdBy":null,"createdAt":"2026-08-22T00:00:00Z","updatedAt":"2026-08-22T00:00:00Z","version":1},"course":{"id":"course-1","organizationId":"org-1","courseCode":"PE101","courseName":"PE","description":null,"status":"ACTIVE","createdBy":null,"createdAt":"2026-08-22T00:00:00Z","updatedAt":"2026-08-22T00:00:00Z","deletedAt":null,"version":1},"classSection":{"id":"cls-1","organizationId":"org-1","courseId":"course-1","semesterId":"semester-1","teacherId":"teacher-1","classCode":"001","displayName":"Section 1","status":"ACTIVE","isEnrollmentOpen":true,"checkInWindowMode":"AVAILABLE","checkInStartDate":null,"checkInEndDate":null,"dailyStartTime":null,"dailyEndTime":null,"submissionDeadlineAt":null,"excludedDates":[],"createdAt":"2026-08-22T00:00:00Z","updatedAt":"2026-08-22T00:00:00Z","version":1},"authSession":{"sessionId":"session-join-1","accessToken":"join-pending-access","refreshToken":"join-pending-refresh","tokenType":"Bearer","accessTokenExpiresAt":"2026-08-22T01:00:00Z","refreshTokenExpiresAt":"2026-08-29T00:00:00Z","user":{"id":"user-1","organizationId":"org-1","role":"STUDENT","status":"PENDING_CONTACT_BINDING","primaryEmailMasked":null,"emailVerified":false,"version":1}}},"meta":{"requestId":"\(requestID)"}}
         """
     }
 

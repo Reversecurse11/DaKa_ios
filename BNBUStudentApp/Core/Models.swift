@@ -1281,6 +1281,66 @@ enum CourseJoinCodeRule {
     }
 }
 
+/// Contract 2.0.10 course invites use an opaque transport token, not the
+/// human-friendly legacy code above. Its bytes are significant: clients must
+/// not uppercase it, remove separators, or write it to ordinary logs.
+enum CourseInviteTokenRule {
+    static let minimumLength = 16
+    static let maximumLength = 512
+
+    static func validationMessage(for raw: String) -> String? {
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.isEmpty {
+            return BNBUL10n.text("请输入课程邀请码。")
+        }
+        if token.count < minimumLength || token.count > maximumLength {
+            return BNBUL10n.text("邀请码格式不正确，请向老师获取新的邀请。")
+        }
+        guard token.unicodeScalars.allSatisfy({
+            !$0.properties.isWhitespace && !CharacterSet.controlCharacters.contains($0)
+        }) else {
+            return BNBUL10n.text("邀请码不能包含空格或控制字符。")
+        }
+        return nil
+    }
+
+    /// Accepts the opaque token itself. URL transports are fail-closed unless
+    /// the caller supplies an explicitly approved HTTPS origin; the current
+    /// teacher portal QR payload is Android-specific and must not silently
+    /// become an iOS contract.
+    static func token(
+        fromInput input: String,
+        approvedHTTPSHosts: Set<String> = []
+    ) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let components = URLComponents(string: trimmed), components.scheme != nil {
+            guard components.scheme?.lowercased() == "https",
+                  components.user == nil,
+                  components.password == nil,
+                  components.query == nil,
+                  components.fragment == nil,
+                  components.port == nil || components.port == 443,
+                  let host = components.host?.lowercased(),
+                  approvedHTTPSHosts.map({ $0.lowercased() }).contains(host) else { return nil }
+            let path = components.path.split(separator: "/").map(String.init)
+            guard path.count == 2, path[0].lowercased() == "join",
+                  validationMessage(for: path[1]) == nil else { return nil }
+            return path[1]
+        }
+
+        return validationMessage(for: trimmed) == nil ? trimmed : nil
+    }
+
+    static func token(
+        fromScannedPayload payload: String,
+        approvedHTTPSHosts: Set<String> = []
+    ) -> String? {
+        token(fromInput: payload, approvedHTTPSHosts: approvedHTTPSHosts)
+    }
+}
+
 struct StudentProgress: Identifiable, Hashable, Codable {
     let id: String
     let name: String

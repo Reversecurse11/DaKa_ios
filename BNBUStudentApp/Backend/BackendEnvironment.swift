@@ -10,6 +10,9 @@ enum BackendEnvironmentError: Error, LocalizedError, Equatable {
     case invalidEnvironment(String)
     case missingBaseURL(BackendEnvironmentName)
     case invalidBaseURL(BackendEnvironmentName)
+    case invalidOrganizationCode(String?)
+    case contractVersionMismatch(String?)
+    case contractSHA256Mismatch(String?)
 
     var errorDescription: String? {
         switch self {
@@ -19,11 +22,20 @@ enum BackendEnvironmentError: Error, LocalizedError, Equatable {
             return "Missing approved API base URL for \(environment.rawValue)."
         case .invalidBaseURL(let environment):
             return "Invalid API base URL for \(environment.rawValue)."
+        case .invalidOrganizationCode:
+            return "The organization code does not match the approved BNBU environment."
+        case .contractVersionMismatch:
+            return "The runtime Contract version does not match the generated API models."
+        case .contractSHA256Mismatch:
+            return "The runtime Contract SHA-256 does not match the generated API models."
         }
     }
 }
 
 struct BackendEnvironment: Equatable {
+    static let approvedOrganizationCode = "BNBU"
+    static let approvedStagingHost = "api.verityai.cn"
+
     let name: BackendEnvironmentName
     let baseURL: URL
 
@@ -51,6 +63,24 @@ struct BackendEnvironment: Equatable {
             ?? "local"
         guard let name = BackendEnvironmentName(rawValue: configuredName.lowercased()) else {
             throw BackendEnvironmentError.invalidEnvironment(configuredName)
+        }
+
+        if name != .local {
+            let organizationCode = processEnvironment["BNBU_ORGANIZATION_CODE"]
+                ?? bundle.object(forInfoDictionaryKey: "BNBUOrganizationCode") as? String
+            guard organizationCode == Self.approvedOrganizationCode else {
+                throw BackendEnvironmentError.invalidOrganizationCode(organizationCode)
+            }
+            let contractVersion = processEnvironment["BNBU_CONTRACT_VERSION"]
+                ?? bundle.object(forInfoDictionaryKey: "BNBUContractVersion") as? String
+            guard contractVersion == APIV1ContractMetadata.contractVersion else {
+                throw BackendEnvironmentError.contractVersionMismatch(contractVersion)
+            }
+            let contractSHA256 = processEnvironment["BNBU_CONTRACT_SHA256"]
+                ?? bundle.object(forInfoDictionaryKey: "BNBUContractSHA256") as? String
+            guard contractSHA256 == APIV1ContractMetadata.sourceSHA256 else {
+                throw BackendEnvironmentError.contractSHA256Mismatch(contractSHA256)
+            }
         }
 
         let argumentURL = argumentValue(named: "-server-base-url", in: arguments)
@@ -88,7 +118,9 @@ struct BackendEnvironment: Equatable {
         case .local:
             guard scheme == "http" || scheme == "https" else { return false }
             return host == "localhost" || host == "127.0.0.1" || isPrivateIPv4(host)
-        case .staging, .production:
+        case .staging:
+            return scheme == "https" && host == Self.approvedStagingHost
+        case .production:
             return scheme == "https" && host != "localhost" && host != "127.0.0.1" && !isPrivateIPv4(host)
         }
     }

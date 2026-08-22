@@ -195,9 +195,9 @@ requireText(backendEnvironment, 'http://127.0.0.1:3000/api/v1', "Local builds ta
 rejectText(remote, "123.207.5.70", "Legacy remote IP is absent from the compatibility repository");
 requireText(backendEnvironment, 'host != "123.207.5.70"', "Environment validation explicitly rejects the legacy host");
 requireText(generatedModels, "APIV1ContractMetadata", "Generated models carry pinned contract metadata");
-requireText(generatedModels, 'static let contractVersion = "2.0.2-contract"', "Generated models bind Contract 2.0.2");
-requireText(generatedModels, 'static let sourceSHA256 = "853e7f5efadb10dcbbe0f446c4c60962ce2fd864360a156343b5740d0c1761a4"', "Generated models bind the published 2.0.2 hash");
-requireText(openapi, "version: 2.0.2-contract", "Pinned OpenAPI is the published 2.0.2 release");
+requireText(generatedModels, 'static let contractVersion = "2.0.10-contract"', "Generated models bind Contract 2.0.10");
+requireText(generatedModels, 'static let sourceSHA256 = "56f7f13cdd8122dae630fec93bf198f7ed6d92a5fc4f67ae4f866a3b41c38ad7"', "Generated models bind the published 2.0.10 hash");
+requireText(openapi, "version: 2.0.10-contract", "Pinned OpenAPI is the published 2.0.10 release");
 requireText(remote, '"role": "student"', "Student login explicitly requests the student role");
 requireText(remote, '"clientType": "mobile"', "Student login identifies the mobile client");
 
@@ -224,13 +224,13 @@ for (const endpoint of ["/auth/refresh:", "/auth/logout:", "/course-invites/{inv
   requireText(openapi, endpoint, `Pinned OpenAPI publishes ${endpoint.slice(1, -1)}`);
 }
 for (const endpoint of ["/exercise-records/{recordId}/evidence-context:", "/exemption-application-details:"]) {
-  requireText(openapi, endpoint, `Contract 2.0.2 publishes ${endpoint.slice(1, -1)}`);
+  requireText(openapi, endpoint, `Contract 2.0.10 publishes ${endpoint.slice(1, -1)}`);
 }
 
 requireText(remote, "StudentCoursesPayload", "Course-list response has a dedicated decoder");
 requireText(remote, "StudentGradesPayload", "Grades response has a dedicated decoder");
 
-// Contract 2.0.2 has no client-authored review state. New submissions are
+// Contract 2.0.10 has no client-authored review state. New submissions are
 // system VALID, while legacy/reopened PENDING and teacher INVALID remain exact
 // server projections.
 rejectText(appSources, "struct CourseTask", "Legacy CourseTask model is removed");
@@ -245,15 +245,15 @@ requireText(models, "enum RecordValidity", "Records preserve the server review p
 requireText(models, "case pending = \"待审核\"", "Legacy or reopened PENDING remains distinct");
 requireText(models, "init(serverReviewResult: APIV1ReviewResult)", "API-v1 review status maps directly from the generated enum");
 requireText(appState, "let validity = RecordValidity(serverReviewResult: currentReview.result)", "Check-in completion uses the Backend review result");
-requireText(appState, "record.status == .reviewed", "Contract 2.0.2 submission expects the reviewed record state");
-requireText(backendGateways, 'operationID: "getExerciseRecordEvidenceContext"', "Record evidence context uses the additive 2.0.2 route");
+requireText(appState, "record.status == .reviewed", "Contract 2.0.10 submission expects the reviewed record state");
+requireText(backendGateways, 'operationID: "getExerciseRecordEvidenceContext"', "Record evidence context uses the additive 2.0.10 route");
 requireText(backendGateways, "func listOwned(limit: Int = 100)", "Student records use a role-scoped canonical list gateway");
 rejectText(backendGateways, 'URLQueryItem(name: "studentId", value: studentID)', "Student enrollment reads rely on token-owned role scope instead of a forbidden explicit studentId filter");
 requireText(backendGateways, "enrollments.value.allSatisfy({ $0.studentId == studentID })", "Student enrollment projections are still ownership-checked client-side");
 requireText(appState, "func refreshAPIV1ExerciseRecords()", "API-v1 sessions refresh the server-owned record list");
 requireText(appState, "RecordValidity(serverReviewResult: $0.result)", "Refreshed records preserve the Backend review result");
 requireText(appShellViews, 'contains("-ui-testing-real-backend")', "Local Docker UI tests can bypass deterministic fixtures explicitly");
-requireText(backendGateways, 'operationID: "listStructuredExemptionApplications"', "Exemption reads preserve structured 2.0.2 details");
+requireText(backendGateways, 'operationID: "listStructuredExemptionApplications"', "Exemption reads preserve structured 2.0.10 details");
 requireText(models, "var invalidReason: String?", "Invalid records surface the teacher-provided reason");
 requireText(models, "struct CheckInSubmission", "Check-in submissions have a validated value type");
 requireText(appState, "func validatedSubmission(creditType: CreditType, courseId: String?, hours: Double)", "Submission validation is centralized and fail-closed");
@@ -289,9 +289,9 @@ rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from t
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
 rejectText(checkinView, "selectedDraftIDs", "Students cannot submit only a hand-picked subset of retained evidence");
 requireText(checkinView, "当前保留的全部素材都会上传", "The UI explains complete evidence binding");
-requireText(models, "category == .general", "Contract 2.0.2 keeps GENERAL descriptions required");
-requireText(models, "creditType == .courseRelated { return nil }", "Contract 2.0.2 sends an omitted/null COURSE_RELATED description");
-requireText(checkinView, 'session.category == .courseRelated ? "选填" : "必填"', "The note requirement follows the Contract 2.0.2 credit type");
+requireText(models, "category == .general", "Contract 2.0.10 keeps GENERAL descriptions required");
+requireText(models, "creditType == .courseRelated { return nil }", "Contract 2.0.10 sends an omitted/null COURSE_RELATED description");
+requireText(checkinView, 'session.category == .courseRelated ? "选填" : "必填"', "The note requirement follows the Contract 2.0.10 credit type");
 requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
@@ -368,10 +368,23 @@ requireText(models, "static let backwardCompatibleDefault = CourseEnrollmentStat
 requireText(models, "var allowsCheckIn: Bool { enrollmentStatus == .approved }", "Only an approved enrolment can back a check-in");
 requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side rule");
 requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
+requireText(models, "enum CourseInviteTokenRule", "Contract 2.0.10 opaque invite tokens have a lossless validation rule");
+requireText(models, "fromScannedPayload payload: String,", "Course QR payloads preserve the opaque invite token bytes");
+requireText(models, "approvedHTTPSHosts: Set<String> = []", "Course invite URL transports require an explicit host allowlist");
+requireText(models, 'components.scheme?.lowercased() == "https"', "Course invite URL transports require HTTPS");
+requireText(models, 'path.count == 2, path[0].lowercased() == "join"', "Course invite URLs use the exact /join/{token} shape");
 requireText(appState, "func lookupCourseInvite(rawCode: String)", "An invite code resolves to a course before the student applies");
 requireText(appState, "func submitCourseJoinRequest(", "Students can submit a course join application");
-rejectText(loginView, "扫码加入课程", "Unauthenticated students are not offered course joining");
-rejectText(appShellViews, "presentsCourseJoin", "The startup guide cannot bypass email authentication");
+requireText(loginView, "login.initialCourseJoin", "Unauthenticated students can begin the required enrolment-first flow");
+requireText(appShellViews, "case initialCourseJoin", "The app shell has a dedicated pre-authentication course-join stage");
+requireText(courseJoinViews, "struct PreLoginCourseJoinView", "The first-use flow previews and joins a course before email binding");
+requireText(appState, "func previewInitialCourseJoin(", "The AppState binds public course preview before authentication");
+requireText(appState, "func joinCourseBeforeLogin(", "The AppState binds capability issuance and atomic course joining");
+requireText(appState, "result.authSession.user.status == .pendingContactBinding", "Join accepts only the restricted PENDING_CONTACT_BINDING session");
+requireText(appShellViews, "PendingContactBindingShellView", "A restricted join session cannot enter the normal tab shell");
+requireText(backendFoundationTests, "testAppStateRestoresPendingContactSessionWithoutOpeningVerifiedWorkspace", "XCTest keeps a restored pending session inside the binding-only shell");
+requireText(backendFoundationTests, "testAppStateFirstEmailBindingKeepsJoinSessionAndTrustsServerActivation", "XCTest proves first email binding keeps the join session");
+requireText(backendFoundationTests, "testInitialJoinMapsStableInviteErrorsWithoutRetryOrSession", "XCTest covers stable invite errors without creating a session");
 requireText(courseJoinViews, "struct CourseJoinConfirmView", "The invite is confirmed on its own page before identity details are typed");
 requireText(courseJoinViews, "courseJoinConfirm.submit", "The confirmation page submits the application");
 requireText(models, "enum CourseJoinRequestRule", "Name and student number are validated client-side");
@@ -489,6 +502,7 @@ rejectText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release bui
 requireText(locationProvider, "#if BNBU_FIXTURES && DEBUG", "Core Location exists only in the explicit Debug fixture build");
 requireText(productionConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Production excludes the location provider source");
 requireText(stagingConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Staging excludes the location provider source");
+requireText(stagingConfiguration, "https:/$()/api.verityai.cn/api/v1", "Staging uses the frozen R01 HTTPS API URL");
 requireText(checkinView, 'arguments.contains("-ui-testing-location-check")', "Only the dedicated UI fixture can start a location request");
 requireText(checkinView, 'BNBUL10n.text("定位功能未开放")', "Formal builds label the default-denied location state accurately");
 rejectText(models, "var latitude: Double?", "Legacy exercise sessions cannot retain raw latitude");
@@ -691,6 +705,11 @@ requireText(project, "Validate Release Configuration", "Xcode runs the Release c
 requireText(releaseValidator, 'BNBU_REQUIRE_APPROVED_API_URL', "Configuration validator applies only to formal builds");
 requireText(releaseValidator, "configuration-required.invalid", "Release validator rejects the placeholder host");
 requireText(releaseValidator, "*/api/v1", "Release validator enforces the frozen API prefix");
+requireText(releaseValidator, 'organization_code" != "BNBU"', "Release validator freezes the R01 organization code");
+requireText(releaseValidator, 'contract_version" != "2.0.10-contract"', "Release validator freezes Contract 2.0.10");
+requireText(releaseValidator, 'https://api.verityai.cn/api/v1', "Release validator freezes the R01 Staging endpoint");
+requireText(backendEnvironment, 'approvedStagingHost = "api.verityai.cn"', "Runtime validation freezes the Staging host");
+requireText(backendEnvironment, "contractSHA256Mismatch", "Runtime validation fails closed on Contract hash drift");
 requireText(macReleaseGate, "set -Eeuo pipefail", "Mac Release gate fails closed on shell errors");
 for (const step of [
   "preflight",
@@ -782,7 +801,7 @@ const joinRequestStatusView = read("BNBUStudentApp/Features/JoinRequestStatusVie
 
 requireOrder(
   appShellViews,
-  ["case restoring", "case privacyConsent", "case preLoginGuide", "case login", "case authenticated"],
+  ["case restoring", "case privacyConsent", "case preLoginGuide", "case initialCourseJoin", "case login", "case authenticated"],
   "The app shell keeps Android's startup gate order"
 );
 requireText(
@@ -912,7 +931,7 @@ requireText(project, "PrivacyInfo.xcprivacy in Resources", "Xcode copies the pri
 
 requireText(modelTests, "testCurrentBackendStudentWorkspacePayloadsDecode", "XCTest covers current workspace payload shapes");
 requireText(modelTests, "testRecordValidityPreservesServerReviewStatesWithoutClientDerivation", "XCTest covers exact Backend review-state mapping");
-requireText(backendFoundationTests, "testContract202StudentRecordListUsesTheRoleScopedCanonicalRoute", "XCTest covers the Contract 2.0.2 record-list binding");
+requireText(backendFoundationTests, "testContract202StudentRecordListUsesTheRoleScopedCanonicalRoute", "XCTest covers the Contract 2.0.10 record-list binding");
 requireText(modelTests, "testMutationResultsAreNotMistakenForCompleteDomainObjects", "XCTest covers mutation-result classification");
 requireText(modelTests, "testStudentProgressWithoutIdentityFailsClosedToEmptyIdentifier", "XCTest covers missing progress identity without a hard-coded student fallback");
 requireText(modelTests, "testSubmissionHoursAlwaysMatchBackendOneOrTwoHourContract", "XCTest covers the hours enum");

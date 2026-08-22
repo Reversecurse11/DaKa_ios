@@ -6,6 +6,12 @@
 	<string>$(BNBU_API_BASE_URL)</string>
 	<key>BNBUEnvironment</key>
 	<string>$(BNBU_ENVIRONMENT)</string>
+	<key>BNBUOrganizationCode</key>
+	<string>$(BNBU_ORGANIZATION_CODE)</string>
+	<key>BNBUContractVersion</key>
+	<string>$(BNBU_CONTRACT_VERSION)</string>
+	<key>BNBUContractSHA256</key>
+	<string>$(BNBU_CONTRACT_SHA256)</string>
 	<key>CFBundleDisplayName</key>
 	<string>BNBU Student</string>
 	<key>CFBundleExecutable</key>

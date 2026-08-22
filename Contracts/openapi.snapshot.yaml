@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: BNBU Sports Unified API
-  version: 2.0.2-contract
+  version: 2.0.10-contract
   summary: Unified contract for the sports check-in platform
   license:
     name: UNLICENSED

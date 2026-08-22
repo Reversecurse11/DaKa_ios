@@ -12461,6 +12461,23 @@
         }
       }
     },
+    "未计入学时" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not credited"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未计入学时"
+          }
+        }
+      }
+    },
     "计入学时" : {
       "extractionState" : "stale",
       "localizations" : {

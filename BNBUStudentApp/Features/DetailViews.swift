@@ -334,7 +334,7 @@ struct RecordCard: View {
                     RecordFact(systemImage: "stopwatch", label: "实际运动时长", value: record.activeDuration)
                     RecordFact(
                         systemImage: "checkmark.circle",
-                        label: "计入学时",
+                        label: record.validity == .invalid ? "未计入学时" : "计入学时",
                         value: record.hours.localizedHourText
                     )
                 }

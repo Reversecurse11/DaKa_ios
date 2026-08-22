@@ -53,6 +53,7 @@ enum AppShellStage: Equatable {
     case restoring
     case privacyConsent
     case preLoginGuide
+    case initialCourseJoin
     case login
     case authenticated
 
@@ -158,15 +159,17 @@ struct AppShellView: View {
                 PreLoginCourseGuideView(
                     onStartJoin: {
                         BNBUPreLoginGuide.markSeen()
-                        stage = .login
+                        stage = .initialCourseJoin
                     },
                     onSkipToLogin: {
                         BNBUPreLoginGuide.markSeen()
                         stage = .login
                     }
                 )
+            case .initialCourseJoin:
+                PreLoginCourseJoinView(onBackToLogin: { stage = .login })
             case .login:
-                LoginView()
+                LoginView(onInitialCourseJoin: { stage = .initialCourseJoin })
             case .authenticated:
                 AuthenticatedShellView(isUITesting: isUITesting)
             }
@@ -227,6 +230,16 @@ private struct AuthenticatedShellView: View {
     @State private var showOnboarding = false
 
     var body: some View {
+        Group {
+            if appState.isAPIV1Session && !appState.isEmailVerified {
+                PendingContactBindingShellView()
+            } else {
+                authenticatedContent
+            }
+        }
+    }
+
+    private var authenticatedContent: some View {
         AppRootView()
             .task {
                 let exercisesRealBackend = ProcessInfo.processInfo.arguments
@@ -254,6 +267,33 @@ private struct AuthenticatedShellView: View {
                     showOnboarding = false
                 }
             }
+    }
+}
+
+/// A Join Capability creates a deliberately restricted AuthSession. Until the
+/// server confirms the first email binding, no course, record, media, profile,
+/// or settings screen is reachable from this shell.
+private struct PendingContactBindingShellView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                BNBUPageBackground()
+                ContactBindingView(onBound: { _ in })
+            }
+            .navigationTitle("完成账号绑定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("退出") {
+                        Task { await appState.logout() }
+                    }
+                    .accessibilityIdentifier("contactBinding.logout")
+                }
+            }
+        }
+        .accessibilityIdentifier("screen.pendingContactBinding")
     }
 }
 
@@ -579,7 +619,7 @@ struct PrivacyConsentView: View {
 
 // MARK: - Pre-login course guide
 
-/// First-launch guide for the email-first authentication and enrollment order.
+/// First-launch guide for Contract 2.0.10's enrolment-first bootstrap order.
 struct PreLoginCourseGuideView: View {
     let onStartJoin: () -> Void
     let onSkipToLogin: () -> Void
@@ -590,7 +630,7 @@ struct PreLoginCourseGuideView: View {
             steps: Self.steps,
             skipLabel: "直接登录",
             skipDescription: "跳过加入课程指引并进入登录页",
-            finalActionLabel: "使用邮箱登录",
+            finalActionLabel: "扫码或输入邀请",
             onSkip: onSkipToLogin,
             onFinish: onStartJoin,
             screenIdentifier: "screen.guide.pre-login"
@@ -599,15 +639,15 @@ struct PreLoginCourseGuideView: View {
 
     static let steps: [BNBUGuideStep] = [
         BNBUGuideStep(
-            eyebrow: "学校邮箱验证码",
-            title: "先完成邮箱登录",
-            detail: "手机号和短信验证码入口已下线。使用学校邮箱接收验证码并登录。",
+            eyebrow: "课程二维码或邀请",
+            title: "先确认课程",
+            detail: "首次使用不需要先登录。扫描老师提供的二维码，或手动输入邀请。",
             artwork: .courseJoin
         ),
         BNBUGuideStep(
-            eyebrow: "邮箱验证后加入课程",
-            title: "再扫码或输入邀请码",
-            detail: "只有邮箱已验证的账号可以加入课程。登录后再核对课程与学号信息。",
+            eyebrow: "入课后绑定邮箱",
+            title: "再完成账号绑定",
+            detail: "核对姓名、学号、性别和入学年份并加入教学班后，只能先绑定学校邮箱；验证通过后才进入 App。",
             artwork: .joinRequest
         )
     ]

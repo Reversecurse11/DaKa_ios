@@ -57,8 +57,10 @@ enum BNBUPrivacyConsent {
 struct LoginView: View {
     @EnvironmentObject private var appState: AppState
     @State private var route: LoginRoute
+    let onInitialCourseJoin: () -> Void
 
-    init() {
+    init(onInitialCourseJoin: @escaping () -> Void = {}) {
+        self.onInitialCourseJoin = onInitialCourseJoin
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-ui-testing-login-email") {
             _route = State(initialValue: .emailVerification)
@@ -79,6 +81,7 @@ struct LoginView: View {
             switch route {
             case .chooser:
                 LoginMethodChooser(
+                    onInitialCourseJoin: onInitialCourseJoin,
                     onEmail: { route = .emailVerification },
                     onRecovery: { route = .recovery },
                     onMockLogin: { appState.mockAccountLogin() }
@@ -100,6 +103,7 @@ struct LoginView: View {
 private struct LoginMethodChooser: View {
     @Environment(\.locale) private var locale
 
+    let onInitialCourseJoin: () -> Void
     let onEmail: () -> Void
     let onRecovery: () -> Void
     let onMockLogin: () -> Void
@@ -147,10 +151,18 @@ private struct LoginMethodChooser: View {
                                 .foregroundStyle(BNBUTheme.onSurface)
 
                             LoginMethodRow(
+                                title: copy("首次加入课程", "Join a course for the first time"),
+                                subtitle: copy("先扫码或输入老师提供的邀请", "Scan or enter the invite from your teacher first"),
+                                systemImage: "qrcode.viewfinder",
+                                isPrimary: true,
+                                action: onInitialCourseJoin
+                            )
+                            .accessibilityIdentifier("login.initialCourseJoin")
+
+                            LoginMethodRow(
                                 title: copy("邮箱验证码登录", "Sign in with email code"),
                                 subtitle: copy("使用学校邮箱", "Use your university email"),
                                 systemImage: "envelope.fill",
-                                isPrimary: true,
                                 action: onEmail
                             )
                             .accessibilityIdentifier("login.email")
