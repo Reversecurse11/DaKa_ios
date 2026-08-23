@@ -6,6 +6,75 @@ struct MediaUploadOutcome: Equatable {
     let requestId: String
 }
 
+enum MediaUploadPipelineError: Error, Equatable {
+    case invalidUploadCapability(requestId: String?)
+    case uploadCapabilityRecoveryFailed(requestId: String?)
+    case transportInvalidResponse(phase: String)
+    case signedUploadRejected(statusCode: Int, providerCode: String?)
+    case missingUploadEntityTag
+    case confirmationProjectionMismatch(field: String, requestId: String)
+    case bindingProjectionMismatch(field: String, requestId: String)
+    case statusProjectionMismatch(field: String, requestId: String)
+    case processingStopped(status: String, requestId: String)
+    case processingTimedOut(status: String, requestId: String)
+
+    var diagnosticCode: String {
+        switch self {
+        case .invalidUploadCapability:
+            return "MEDIA_UPLOAD_CAPABILITY_INVALID"
+        case .uploadCapabilityRecoveryFailed:
+            return "MEDIA_UPLOAD_CAPABILITY_RECOVERY_FAILED"
+        case .transportInvalidResponse(let phase):
+            return "MEDIA_\(phase.uppercased())_RESPONSE_INVALID"
+        case .signedUploadRejected(let statusCode, let providerCode):
+            let providerSuffix = providerCode.flatMap(Self.safeDiagnosticComponent)
+                .map { "_\($0)" } ?? ""
+            return "MEDIA_SIGNED_PUT_HTTP_\(statusCode)\(providerSuffix)"
+        case .missingUploadEntityTag:
+            return "MEDIA_UPLOAD_ETAG_MISSING"
+        case .confirmationProjectionMismatch(let field, _):
+            return "MEDIA_CONFIRM_\(field.uppercased())_MISMATCH"
+        case .bindingProjectionMismatch(let field, _):
+            return "MEDIA_BIND_\(field.uppercased())_MISMATCH"
+        case .statusProjectionMismatch(let field, _):
+            return "MEDIA_STATUS_\(field.uppercased())_MISMATCH"
+        case .processingStopped(let status, _):
+            return "MEDIA_PROCESSING_STOPPED_\(status.uppercased())"
+        case .processingTimedOut(let status, _):
+            return "MEDIA_PROCESSING_TIMEOUT_\(status.uppercased())"
+        }
+    }
+
+    private static func safeDiagnosticComponent(_ value: String) -> String? {
+        let normalized = value.uppercased().map { character in
+            character.isLetter || character.isNumber ? character : "_"
+        }
+        let component = String(normalized.prefix(64))
+        return component.isEmpty ? nil : component
+    }
+
+    var requestId: String? {
+        switch self {
+        case .invalidUploadCapability(let requestId):
+            return requestId
+        case .uploadCapabilityRecoveryFailed(let requestId):
+            return requestId
+        case .transportInvalidResponse, .signedUploadRejected:
+            return nil
+        case .missingUploadEntityTag:
+            return nil
+        case .confirmationProjectionMismatch(_, let requestId):
+            return requestId
+        case .bindingProjectionMismatch(_, let requestId):
+            return requestId
+        case .statusProjectionMismatch(_, let requestId),
+             .processingStopped(_, let requestId),
+             .processingTimedOut(_, let requestId):
+            return requestId
+        }
+    }
+}
+
 struct EphemeralMediaAccess: Equatable {
     let mediaID: String
     let url: URL
@@ -337,6 +406,8 @@ actor MediaUploadCoordinator {
         let response: APIResponse<APIV1MediaEvidence>
         let initiateScope: String
         let confirmScope: String
+        let effectiveIdempotencyKeySeed: String?
+        let requiresBinding: Bool
     }
 
     private let client: StudentAPIClient
@@ -401,24 +472,76 @@ actor MediaUploadCoordinator {
         )
         let confirmed = confirmedUpload.response
 
+        if !confirmedUpload.requiresBinding {
+            await intents.clear(scope: confirmedUpload.initiateScope)
+            await intents.clear(scope: confirmedUpload.confirmScope)
+            return MediaUploadOutcome(media: confirmed.value, requestId: confirmed.requestId)
+        }
+
         let mediaID = try APIPath.component(confirmed.value.id)
         let bind = APIV1BindMediaRequest(
             sessionId: sessionID,
             expectedVersion: confirmed.value.version
         )
         let bindScope = "media:bind:\(mediaID)"
-        let bound: APIResponse<APIV1MediaEvidence> = try await auth.sendAuthorized(APIRequest(
-            operationID: "bindMediaEvidence",
-            method: .post,
-            path: "media/\(mediaID)/bind",
-            body: try APIRequest.jsonBody(bind),
-            idempotencyKey: try await idempotencyKey(
-                seed: idempotencyKeySeed,
-                phase: "bind",
-                scope: bindScope,
-                fingerprint: IntentFingerprint.make(bind)
+        let bound: APIResponse<APIV1MediaEvidence> = try await pipelinePhase("BIND") {
+            try await auth.sendAuthorized(APIRequest(
+                operationID: "bindMediaEvidence",
+                method: .post,
+                path: "media/\(mediaID)/bind",
+                body: try APIRequest.jsonBody(bind),
+                idempotencyKey: try await idempotencyKey(
+                    seed: confirmedUpload.effectiveIdempotencyKeySeed,
+                    phase: "bind",
+                    scope: bindScope,
+                    fingerprint: IntentFingerprint.make(bind)
+                )
+            ))
+        }
+        guard bound.value.id == confirmed.value.id else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "media_id",
+                requestId: bound.requestId
             )
-        ))
+        }
+        guard bound.value.ownerStudentId == confirmed.value.ownerStudentId else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "owner_student_id",
+                requestId: bound.requestId
+            )
+        }
+        guard bound.value.sessionId == sessionID else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "session_id",
+                requestId: bound.requestId
+            )
+        }
+        guard bound.value.businessPurpose == request.businessPurpose else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "business_purpose",
+                requestId: bound.requestId
+            )
+        }
+        guard bound.value.mediaType == request.mediaType else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "media_type",
+                requestId: bound.requestId
+            )
+        }
+        guard bound.value.captureSource.rawValue == request.captureSource.rawValue else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "capture_source",
+                requestId: bound.requestId
+            )
+        }
+        guard bound.value.uploadStatus == .bound ||
+                bound.value.uploadStatus == .processing ||
+                bound.value.uploadStatus == .available else {
+            throw MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "upload_status",
+                requestId: bound.requestId
+            )
+        }
         await intents.clear(scope: confirmedUpload.initiateScope)
         await intents.clear(scope: confirmedUpload.confirmScope)
         await intents.clear(scope: bindScope)
@@ -487,75 +610,277 @@ actor MediaUploadCoordinator {
 
         let targetID = request.sessionId ?? request.enrollmentId ?? ""
         let initiateScope = "media:initiate:\(request.businessPurpose.rawValue):\(targetID)"
-        let initiateKey = try await idempotencyKey(
-            seed: idempotencyKeySeed,
-            phase: "initiate",
-            scope: initiateScope,
-            fingerprint: IntentFingerprint.make(request)
+        var effectiveSeed = idempotencyKeySeed
+        var initiated = try await initiateUpload(
+            request,
+            seed: effectiveSeed,
+            scope: initiateScope
         )
-        let initiated: APIResponse<APIV1MediaUploadSession> = try await auth.sendAuthorized(APIRequest(
-            operationID: "initiateMediaUpload",
-            method: .post,
-            path: "media-uploads",
-            body: try APIRequest.jsonBody(request),
-            idempotencyKey: initiateKey
-        ))
+        var renewalCount = 0
+        while Self.uploadCapabilityIsExpired(initiated.value.expiresAt) {
+            if let recovered = try await recoverExpiredUpload(
+                initiated,
+                request: request,
+                initiateScope: initiateScope,
+                effectiveSeed: effectiveSeed
+            ) {
+                return recovered
+            }
+            guard renewalCount < 2 else {
+                throw MediaUploadPipelineError.uploadCapabilityRecoveryFailed(
+                    requestId: initiated.requestId
+                )
+            }
+            effectiveSeed = Self.renewalSeed(
+                previousSeed: effectiveSeed,
+                expiredUploadSessionID: initiated.value.uploadSessionId
+            )
+            initiated = try await initiateUpload(
+                request,
+                seed: effectiveSeed,
+                scope: initiateScope
+            )
+            renewalCount += 1
+        }
 
         guard let uploadURL = URL(string: initiated.value.uploadUrl),
               let uploadMethod = HTTPMethod(rawValue: initiated.value.uploadMethod),
               uploadMethod == .put else {
-            throw APITransportError.invalidResponse
+            throw MediaUploadPipelineError.invalidUploadCapability(
+                requestId: initiated.requestId
+            )
         }
         let uploadResponse: HTTPURLResponse
-        switch payload {
-        case .data(let bytes):
-            uploadResponse = try await client.upload(
-                to: uploadURL,
-                data: bytes,
-                method: uploadMethod,
-                requiredHeaders: initiated.value.requiredHeaders,
-                progressHandler: progressHandler
+        do {
+            switch payload {
+            case .data(let bytes):
+                uploadResponse = try await client.upload(
+                    to: uploadURL,
+                    data: bytes,
+                    method: uploadMethod,
+                    requiredHeaders: initiated.value.requiredHeaders,
+                    progressHandler: progressHandler
+                )
+            case .file(let fileURL):
+                uploadResponse = try await client.upload(
+                    to: uploadURL,
+                    fileURL: fileURL,
+                    method: uploadMethod,
+                    requiredHeaders: initiated.value.requiredHeaders,
+                    progressHandler: progressHandler
+                )
+            }
+        } catch let error as SignedUploadHTTPFailure {
+            throw MediaUploadPipelineError.signedUploadRejected(
+                statusCode: error.statusCode,
+                providerCode: error.providerCode
             )
-        case .file(let fileURL):
-            uploadResponse = try await client.upload(
-                to: uploadURL,
-                fileURL: fileURL,
-                method: uploadMethod,
-                requiredHeaders: initiated.value.requiredHeaders,
-                progressHandler: progressHandler
-            )
+        } catch let error as APITransportError {
+            switch error {
+            case .invalidResponse:
+                throw MediaUploadPipelineError.transportInvalidResponse(phase: "SIGNED_PUT")
+            case .undecodableFailure(let statusCode, _):
+                throw MediaUploadPipelineError.signedUploadRejected(
+                    statusCode: statusCode,
+                    providerCode: nil
+                )
+            case .invalidRequest, .malformedSuccessEnvelope, .requestIdMismatch, .failure, .network:
+                throw error
+            }
         }
         guard let etag = uploadResponse.value(forHTTPHeaderField: "ETag"), !etag.isEmpty else {
-            throw APITransportError.invalidResponse
+            throw MediaUploadPipelineError.missingUploadEntityTag
         }
 
         let uploadSessionID = try APIPath.component(initiated.value.uploadSessionId)
         let confirm = APIV1ConfirmMediaUploadRequest(etag: etag)
         let confirmScope = "media:confirm:\(uploadSessionID)"
-        let confirmed: APIResponse<APIV1MediaEvidence> = try await auth.sendAuthorized(APIRequest(
-            operationID: "confirmMediaUpload",
-            method: .post,
-            path: "media-uploads/\(uploadSessionID)/confirm",
-            body: try APIRequest.jsonBody(confirm),
-            idempotencyKey: try await idempotencyKey(
-                seed: idempotencyKeySeed,
-                phase: "confirm",
-                scope: confirmScope,
-                fingerprint: IntentFingerprint.make(confirm)
+        let confirmed: APIResponse<APIV1MediaEvidence> = try await pipelinePhase("CONFIRM") {
+            try await auth.sendAuthorized(APIRequest(
+                operationID: "confirmMediaUpload",
+                method: .post,
+                path: "media-uploads/\(uploadSessionID)/confirm",
+                body: try APIRequest.jsonBody(confirm),
+                idempotencyKey: try await idempotencyKey(
+                    seed: effectiveSeed,
+                    phase: "confirm",
+                    scope: confirmScope,
+                    fingerprint: IntentFingerprint.make(confirm)
+                )
+            ))
+        }
+        guard confirmed.value.id == initiated.value.mediaId else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "media_id",
+                requestId: confirmed.requestId
             )
-        ))
-        guard confirmed.value.businessPurpose == request.businessPurpose,
-              confirmed.value.sessionId == request.sessionId,
-              confirmed.value.enrollmentId == request.enrollmentId,
-              confirmed.value.captureSource.rawValue == request.captureSource.rawValue else {
-            throw APITransportError.invalidResponse
+        }
+        guard confirmed.value.businessPurpose == request.businessPurpose else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "business_purpose",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.sessionId == request.sessionId else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "session_id",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.enrollmentId == request.enrollmentId else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "enrollment_id",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.captureSource.rawValue == request.captureSource.rawValue else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "capture_source",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.mediaType == request.mediaType else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "media_type",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.declaredMimeType.lowercased() == request.mimeType.lowercased() else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "declared_mime_type",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.declaredFileSizeBytes == request.fileSizeBytes else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "declared_file_size",
+                requestId: confirmed.requestId
+            )
+        }
+        guard confirmed.value.uploadStatus == .uploaded else {
+            throw MediaUploadPipelineError.confirmationProjectionMismatch(
+                field: "upload_status",
+                requestId: confirmed.requestId
+            )
         }
 
         return ConfirmedUpload(
             response: confirmed,
             initiateScope: initiateScope,
-            confirmScope: confirmScope
+            confirmScope: confirmScope,
+            effectiveIdempotencyKeySeed: effectiveSeed,
+            requiresBinding: true
         )
+    }
+
+    private func initiateUpload(
+        _ request: APIV1InitiateMediaUploadRequest,
+        seed: String?,
+        scope: String
+    ) async throws -> APIResponse<APIV1MediaUploadSession> {
+        let key = try await idempotencyKey(
+            seed: seed,
+            phase: "initiate",
+            scope: scope,
+            fingerprint: IntentFingerprint.make(request)
+        )
+        return try await pipelinePhase("INITIATE") {
+            try await auth.sendAuthorized(APIRequest(
+                operationID: "initiateMediaUpload",
+                method: .post,
+                path: "media-uploads",
+                body: try APIRequest.jsonBody(request),
+                idempotencyKey: key
+            ))
+        }
+    }
+
+    private func recoverExpiredUpload(
+        _ initiated: APIResponse<APIV1MediaUploadSession>,
+        request: APIV1InitiateMediaUploadRequest,
+        initiateScope: String,
+        effectiveSeed: String?
+    ) async throws -> ConfirmedUpload? {
+        let media: APIResponse<APIV1MediaEvidence>
+        do {
+            media = try await status(mediaID: initiated.value.mediaId)
+        } catch let error as APITransportError {
+            if error.statusCode == 404 { return nil }
+            throw error
+        }
+        try validateRecoveredMedia(media, initiated: initiated, request: request)
+        let confirmScope = "media:confirm:\(initiated.value.uploadSessionId)"
+        switch media.value.uploadStatus {
+        case .uploaded:
+            return ConfirmedUpload(
+                response: media,
+                initiateScope: initiateScope,
+                confirmScope: confirmScope,
+                effectiveIdempotencyKeySeed: effectiveSeed,
+                requiresBinding: true
+            )
+        case .bound, .processing, .available:
+            return ConfirmedUpload(
+                response: media,
+                initiateScope: initiateScope,
+                confirmScope: confirmScope,
+                effectiveIdempotencyKeySeed: effectiveSeed,
+                requiresBinding: false
+            )
+        case .pendingUpload, .failed, .deleted:
+            return nil
+        }
+    }
+
+    private func validateRecoveredMedia(
+        _ media: APIResponse<APIV1MediaEvidence>,
+        initiated: APIResponse<APIV1MediaUploadSession>,
+        request: APIV1InitiateMediaUploadRequest
+    ) throws {
+        let checks: [(Bool, String)] = [
+            (media.value.id == initiated.value.mediaId, "media_id"),
+            (media.value.sessionId == request.sessionId, "session_id"),
+            (media.value.enrollmentId == request.enrollmentId, "enrollment_id"),
+            (media.value.businessPurpose == request.businessPurpose, "business_purpose"),
+            (media.value.mediaType == request.mediaType, "media_type"),
+            (media.value.captureSource.rawValue == request.captureSource.rawValue, "capture_source")
+        ]
+        if let failed = checks.first(where: { !$0.0 }) {
+            throw MediaUploadPipelineError.statusProjectionMismatch(
+                field: failed.1,
+                requestId: media.requestId
+            )
+        }
+    }
+
+    private func pipelinePhase<Value>(
+        _ phase: String,
+        operation: () async throws -> Value
+    ) async throws -> Value {
+        do {
+            return try await operation()
+        } catch let error as APITransportError {
+            if case .invalidResponse = error {
+                throw MediaUploadPipelineError.transportInvalidResponse(phase: phase)
+            }
+            throw error
+        }
+    }
+
+    private static func uploadCapabilityIsExpired(_ value: String, now: Date = Date()) -> Bool {
+        guard let expiry = StudentRecordTimeDisplay.instant(from: value) else { return true }
+        return expiry <= now.addingTimeInterval(5)
+    }
+
+    private static func renewalSeed(
+        previousSeed: String?,
+        expiredUploadSessionID: String
+    ) -> String {
+        let material = "\(previousSeed ?? "unseeded"):\(expiredUploadSessionID)"
+        let digest = SHA256.hash(data: Data(material.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return "ios-media-renew-\(digest)"
     }
 
     private func idempotencyKey(

@@ -2255,7 +2255,7 @@ final class BackendFoundationTests: XCTestCase {
                 return .json(
                     status: 201,
                     headers: ["X-Request-ID": "req-media-init"],
-                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2026-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
+                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
                 )
             case "/private/upload":
                 XCTAssertEqual(request.httpMethod, "PUT")
@@ -2274,7 +2274,13 @@ final class BackendFoundationTests: XCTestCase {
                 return .json(
                     status: 200,
                     headers: ["X-Request-ID": "req-media-bind"],
-                    body: Self.mediaEnvelopeJSON(status: "AVAILABLE", requestID: "req-media-bind")
+                    body: Self.mediaEnvelopeJSON(status: "BOUND", requestID: "req-media-bind")
+                )
+            case "/api/v1/media/media-1":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-available"],
+                    body: Self.mediaEnvelopeJSON(status: "AVAILABLE", requestID: "req-media-available")
                 )
             default:
                 return .json(status: 404, headers: ["X-Request-ID": "req-404"], body: Self.errorJSON(code: "MEDIA_NOT_FOUND", requestID: "req-404"))
@@ -2301,7 +2307,7 @@ final class BackendFoundationTests: XCTestCase {
             progressHandler: { uploadProgress.record($0) }
         )
 
-        XCTAssertEqual(outcome.media.uploadStatus, .available)
+        XCTAssertEqual(outcome.media.uploadStatus, .bound)
         XCTAssertEqual(outcome.requestId, "req-media-bind")
         XCTAssertEqual(uploadedBytes, bytes)
         XCTAssertEqual(uploadProgress.values.first, APIUploadProgress(bytesSent: 0, totalBytes: 4))
@@ -2313,6 +2319,291 @@ final class BackendFoundationTests: XCTestCase {
             "POST /api/v1/media-uploads/upload-session-1/confirm",
             "POST /api/v1/media/media-1/bind"
         ])
+    }
+
+    func testMediaPipelineRenewsAnExpiredReplayedUploadCapability() async throws {
+        let store = MemoryAuthSessionStore(
+            session: Self.authSession(access: "media-access", refresh: "media-refresh")
+        )
+        let lock = NSLock()
+        var initiationCount = 0
+        var initiationKeys: [String] = []
+        var paths: [String] = []
+        let session = makeSession { request in
+            lock.lock()
+            paths.append(request.url?.path ?? "")
+            lock.unlock()
+            switch request.url?.path {
+            case "/api/v1/media-uploads":
+                lock.lock()
+                initiationCount += 1
+                let currentCount = initiationCount
+                if let key = request.value(forHTTPHeaderField: "Idempotency-Key") {
+                    initiationKeys.append(key)
+                }
+                lock.unlock()
+                if currentCount == 1 {
+                    return .json(
+                        status: 201,
+                        headers: ["X-Request-ID": "req-media-init-expired"],
+                        body: #"{"data":{"uploadSessionId":"upload-session-expired","mediaId":"media-expired","uploadUrl":"https://private-upload.example.test/private/expired","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2020-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init-expired"}}"#
+                    )
+                }
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-media-init-renewed"],
+                    body: #"{"data":{"uploadSessionId":"upload-session-renewed","mediaId":"media-renewed","uploadUrl":"https://private-upload.example.test/private/renewed","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init-renewed"}}"#
+                )
+            case "/api/v1/media/media-expired":
+                let pending = Self.mediaEnvelopeJSON(
+                    status: "PENDING_UPLOAD",
+                    requestID: "req-media-expired-status"
+                ).replacingOccurrences(of: #""id":"media-1""#, with: #""id":"media-expired""#)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-expired-status"],
+                    body: pending
+                )
+            case "/private/renewed":
+                return .json(status: 200, headers: ["ETag": "etag-renewed"], body: "{}")
+            case "/api/v1/media-uploads/upload-session-renewed/confirm":
+                let uploaded = Self.mediaEnvelopeJSON(
+                    status: "UPLOADED",
+                    requestID: "req-media-confirm-renewed"
+                ).replacingOccurrences(of: #""id":"media-1""#, with: #""id":"media-renewed""#)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-confirm-renewed"],
+                    body: uploaded
+                )
+            case "/api/v1/media/media-renewed/bind":
+                let bound = Self.mediaEnvelopeJSON(
+                    status: "BOUND",
+                    requestID: "req-media-bind-renewed"
+                ).replacingOccurrences(of: #""id":"media-1""#, with: #""id":"media-renewed""#)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-bind-renewed"],
+                    body: bound
+                )
+            default:
+                XCTFail("Unexpected expired-capability recovery route: \(request.url?.path ?? "")")
+                return .json(status: 404, headers: [:], body: "{}")
+            }
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let coordinator = MediaUploadCoordinator(client: client, auth: auth)
+
+        let outcome = try await coordinator.uploadAndBind(
+            bytes: Data([0xff, 0xd8, 0xff, 0xd9]),
+            request: Self.exerciseImageUploadRequest,
+            idempotencyKeySeed: "ios-expired-capability-test"
+        )
+
+        XCTAssertEqual(outcome.media.id, "media-renewed")
+        XCTAssertEqual(outcome.media.uploadStatus, .bound)
+        XCTAssertEqual(initiationKeys.count, 2)
+        XCTAssertEqual(Set(initiationKeys).count, 2)
+        XCTAssertEqual(paths, [
+            "/api/v1/media-uploads",
+            "/api/v1/media/media-expired",
+            "/api/v1/media-uploads",
+            "/private/renewed",
+            "/api/v1/media-uploads/upload-session-renewed/confirm",
+            "/api/v1/media/media-renewed/bind"
+        ])
+    }
+
+    func testMediaPipelineClassifiesMissingUploadEntityTag() async throws {
+        let store = MemoryAuthSessionStore(
+            session: Self.authSession(access: "media-access", refresh: "media-refresh")
+        )
+        let session = makeSession { request in
+            switch request.url?.path {
+            case "/api/v1/media-uploads":
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-media-init"],
+                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
+                )
+            case "/private/upload":
+                return .json(status: 200, headers: [:], body: "{}")
+            default:
+                XCTFail("Missing ETag must stop before confirmation")
+                return .json(status: 404, headers: [:], body: "{}")
+            }
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let coordinator = MediaUploadCoordinator(client: client, auth: auth)
+
+        do {
+            _ = try await coordinator.uploadAndBind(
+                bytes: Data([0xff, 0xd8, 0xff, 0xd9]),
+                request: Self.exerciseImageUploadRequest
+            )
+            XCTFail("A signed PUT response without ETag must be rejected")
+        } catch let error as MediaUploadPipelineError {
+            XCTAssertEqual(error, .missingUploadEntityTag)
+            XCTAssertEqual(error.diagnosticCode, "MEDIA_UPLOAD_ETAG_MISSING")
+            XCTAssertNil(error.requestId)
+        }
+    }
+
+    func testMediaPipelineExtractsSafeObjectStorageRejectionCode() async throws {
+        let store = MemoryAuthSessionStore(
+            session: Self.authSession(access: "media-access", refresh: "media-refresh")
+        )
+        let session = makeSession { request in
+            switch request.url?.path {
+            case "/api/v1/media-uploads":
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-media-init"],
+                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
+                )
+            case "/private/upload":
+                return StubHTTPResponse(
+                    status: 403,
+                    headers: ["Content-Type": "application/xml"],
+                    data: Data(
+                        "<Error><Code>SignatureDoesNotMatch</Code><Message>sensitive</Message></Error>".utf8
+                    )
+                )
+            default:
+                XCTFail("A rejected signed PUT must stop before confirmation")
+                return .json(status: 404, headers: [:], body: "{}")
+            }
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let coordinator = MediaUploadCoordinator(client: client, auth: auth)
+
+        do {
+            _ = try await coordinator.uploadAndBind(
+                bytes: Data([0xff, 0xd8, 0xff, 0xd9]),
+                request: Self.exerciseImageUploadRequest
+            )
+            XCTFail("A signed PUT HTTP 403 must be rejected")
+        } catch let error as MediaUploadPipelineError {
+            XCTAssertEqual(
+                error,
+                .signedUploadRejected(
+                    statusCode: 403,
+                    providerCode: "SignatureDoesNotMatch"
+                )
+            )
+            XCTAssertEqual(
+                error.diagnosticCode,
+                "MEDIA_SIGNED_PUT_HTTP_403_SIGNATUREDOESNOTMATCH"
+            )
+            XCTAssertNil(error.requestId)
+        }
+    }
+
+    func testMediaPipelineClassifiesConfirmationProjectionMismatch() async throws {
+        let store = MemoryAuthSessionStore(
+            session: Self.authSession(access: "media-access", refresh: "media-refresh")
+        )
+        let session = makeSession { request in
+            switch request.url?.path {
+            case "/api/v1/media-uploads":
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-media-init"],
+                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-06T01:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
+                )
+            case "/private/upload":
+                return .json(status: 200, headers: ["ETag": "etag-private-1"], body: "{}")
+            case "/api/v1/media-uploads/upload-session-1/confirm":
+                let mismatched = Self.mediaEnvelopeJSON(
+                    status: "UPLOADED",
+                    requestID: "req-media-confirm"
+                ).replacingOccurrences(
+                    of: #""sessionId":"exercise-session-1""#,
+                    with: #""sessionId":"another-session""#
+                )
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-confirm"],
+                    body: mismatched
+                )
+            default:
+                XCTFail("Projection mismatch must stop before binding")
+                return .json(status: 404, headers: [:], body: "{}")
+            }
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let coordinator = MediaUploadCoordinator(client: client, auth: auth)
+
+        do {
+            _ = try await coordinator.uploadAndBind(
+                bytes: Data([0xff, 0xd8, 0xff, 0xd9]),
+                request: Self.exerciseImageUploadRequest
+            )
+            XCTFail("A mismatched media confirmation target must be rejected")
+        } catch let error as MediaUploadPipelineError {
+            XCTAssertEqual(
+                error,
+                .confirmationProjectionMismatch(
+                    field: "session_id",
+                    requestId: "req-media-confirm"
+                )
+            )
+            XCTAssertEqual(error.diagnosticCode, "MEDIA_CONFIRM_SESSION_ID_MISMATCH")
+            XCTAssertEqual(error.requestId, "req-media-confirm")
+        }
+    }
+
+    func testMediaPipelineDiagnosticCodesIncludeStatusAndProcessingStage() {
+        XCTAssertEqual(
+            MediaUploadPipelineError.statusProjectionMismatch(
+                field: "session_id",
+                requestId: "req-media-status"
+            ).diagnosticCode,
+            "MEDIA_STATUS_SESSION_ID_MISMATCH"
+        )
+        XCTAssertEqual(
+            MediaUploadPipelineError.bindingProjectionMismatch(
+                field: "upload_status",
+                requestId: "req-media-bind"
+            ).diagnosticCode,
+            "MEDIA_BIND_UPLOAD_STATUS_MISMATCH"
+        )
+        XCTAssertEqual(
+            MediaUploadPipelineError.processingStopped(
+                status: "FAILED",
+                requestId: "req-media-failed"
+            ).diagnosticCode,
+            "MEDIA_PROCESSING_STOPPED_FAILED"
+        )
+        XCTAssertEqual(
+            MediaUploadPipelineError.processingTimedOut(
+                status: "PROCESSING",
+                requestId: "req-media-timeout"
+            ).diagnosticCode,
+            "MEDIA_PROCESSING_TIMEOUT_PROCESSING"
+        )
+        XCTAssertEqual(
+            MediaUploadPipelineError.signedUploadRejected(
+                statusCode: 403,
+                providerCode: nil
+            ).diagnosticCode,
+            "MEDIA_SIGNED_PUT_HTTP_403"
+        )
+        XCTAssertEqual(
+            MediaUploadPipelineError.signedUploadRejected(
+                statusCode: 403,
+                providerCode: "SignatureDoesNotMatch"
+            ).diagnosticCode,
+            "MEDIA_SIGNED_PUT_HTTP_403_SIGNATUREDOESNOTMATCH"
+        )
     }
 
     func testSessionStartMapsQualificationAndBeijingWindowDenials() async throws {
@@ -2931,7 +3222,7 @@ final class BackendFoundationTests: XCTestCase {
                 return .json(
                     status: 201,
                     headers: ["X-Request-ID": "req-media-init"],
-                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/exercise-upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2026-08-14T02:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
+                    body: #"{"data":{"uploadSessionId":"upload-session-1","mediaId":"media-1","uploadUrl":"https://private-upload.example.test/private/exercise-upload","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-14T02:00:00Z"},"meta":{"requestId":"req-media-init"}}"#
                 )
             case "/private/exercise-upload":
                 XCTAssertEqual(Self.bodyData(from: request), Data([0xff, 0xd8, 0xff, 0xd9]))
@@ -2961,7 +3252,13 @@ final class BackendFoundationTests: XCTestCase {
                 return .json(
                     status: 200,
                     headers: ["X-Request-ID": "req-media-bind"],
-                    body: Self.mediaEnvelopeJSON(status: "AVAILABLE", requestID: "req-media-bind")
+                    body: Self.mediaEnvelopeJSON(status: "BOUND", requestID: "req-media-bind")
+                )
+            case "/api/v1/media/media-1":
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-media-available"],
+                    body: Self.mediaEnvelopeJSON(status: "AVAILABLE", requestID: "req-media-available")
                 )
             case "/api/v1/exercise-records/record-1/submit":
                 let body = (try? JSONSerialization.jsonObject(
@@ -3066,13 +3363,14 @@ final class BackendFoundationTests: XCTestCase {
         XCTAssertTrue(state.pendingRemoteMutationSummaries.isEmpty)
         XCTAssertEqual(mediaIdempotencyKeys.count, 3)
         XCTAssertEqual(Set(mediaIdempotencyKeys).count, 3)
-        XCTAssertEqual(Array(paths.suffix(7)), [
+        XCTAssertEqual(Array(paths.suffix(8)), [
             "/api/v1/exercise-records",
             "/api/v1/exercise-records",
             "/api/v1/media-uploads",
             "/private/exercise-upload",
             "/api/v1/media-uploads/upload-session-1/confirm",
             "/api/v1/media/media-1/bind",
+            "/api/v1/media/media-1",
             "/api/v1/exercise-records/record-1/submit"
         ])
     }
@@ -3094,7 +3392,7 @@ final class BackendFoundationTests: XCTestCase {
                 return .json(
                     status: 201,
                     headers: ["X-Request-ID": "req-exemption-media-init"],
-                    body: #"{"data":{"uploadSessionId":"exemption-upload-1","mediaId":"exemption-media-1","uploadUrl":"https://private-upload.example.test/private/exemption","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2026-08-07T10:00:00Z"},"meta":{"requestId":"req-exemption-media-init"}}"#
+                    body: #"{"data":{"uploadSessionId":"exemption-upload-1","mediaId":"exemption-media-1","uploadUrl":"https://private-upload.example.test/private/exemption","uploadMethod":"PUT","requiredHeaders":{"Content-Type":"image/jpeg"},"expiresAt":"2099-08-07T10:00:00Z"},"meta":{"requestId":"req-exemption-media-init"}}"#
                 )
             case "/private/exemption":
                 return .json(status: 200, headers: ["ETag": "etag-exemption-1"], body: "{}")
@@ -3507,6 +3805,18 @@ final class BackendFoundationTests: XCTestCase {
         {"data":{"id":"media-1","organizationId":"org-1","ownerStudentId":"student-1","sessionId":"exercise-session-1","enrollmentId":null,"recordId":null,"businessPurpose":"EXERCISE_RECORD","mediaType":"IMAGE","declaredMimeType":"image/jpeg","verifiedMimeType":"image/jpeg","declaredFileSizeBytes":4,"verifiedFileSizeBytes":4,"captureSource":"IN_APP_CAMERA","uploadStatus":"\(status)","uploadedAt":"2026-08-06T00:00:00Z","boundAt":null,"declaredContentSha256":null,"verifiedContentSha256":null,"declaredDurationSeconds":null,"verifiedDurationSeconds":null,"version":1},"meta":{"requestId":"\(requestID)"}}
         """
     }
+
+    private static let exerciseImageUploadRequest = APIV1InitiateMediaUploadRequest(
+        sessionId: "exercise-session-1",
+        enrollmentId: nil,
+        businessPurpose: .exerciseRecord,
+        mediaType: .image,
+        mimeType: "image/jpeg",
+        fileSizeBytes: 4,
+        captureSource: .inAppCamera,
+        declaredContentSha256: nil,
+        durationSeconds: nil
+    )
 
     private static func exemptionMediaEnvelopeJSON(requestID: String) -> String {
         """

@@ -84,6 +84,15 @@ struct APIUploadProgress: Equatable, Sendable {
     }
 }
 
+/// A private object-storage rejection is not a Backend error envelope and has
+/// no Backend requestId. Retain only the HTTP status and the provider's short,
+/// non-sensitive machine code; never retain the response message, signed URL,
+/// storage key or request signature.
+struct SignedUploadHTTPFailure: Error, Equatable {
+    let statusCode: Int
+    let providerCode: String?
+}
+
 private final class APIUploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let progressHandler: @Sendable (APIUploadProgress) -> Void
 
@@ -306,12 +315,19 @@ struct StudentAPIClient: @unchecked Sendable {
         progressHandler(APIUploadProgress(bytesSent: 0, totalBytes: totalBytes))
         let delegate = APIUploadProgressDelegate(progressHandler: progressHandler)
         do {
-            let (_, response) = try await urlSession.upload(for: request, from: data, delegate: delegate)
+            let (responseData, response) = try await urlSession.upload(
+                for: request,
+                from: data,
+                delegate: delegate
+            )
             guard let response = response as? HTTPURLResponse else {
                 throw APITransportError.invalidResponse
             }
             guard (200...299).contains(response.statusCode) else {
-                throw APITransportError.undecodableFailure(statusCode: response.statusCode, requestId: nil)
+                throw SignedUploadHTTPFailure(
+                    statusCode: response.statusCode,
+                    providerCode: Self.signedUploadProviderCode(from: responseData)
+                )
             }
             progressHandler(APIUploadProgress(bytesSent: totalBytes, totalBytes: totalBytes))
             return response
@@ -350,7 +366,7 @@ struct StudentAPIClient: @unchecked Sendable {
         progressHandler(APIUploadProgress(bytesSent: 0, totalBytes: totalBytes))
         let delegate = APIUploadProgressDelegate(progressHandler: progressHandler)
         do {
-            let (_, response) = try await urlSession.upload(
+            let (responseData, response) = try await urlSession.upload(
                 for: request,
                 fromFile: fileURL,
                 delegate: delegate
@@ -359,9 +375,9 @@ struct StudentAPIClient: @unchecked Sendable {
                 throw APITransportError.invalidResponse
             }
             guard (200...299).contains(response.statusCode) else {
-                throw APITransportError.undecodableFailure(
+                throw SignedUploadHTTPFailure(
                     statusCode: response.statusCode,
-                    requestId: nil
+                    providerCode: Self.signedUploadProviderCode(from: responseData)
                 )
             }
             progressHandler(APIUploadProgress(bytesSent: totalBytes, totalBytes: totalBytes))
@@ -497,6 +513,31 @@ struct StudentAPIClient: @unchecked Sendable {
     static func isValidIdempotencyKey(_ value: String) -> Bool {
         let bytes = Array(value.utf8)
         return (1...128).contains(bytes.count) && bytes.allSatisfy { (0x21...0x7e).contains($0) }
+    }
+
+    private static func signedUploadProviderCode(from data: Data) -> String? {
+        guard !data.isEmpty,
+              data.count <= 64 * 1024,
+              let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        let patterns = [
+            #"<Code>\s*([A-Za-z0-9._-]{1,64})\s*</Code>"#,
+            #"\"(?:Code|code)\"\s*:\s*\"([A-Za-z0-9._-]{1,64})\""#
+        ]
+        for pattern in patterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(
+                    in: text,
+                    range: NSRange(text.startIndex..., in: text)
+                  ),
+                  match.numberOfRanges > 1,
+                  let range = Range(match.range(at: 1), in: text) else {
+                continue
+            }
+            return String(text[range])
+        }
+        return nil
     }
 }
 

@@ -4126,9 +4126,11 @@ final class AppState: ObservableObject {
             requestFields: requestFields,
             sourceProofs: proofAttachments
         )
+        var operationStage = BNBUL10n.text("准备打卡提交")
         errorMessage = nil
         do {
             try storePendingRemoteMutation(attempt)
+            operationStage = BNBUL10n.text("读取运动会话")
             let serverSession: APIV1ExerciseSession
             if let cached = backendExerciseSession, cached.id == localSession.id {
                 serverSession = cached
@@ -4150,28 +4152,32 @@ final class AppState: ObservableObject {
             var record: APIV1ExerciseRecord
             if let cached = backendExerciseRecord, cached.sessionId == serverSession.id {
                 record = cached
-            } else if let recovered = try await backendServices.exerciseRecords.findForSession(
-                sessionID: serverSession.id,
-                enrollmentID: serverSession.enrollmentId,
-                businessDate: serverSession.businessDate
-            ).value {
-                record = recovered
-                backendExerciseRecord = recovered
             } else {
-                guard let clientRequestID = attempt.requestFields["clientRequestId"] else {
-                    throw APITransportError.invalidRequest
+                operationStage = BNBUL10n.text("查询已有打卡记录")
+                if let recovered = try await backendServices.exerciseRecords.findForSession(
+                    sessionID: serverSession.id,
+                    enrollmentID: serverSession.enrollmentId,
+                    businessDate: serverSession.businessDate
+                ).value {
+                    record = recovered
+                    backendExerciseRecord = recovered
+                } else {
+                    guard let clientRequestID = attempt.requestFields["clientRequestId"] else {
+                        throw APITransportError.invalidRequest
+                    }
+                    operationStage = BNBUL10n.text("创建打卡草稿")
+                    record = try await backendServices.exerciseRecords.createDraft(
+                        APIV1CreateExerciseRecordRequest(
+                            sessionId: serverSession.id,
+                            creditType: creditType,
+                            sportType: sportType,
+                            sportName: sportName,
+                            description: description,
+                            clientRequestId: clientRequestID
+                        )
+                    ).value
+                    backendExerciseRecord = record
                 }
-                record = try await backendServices.exerciseRecords.createDraft(
-                    APIV1CreateExerciseRecordRequest(
-                        sessionId: serverSession.id,
-                        creditType: creditType,
-                        sportType: sportType,
-                        sportName: sportName,
-                        description: description,
-                        clientRequestId: clientRequestID
-                    )
-                ).value
-                backendExerciseRecord = record
             }
             guard Self.apiv1Record(
                 record,
@@ -4227,6 +4233,7 @@ final class AppState: ObservableObject {
                 }
                 let outcome: MediaUploadOutcome
                 let mediaIdempotencySeed = "\(attempt.idempotencyKey):\(index)"
+                operationStage = BNBUL10n.formatted("上传并绑定 %@", attachment.fileName)
                 if let bytes = attachment.uploadData {
                     outcome = try await backendServices.media.uploadAndBind(
                         bytes: bytes,
@@ -4244,21 +4251,26 @@ final class AppState: ObservableObject {
                 } else {
                     throw APIV1CheckInError.proofUnavailable(attachment.fileName)
                 }
-                guard outcome.media.uploadStatus == .available else {
-                    throw APIV1CheckInError.mediaNotReady(attachment.fileName)
-                }
+                operationStage = BNBUL10n.formatted("等待 %@ 完成媒体校验", attachment.fileName)
+                let availableMedia = try await awaitAvailableAPIV1ExerciseMedia(
+                    outcome.media,
+                    initialRequestID: outcome.requestId,
+                    attachment: attachment,
+                    sessionID: serverSession.id,
+                    expectedSessionEpoch: expectedSessionEpoch
+                )
                 guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
                 attempt.uploadedProofs.append(ProofAttachment(
-                    id: outcome.media.id,
+                    id: availableMedia.id,
                     type: attachment.type,
                     fileName: attachment.fileName,
                     byteCount: attachment.byteCount,
                     durationSeconds: attachment.durationSeconds,
                     hasAudioTrack: attachment.hasAudioTrack,
                     source: "Backend 2.0.2 media",
-                    cosKey: outcome.media.id,
-                    mimeType: outcome.media.verifiedMimeType ?? outcome.media.declaredMimeType,
-                    contentDigest: outcome.media.verifiedContentSha256 ?? attachment.contentDigest
+                    cosKey: availableMedia.id,
+                    mimeType: availableMedia.verifiedMimeType ?? availableMedia.declaredMimeType,
+                    contentDigest: availableMedia.verifiedContentSha256 ?? attachment.contentDigest
                 ))
                 try storePendingRemoteMutation(attempt)
             }
@@ -4271,6 +4283,7 @@ final class AppState: ObservableObject {
             attempt.markFinalMutationPrepared()
             try storePendingRemoteMutation(attempt)
             checkInSubmissionPhase = .submitting
+            operationStage = BNBUL10n.text("提交打卡记录")
             record = try await backendServices.exerciseRecords.submit(
                 recordID: record.id,
                 request: APIV1SubmitExerciseRecordRequest(
@@ -4306,10 +4319,85 @@ final class AppState: ObservableObject {
             if let transport = error as? APITransportError, transport.statusCode == 401 {
                 await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
             } else {
-                errorMessage = apiv1OperationMessage(for: error)
+                errorMessage = apiv1OperationMessage(for: error, stage: operationStage)
             }
             return false
         }
+    }
+
+    private func awaitAvailableAPIV1ExerciseMedia(
+        _ initialMedia: APIV1MediaEvidence,
+        initialRequestID: String,
+        attachment: ProofAttachment,
+        sessionID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> APIV1MediaEvidence {
+        var media = initialMedia
+        var requestID = initialRequestID
+        // Keep parity with Backend's synthetic closure test: 500 ms polling
+        // with a 60-second upper bound while the worker advances to AVAILABLE.
+        let maximumAttempts = 120
+        for attempt in 0..<maximumAttempts {
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else {
+                throw CancellationError()
+            }
+            let expectedType: APIV1MediaType = attachment.type == .image ? .image : .video
+            guard media.ownerStudentId == workspace.student.id else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "owner_student_id",
+                    requestId: requestID
+                )
+            }
+            guard media.sessionId == sessionID else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "session_id",
+                    requestId: requestID
+                )
+            }
+            guard media.businessPurpose == .exerciseRecord else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "business_purpose",
+                    requestId: requestID
+                )
+            }
+            guard media.mediaType == expectedType else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "media_type",
+                    requestId: requestID
+                )
+            }
+            guard media.captureSource == .inAppCamera else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "capture_source",
+                    requestId: requestID
+                )
+            }
+            if media.uploadStatus == .available {
+                return media
+            }
+            guard media.uploadStatus == .uploaded ||
+                    media.uploadStatus == .bound ||
+                    media.uploadStatus == .processing else {
+                throw MediaUploadPipelineError.processingStopped(
+                    status: media.uploadStatus.rawValue,
+                    requestId: requestID
+                )
+            }
+            guard attempt < maximumAttempts - 1 else {
+                throw MediaUploadPipelineError.processingTimedOut(
+                    status: media.uploadStatus.rawValue,
+                    requestId: requestID
+                )
+            }
+            try await Task.sleep(nanoseconds: 500_000_000)
+            let response = try await backendServices.media.status(mediaID: media.id)
+            media = response.value
+            requestID = response.requestId
+        }
+        throw MediaUploadPipelineError.processingTimedOut(
+            status: media.uploadStatus.rawValue,
+            requestId: requestID
+        )
     }
 
     private func finishAPIV1CheckInSubmission(
@@ -4461,13 +4549,38 @@ final class AppState: ObservableObject {
         return String(format: "%02d:%02d:%02d", seconds / 3_600, (seconds % 3_600) / 60, seconds % 60)
     }
 
-    private func apiv1OperationMessage(for error: Error) -> String {
+    private func apiv1OperationMessage(for error: Error, stage: String? = nil) -> String {
         if let typed = error as? APIV1CheckInError {
             return typed.localizedDescription
+        }
+        if let media = error as? MediaUploadPipelineError {
+            let requestIDSuffix = media.requestId.map { " (requestId: \($0))" } ?? ""
+            return BNBUL10n.formatted(
+                "媒体链路在“%@”阶段未通过合同校验（%@），已保留本次运动和上传进度。%@",
+                stage ?? BNBUL10n.text("上传运动凭证"),
+                media.diagnosticCode,
+                requestIDSuffix
+            )
         }
         if let transport = error as? APITransportError {
             if case .network = transport {
                 return BNBUL10n.text("当前网络不可用，已保留上传进度，请联网后重试。")
+            }
+            if let stage {
+                switch transport {
+                case .invalidResponse,
+                     .malformedSuccessEnvelope(_, _),
+                     .requestIdMismatch(_, _),
+                     .undecodableFailure(_, _):
+                    let requestIDSuffix = transport.requestId.map { " (requestId: \($0))" } ?? ""
+                    return BNBUL10n.formatted(
+                        "服务器在“%@”阶段返回了不一致的数据，已保留本次运动和上传进度。%@",
+                        stage,
+                        requestIDSuffix
+                    )
+                case .invalidRequest, .failure, .network:
+                    break
+                }
             }
             return transport.localizedDescription
         }
