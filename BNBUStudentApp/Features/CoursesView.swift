@@ -2,7 +2,9 @@ import SwiftUI
 
 struct CoursesView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
     @State private var historyExpanded = false
+    @State private var showCourseJoin = false
 
     var body: some View {
         ZStack {
@@ -18,6 +20,16 @@ struct CoursesView: View {
                         Text("每学期仅可选择一门课程")
                             .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.muted)
+                    }
+
+                    if currentCourses.isEmpty, pendingCourses.isEmpty {
+                        PrimaryActionButton(
+                            title: "扫码或输入邀请码",
+                            systemImage: "qrcode.viewfinder",
+                            accessibilityIdentifier: "courses.join.entry"
+                        ) {
+                            showCourseJoin = true
+                        }
                     }
 
                     if !pendingCourses.isEmpty {
@@ -87,7 +99,12 @@ struct CoursesView: View {
                 await appState.refreshRemoteWorkspace()
             }
         }
+        .id(locale.identifier)
         .accessibilityIdentifier("screen.courses")
+        .sheet(isPresented: $showCourseJoin) {
+            CourseJoinSheet()
+                .environmentObject(appState)
+        }
     }
 
     @ViewBuilder

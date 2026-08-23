@@ -216,10 +216,10 @@ struct HelpCenterView: View {
 
     private let entries = [
         HelpEntry(
-            category: "登录与密码",
-            question: "无法登录或忘记密码怎么办？",
-            answer: "请先确认学号和密码无误。当前 App 尚未接入忘记密码接口；需要重置时，请联系课程教师或系统管理员。",
-            keywords: ["账号", "学号", "邮箱", "重置", "锁定", "login", "password"]
+            category: "登录与账号",
+            question: "无法使用绑定邮箱怎么办？",
+            answer: "学生账号使用学校邮箱验证码登录，没有学生密码恢复流程。若原邮箱不可用，请联系任课教师或系统管理员，由学校线下核验身份后处理。",
+            keywords: ["账号", "学号", "邮箱", "验证码", "换绑", "login", "email"]
         ),
         HelpEntry(
             category: "运动打卡",
@@ -229,9 +229,9 @@ struct HelpCenterView: View {
         ),
         HelpEntry(
             category: "定位",
-            question: "为什么获取不到定位？",
-            answer: "请在 iPhone“设置 → 隐私与安全性 → 定位服务”中允许本 App 使用定位。定位失败不会阻止计时和提交，记录会显示为“未获取位置”。",
-            keywords: ["GPS", "权限", "室内", "位置", "location"]
+            question: "为什么定位功能未开放？",
+            answer: "当前正式版本不申请定位权限，也不采集或保存原始坐标。后端位置隐私策略和业务门禁获批前，运动计时与提交均不依赖定位。",
+            keywords: ["GPS", "权限", "位置", "隐私", "location"]
         ),
         HelpEntry(
             category: "凭证上传",
@@ -266,7 +266,7 @@ struct HelpCenterView: View {
         HelpEntry(
             category: "通知",
             question: "为什么收不到通知？",
-            answer: "请在 iPhone“设置 → 通知”中允许本 App 发送通知。通知不会包含姓名、具体成绩等个人信息；关键事项也可能通过学校邮箱送达。",
+            answer: "当前版本的业务消息仅在 App 内通知中心展示，不会申请 iOS 系统通知权限，也不会注册 APNs 或上传推送令牌。请进入首页通知中心查看最新消息；关键事项也可能通过学校邮箱送达。",
             keywords: ["推送", "提醒", "邮件", "APNs", "notification"]
         ),
         HelpEntry(
@@ -775,7 +775,10 @@ private struct OnboardingScreenshotPreview: View {
                     GeometryReader { proxy in
                         Capsule(style: .continuous)
                             .fill(BNBUTheme.primary)
-                            .frame(width: proxy.size.width * recordProgress)
+                            .frame(width: BNBUProgressGeometry.width(
+                                containerWidth: proxy.size.width,
+                                ratio: recordProgress
+                            ))
                     }
                 }
                 .animation(.easeInOut(duration: 0.45), value: animationStep)

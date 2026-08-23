@@ -3,10 +3,10 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var languageSettings: BNBULanguageSettings
+    @Environment(\.locale) private var locale
     @AppStorage(BNBUAppearanceMode.defaultsKey) private var appearanceModeRaw = BNBUAppearanceMode.light.rawValue
     @State private var showExemptionCenter = false
 
-    @State private var showEnduranceScoring = false
     @State private var showPendingDiscardConfirmation = false
     @State private var pendingScopeToDiscard: String?
     @State private var showAccountDetails = false
@@ -28,6 +28,7 @@ struct ProfileView: View {
                 .padding(BNBUSpacing.screen)
             }
         }
+        .id(locale.identifier)
         .sheet(isPresented: $showAccountDetails) {
             NavigationStack {
                 AccountDetailsView { showAccountDetails = false }
@@ -48,10 +49,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showExemptionCenter) {
             ExemptionCenterSheet()
-                .environmentObject(appState)
-        }
-        .sheet(isPresented: $showEnduranceScoring) {
-            EnduranceScoringSheet()
                 .environmentObject(appState)
         }
         .confirmationDialog(
@@ -171,24 +168,13 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle(eyebrow: "SERVICES", title: "常用服务")
 
-            HStack(alignment: .top, spacing: 12) {
-                ProfileServiceTile(
-                    title: "免测与免打卡",
-                    detail: "申请与进度",
-                    systemImage: "figure.strengthtraining.traditional",
-                    accessibilityIdentifier: "profile.exemption.button"
-                ) {
-                    showExemptionCenter = true
-                }
-
-                ProfileServiceTile(
-                    title: "耐力跑成绩换算",
-                    detail: "800m / 1000m",
-                    systemImage: "gauge.with.dots.needle.67percent",
-                    accessibilityIdentifier: "profile.endurance.button"
-                ) {
-                    showEnduranceScoring = true
-                }
+            ProfileServiceTile(
+                title: "免测与免打卡",
+                detail: "申请与进度",
+                systemImage: "figure.strengthtraining.traditional",
+                accessibilityIdentifier: "profile.exemption.button"
+            ) {
+                showExemptionCenter = true
             }
         }
     }
@@ -322,7 +308,7 @@ struct ProfileView: View {
                 ForEach(appState.workspace.memberships) { membership in
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("\(membership.typeTitle) · \(membership.organization)")
+                            Text(verbatim: "\(BNBUL10n.dynamicText(membership.typeTitle)) · \(membership.organization)")
                                 .font(BNBUFont.titleMedium)
                             Text("有效至 \(membership.validUntilText)")
                                 .font(BNBUFont.labelMedium)
@@ -332,7 +318,7 @@ struct ProfileView: View {
                                     text: membership.status,
                                     filled: membership.status == "有效" || membership.status == "认证有效"
                                 )
-                                Text("抵扣: \(membership.offset)")
+                                Text(verbatim: "\(BNBUL10n.text("抵扣")): \(BNBUL10n.dynamicText(membership.offset))")
                                     .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.primary)
                             }
@@ -480,7 +466,7 @@ private struct ExemptionCenterSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: appState.isRemoteMode
                         ? exemptionCenterText("申请说明", "Application information")
-                        : exemptionCenterText("演示数据", "Demo data"))
+                        : exemptionCenterText("Mock 本地申请", "Local Mock application"))
                         .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.primary)
                     Text(verbatim: exemptionCenterText(
@@ -497,10 +483,26 @@ private struct ExemptionCenterSheet: View {
                         .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !appState.isRemoteMode {
+                    if appState.isFullFeatureMockMode {
                         Text(verbatim: exemptionCenterText(
-                            "演示账号可查看申请状态，但不会伪造提交结果。正式提交请使用已连接服务器的学生账号。",
-                            "The demo account can preview application states but does not fake submissions. Use a server-connected student account to submit."
+                            "测试账号可以提交和补充材料，结果只保存在本机 Mock 数据中，不会写入真实审核队列。",
+                            "The test account can submit requests and supplements. Results stay in local Mock data and are not sent to a real review queue."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if appState.isAPIV1Session {
+                        Text(verbatim: exemptionCenterText(
+                            "当前已接入 Backend 免测申请；提交前会上传并校验证明材料，最终结果以后端返回为准。",
+                            "Backend exemption applications are connected. Proof is uploaded and validated before submission, and the server response remains authoritative."
+                        ))
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !appState.canSubmitExemptions {
+                        Text(verbatim: exemptionCenterText(
+                            "当前账号不能提交申请，请使用 Mock 运行方案或已连接服务器的学生账号。",
+                            "This account cannot submit. Use the Mock scheme or a server-connected student account."
                         ))
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -605,7 +607,7 @@ private struct ExemptionCenterSheet: View {
                 ) {
                     showApplicationForm = true
                 }
-                .disabled(appState.isSubmittingExemption)
+                .disabled(appState.isSubmittingExemption || !appState.canSubmitExemptions)
             }
         }
     }
@@ -704,7 +706,7 @@ private struct ExemptionCenterSheet: View {
                 }
             }
 
-            if application.status.canSupplement {
+            if application.status.canSupplement && appState.canSubmitExemptions {
                 PrimaryActionButton(
                     title: exemptionCenterText("补交证明材料", "Submit additional documents"),
                     systemImage: "arrow.up.doc.fill",
@@ -790,10 +792,28 @@ private struct EnduranceScoringSheet: View {
                                     .font(BNBUFont.bodySmall)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                                     .fixedSize(horizontal: false, vertical: true)
-                                if isPreview {
+                                if appState.isFullFeatureMockMode {
                                     Text(verbatim: enduranceText(
-                                        "演示账号仅用于查看界面，不能执行成绩换算。请使用已连接校园体育服务器的正式账号。",
-                                        "The demo account is for interface preview only and cannot calculate a score. Sign in with a server-connected student account."
+                                        "Mock 账号使用本地固定测试曲线，结果仅用于验证界面和流程，不代表正式评分标准。",
+                                        "The Mock account uses a fixed local test curve. Results validate the UI and flow only, not the official grading standard."
+                                    ))
+                                        .font(BNBUFont.bodySmall)
+                                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("endurance.mock.message")
+                                } else if appState.isAPIV1Session {
+                                    Text(verbatim: enduranceText(
+                                        "Backend 2.0.2 的运动项目与换算规则当前仍为稳定拒绝；本机不会使用旧接口或内置规则生成正式成绩。",
+                                        "Backend 2.0.2 currently keeps sport catalog and conversion rules in stable default-deny mode. This device will not use legacy endpoints or built-in rules to produce an official score."
+                                    ))
+                                        .font(BNBUFont.bodySmall)
+                                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .accessibilityIdentifier("endurance.availability.message")
+                                } else if isPreview {
+                                    Text(verbatim: enduranceText(
+                                        "当前账号不能执行成绩换算。请使用 Mock 运行方案或已连接校园体育服务器的正式账号。",
+                                        "This account cannot calculate a score. Use the Mock scheme or a server-connected student account."
                                     ))
                                         .font(BNBUFont.bodySmall)
                                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -892,7 +912,7 @@ private struct EnduranceScoringSheet: View {
     }
 
     private var isPreview: Bool {
-        !appState.isRemoteMode
+        !appState.canUseEnduranceCalculator
     }
 
     private var studentDemographic: String {

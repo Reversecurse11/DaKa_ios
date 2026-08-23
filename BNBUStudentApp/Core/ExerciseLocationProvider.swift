@@ -1,10 +1,9 @@
+#if BNBU_FIXTURES && DEBUG
 import CoreLocation
 import Foundation
 
-/// One-shot, best-effort location fetch for the start of an exercise session
-/// (business rules 5.5/10.3). Location is never required: denial, restriction,
-/// timeout or hardware failure all resolve to nil and the session simply
-/// carries "未获取位置". No continuous tracking is ever started.
+/// Debug-only permission-flow fixture. The 1.1 GPS contract is default-denied,
+/// so this type does not exist in production or staging binaries.
 @MainActor
 final class ExerciseLocationProvider: NSObject, CLLocationManagerDelegate {
     static let shared = ExerciseLocationProvider()
@@ -87,3 +86,4 @@ final class ExerciseLocationProvider: NSObject, CLLocationManagerDelegate {
         }
     }
 }
+#endif

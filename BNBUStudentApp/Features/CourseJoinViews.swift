@@ -3,10 +3,305 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Course join application entry (business rule 4.2). A student joins before
-/// signing in: scan the course QR code or type the invite code, confirm the
-/// course the invite resolves to, then supply identity details for the teacher
-/// to review. Only an approved application opens the main app.
+/// Contract 2.0.10 first-use path. A new student previews and joins a class
+/// before any normal Access Token exists; the resulting restricted session is
+/// allowed to bind email only and never opens the main tab shell directly.
+struct PreLoginCourseJoinView: View {
+    @EnvironmentObject private var appState: AppState
+    let onBackToLogin: () -> Void
+
+    @State private var inviteToken = ""
+    @State private var acceptedInviteToken = ""
+    @State private var preview: APIV1CourseInvitePreview?
+    @State private var fullName = ""
+    @State private var studentNumber = ""
+    @State private var gender: APIV1CourseJoinGender = .female
+    @State private var gradeYear = ""
+    @State private var isScannerPresented = false
+    @State private var activeAlert: CourseJoinScannerAlert?
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case invite
+        case fullName
+        case studentNumber
+        case gradeYear
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                BNBUPageBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+                        if let preview {
+                            identityForm(preview)
+                        } else {
+                            inviteEntry
+                        }
+
+                        if let message = appState.errorMessage {
+                            Text(verbatim: message)
+                                .font(BNBUFont.labelMedium)
+                                .foregroundStyle(BNBUTheme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("initialJoin.error")
+                        }
+                    }
+                    .frame(maxWidth: 560)
+                    .padding(BNBUSpacing.screen)
+                    .frame(maxWidth: .infinity)
+                }
+                .scrollDismissesKeyboard(.immediately)
+            }
+            .navigationTitle(preview == nil ? "加入课程" : "核对并入课")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(preview == nil ? "返回登录" : "上一步") {
+                        appState.errorMessage = nil
+                        if preview == nil {
+                            onBackToLogin()
+                        } else {
+                            self.preview = nil
+                            acceptedInviteToken = ""
+                        }
+                    }
+                    .accessibilityIdentifier("initialJoin.back")
+                }
+            }
+        }
+        .accessibilityIdentifier("screen.initialCourseJoin")
+        .fullScreenCover(isPresented: $isScannerPresented) {
+            CourseQRScannerView { payload in
+                isScannerPresented = false
+                handleScan(payload)
+            } onCancel: {
+                isScannerPresented = false
+            }
+            .ignoresSafeArea()
+        }
+        .alert(item: $activeAlert) { alert in
+            alert.alert(openSettings: openSettings)
+        }
+    }
+
+    private var inviteEntry: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+            SectionTitle(eyebrow: "COURSE", title: "先确认老师提供的课程")
+            Text("首次使用时，请先扫描课程二维码或输入邀请，再核对最少课程信息。此时不需要先登录邮箱。")
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .lineSpacing(3)
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Text("扫描课程二维码")
+                        .font(BNBUFont.titleMedium)
+                    Text("二维码只用于本次入课，请不要截图、转发或粘贴到聊天记录。")
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    PrimaryActionButton(
+                        title: "扫描二维码",
+                        systemImage: "qrcode.viewfinder",
+                        accessibilityIdentifier: "initialJoin.scan"
+                    ) {
+                        startScan()
+                    }
+                }
+            }
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Text("手动输入邀请")
+                        .font(BNBUFont.titleMedium)
+                    SecureField("老师提供的邀请", text: $inviteToken)
+                        .bnbuInputText()
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(BNBUTheme.surface)
+                        .bnbuOutlinedSurface(lineWidth: 1.5)
+                        .focused($focusedField, equals: .invite)
+                        .submitLabel(.done)
+                        .onSubmit { previewInvite() }
+                        .accessibilityIdentifier("initialJoin.invite.field")
+
+                    DisabledAwareButton(
+                        title: appState.isLoading ? "正在核对…" : "查看课程",
+                        systemImage: "arrow.right",
+                        isDisabled: appState.isLoading
+                            || inviteToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        accessibilityIdentifier: "initialJoin.preview"
+                    ) {
+                        previewInvite()
+                    }
+                }
+            }
+        }
+    }
+
+    private func identityForm(_ preview: APIV1CourseInvitePreview) -> some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+            SectionTitle(eyebrow: "CONFIRM", title: "核对课程与个人资料")
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    CourseJoinFact(label: "课程", value: "\(preview.courseCode) · \(preview.courseName)")
+                    Divider()
+                    CourseJoinFact(label: "教学班", value: preview.displayName)
+                    Divider()
+                    CourseJoinFact(label: "学期", value: preview.semesterDisplayName)
+                    Divider()
+                    CourseJoinFact(label: "任课教师", value: preview.teacherDisplayName)
+                }
+            }
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Text("学生资料")
+                        .font(BNBUFont.titleMedium)
+                    CourseJoinField(
+                        label: "姓名",
+                        text: $fullName,
+                        limit: 100,
+                        identifier: "initialJoin.fullName"
+                    )
+                    CourseJoinField(
+                        label: "学号",
+                        text: $studentNumber,
+                        limit: 32,
+                        identifier: "initialJoin.studentNumber"
+                    )
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("性别")
+                            .font(BNBUFont.labelMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        Picker("性别", selection: $gender) {
+                            Text("女").tag(APIV1CourseJoinGender.female)
+                            Text("男").tag(APIV1CourseJoinGender.male)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("initialJoin.gender")
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("入学年份")
+                            .font(BNBUFont.labelMedium)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        TextField("例如：2026", text: $gradeYear)
+                            .bnbuInputText()
+                            .keyboardType(.numberPad)
+                            .padding(12)
+                            .background(BNBUTheme.surface)
+                            .bnbuOutlinedSurface(lineWidth: 1)
+                            .focused($focusedField, equals: .gradeYear)
+                            .onChange(of: gradeYear) { _, value in
+                                gradeYear = String(value.filter(\.isNumber).prefix(4))
+                            }
+                            .accessibilityIdentifier("initialJoin.gradeYear")
+                    }
+                }
+            }
+
+            Text("提交后将先进入受限状态，只能完成学校邮箱绑定；邮箱验证成功后才会进入 App。")
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+
+            DisabledAwareButton(
+                title: appState.isLoading ? "正在加入…" : "确认加入并绑定邮箱",
+                systemImage: "person.badge.plus",
+                isDisabled: appState.isLoading || !profileIsValid,
+                accessibilityIdentifier: "initialJoin.join"
+            ) {
+                submitJoin(preview)
+            }
+        }
+    }
+
+    private var profileIsValid: Bool {
+        let name = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let number = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.count <= 100
+            && !number.isEmpty && number.count <= 32
+            && gradeYear.count == 4
+            && Int(gradeYear).map { (1000...9999).contains($0) } == true
+    }
+
+    private func previewInvite() {
+        focusedField = nil
+        appState.errorMessage = nil
+        guard let candidate = CourseInviteTokenRule.token(fromInput: inviteToken) else {
+            appState.errorMessage = CourseInviteTokenRule.validationMessage(for: inviteToken)
+                ?? BNBUL10n.text("邀请码格式不正确，请向老师获取新的邀请。")
+            return
+        }
+        Task { @MainActor in
+            guard let loaded = await appState.previewInitialCourseJoin(inviteToken: candidate) else { return }
+            acceptedInviteToken = candidate
+            preview = loaded
+            inviteToken = ""
+        }
+    }
+
+    private func submitJoin(_ preview: APIV1CourseInvitePreview) {
+        focusedField = nil
+        guard let year = Int(gradeYear) else { return }
+        Task { @MainActor in
+            _ = await appState.joinCourseBeforeLogin(
+                inviteToken: acceptedInviteToken,
+                preview: preview,
+                fullName: fullName,
+                studentNumber: studentNumber,
+                gender: gender,
+                gradeYear: year
+            )
+        }
+    }
+
+    private func startScan() {
+        appState.errorMessage = nil
+        guard CourseQRScannerView.isCameraAvailable else {
+            activeAlert = .unavailable
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            isScannerPresented = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                Task { @MainActor in
+                    activeAlert = granted ? nil : .denied
+                    isScannerPresented = granted
+                }
+            }
+        case .denied:
+            activeAlert = .denied
+        case .restricted:
+            activeAlert = .restricted
+        @unknown default:
+            activeAlert = .restricted
+        }
+    }
+
+    private func handleScan(_ payload: String) {
+        guard let token = CourseInviteTokenRule.token(fromScannedPayload: payload) else {
+            activeAlert = .unrecognized
+            return
+        }
+        inviteToken = token
+        previewInvite()
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
+/// Authenticated course join entry. The student's email must already be
+/// verified before scanning a QR code or entering an invitation code.
 struct CourseJoinSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
@@ -44,26 +339,16 @@ struct CourseJoinSheet: View {
                         },
                         onContinue: { name, studentNumber in
                             appState.errorMessage = nil
-                            step = .contactBinding(
-                                invite,
+                            guard appState.submitCourseJoinRequest(
+                                invite: invite,
                                 name: name,
-                                studentNumber: studentNumber
-                            )
+                                studentNumber: studentNumber,
+                                phone: "",
+                                email: appState.workspace.student.email
+                            ) else { return }
+                            step = .submitted
                         }
                     )
-                case let .contactBinding(invite, name, studentNumber):
-                    // Binding is not optional and has no way back: the student
-                    // has to be reachable before a teacher sees the request.
-                    ContactBindingView { phone, email in
-                        guard appState.submitCourseJoinRequest(
-                            invite: invite,
-                            name: name,
-                            studentNumber: studentNumber,
-                            phone: phone,
-                            email: email
-                        ) else { return }
-                        step = .submitted
-                    }
                 case .submitted:
                     JoinRequestStatusView(
                         request: appState.courseJoinRequest,
@@ -226,7 +511,6 @@ struct CourseJoinSheet: View {
 private enum CourseJoinStep: Hashable {
     case entry
     case confirm(CourseInvite)
-    case contactBinding(CourseInvite, name: String, studentNumber: String)
     case submitted
 }
 
@@ -338,32 +622,24 @@ struct CourseJoinConfirmView: View {
     }
 }
 
-/// Both contacts are bound before the application reaches the teacher: a
-/// student who reinstalls the app signs back in with a code sent to one of
-/// them, so registration is not complete until both are verified.
+/// Email is the only supported authentication contact. Phone/SMS binding is
+/// retired and must not be offered as an alternative.
 struct ContactBindingView: View {
     @EnvironmentObject private var appState: AppState
-    let onBound: (_ phone: String, _ email: String) -> Void
+    let onBound: (_ email: String) -> Void
 
-    @State private var phone = ""
     @State private var email = ""
-    @State private var verifiedPhone: String?
     @State private var verifiedEmail: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SectionTitle(eyebrow: "ACCOUNT", title: "绑定手机号和邮箱")
-                Text("退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。")
+                SectionTitle(eyebrow: "ACCOUNT", title: "验证学校邮箱")
+                Text("你已加入教学班，当前会话只能绑定学校邮箱。验证通过后才会进入 App。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
 
-                ContactChannelPanel(
-                    channel: .phone,
-                    value: $phone,
-                    verifiedValue: $verifiedPhone
-                )
                 ContactChannelPanel(
                     channel: .email,
                     value: $email,
@@ -371,13 +647,13 @@ struct ContactBindingView: View {
                 )
 
                 DisabledAwareButton(
-                    title: "提交加入申请",
-                    systemImage: "paperplane.fill",
-                    isDisabled: verifiedPhone == nil || verifiedEmail == nil,
+                    title: "完成并进入 App",
+                    systemImage: "checkmark.seal.fill",
+                    isDisabled: verifiedEmail == nil,
                     accessibilityIdentifier: "contactBinding.submit"
                 ) {
-                    guard let verifiedPhone, let verifiedEmail else { return }
-                    onBound(verifiedPhone, verifiedEmail)
+                    guard let verifiedEmail else { return }
+                    onBound(verifiedEmail)
                 }
             }
             .padding(BNBUSpacing.screen)
@@ -391,6 +667,7 @@ struct ContactBindingView: View {
 /// out the server's resend window before it can be used again.
 struct ContactChannelPanel: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
     let channel: ContactChannel
     @Binding var value: String
     @Binding var verifiedValue: String?
@@ -399,9 +676,12 @@ struct ContactChannelPanel: View {
     var allowsReplacement = false
 
     @State private var code = ""
+    @State private var currentEmailCode = ""
     @State private var codeSent = false
     @State private var resendSeconds = 0
     @State private var notice: String?
+    @State private var isRequestingCode = false
+    @State private var isVerifyingCode = false
     @FocusState private var isFocused: Bool
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -416,7 +696,12 @@ struct ContactChannelPanel: View {
                     verifiedRow(verifiedValue)
                 } else {
                     contactRow
-                    if codeSent { codeRow }
+                    if codeSent {
+                        if appState.contactVerificationRequiresCurrentEmailCode {
+                            currentEmailCodeRow
+                        }
+                        codeRow
+                    }
                     if let notice {
                         Text(verbatim: notice)
                             .font(BNBUFont.labelMedium)
@@ -458,6 +743,7 @@ struct ContactChannelPanel: View {
                     verifiedValue = nil
                     value = ""
                     code = ""
+                    currentEmailCode = ""
                     codeSent = false
                     notice = nil
                 }
@@ -500,7 +786,12 @@ struct ContactChannelPanel: View {
         HStack(spacing: 10) {
             Image(systemName: "lock.fill")
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            TextField(channel.codeTitle, text: $code)
+            TextField(
+                appState.contactVerificationRequiresCurrentEmailCode
+                    ? "新邮箱验证码"
+                    : channel.codeTitle,
+                text: $code
+            )
                 .bnbuInputText()
                 .keyboardType(.numberPad)
                 .onChange(of: code) { _, entered in
@@ -509,16 +800,37 @@ struct ContactChannelPanel: View {
                 .accessibilityLabel(Text(LocalizedStringKey(channel.codeTitle)))
                 .accessibilityIdentifier("contactBinding.\(channel.rawValue).code")
 
-            Button("确认验证") { verify() }
+            Button(isVerifyingCode ? "验证中…" : "确认验证") { verify() }
                 .font(BNBUFont.labelMedium)
                 .foregroundStyle(
-                    ContactBindingRule.isValidCode(code)
+                    canVerify
                         ? BNBUTheme.primary
                         : BNBUTheme.onSurfaceVariant.opacity(0.55)
                 )
-                .disabled(!ContactBindingRule.isValidCode(code))
+                .disabled(!canVerify)
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("contactBinding.\(channel.rawValue).verify")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: BNBUSpacing.touchTarget)
+        .background(BNBUTheme.surface)
+        .bnbuOutlinedSurface(lineWidth: 1)
+    }
+
+    private var currentEmailCodeRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "envelope.badge.shield.half.filled")
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            TextField("当前邮箱验证码", text: $currentEmailCode)
+                .bnbuInputText()
+                .keyboardType(.numberPad)
+                .onChange(of: currentEmailCode) { _, entered in
+                    currentEmailCode = String(
+                        entered.filter(\.isNumber).prefix(ContactBindingRule.codeLength)
+                    )
+                }
+                .accessibilityLabel(Text("当前邮箱验证码"))
+                .accessibilityIdentifier("contactBinding.email.currentCode")
         }
         .padding(.horizontal, 14)
         .frame(minHeight: BNBUSpacing.touchTarget)
@@ -531,33 +843,75 @@ struct ContactChannelPanel: View {
     }
 
     private var sendTitle: String {
-        resendSeconds > 0
+        if isRequestingCode { return BNBUL10n.text("发送中…") }
+        return resendSeconds > 0
             ? BNBUL10n.formatted("%lld 秒后可重发", resendSeconds)
             : BNBUL10n.text("获取验证码")
     }
 
     private var canSend: Bool {
-        resendSeconds == 0 && ContactBindingRule.isValid(value, for: channel)
+        !isRequestingCode && !isVerifyingCode && resendSeconds == 0
+            && ContactBindingRule.isValid(value, for: channel)
+    }
+
+    private var canVerify: Bool {
+        !isRequestingCode && !isVerifyingCode
+            && ContactBindingRule.isValidCode(code)
+            && (!appState.contactVerificationRequiresCurrentEmailCode
+                || ContactBindingRule.isValidCode(currentEmailCode))
     }
 
     private func sendCode() {
         isFocused = false
-        guard appState.sendContactVerificationCode(to: value, channel: channel) else {
-            notice = appState.errorMessage
-            return
+        Task { @MainActor in
+            guard !isRequestingCode else { return }
+            isRequestingCode = true
+            defer { isRequestingCode = false }
+            let success: Bool
+            if channel == .email {
+                success = await appState.requestContactEmailVerification(
+                    email: value,
+                    locale: locale.identifier
+                )
+            } else {
+                success = appState.sendContactVerificationCode(to: value, channel: channel)
+            }
+            guard success else {
+                notice = appState.errorMessage
+                return
+            }
+            currentEmailCode = ""
+            code = ""
+            codeSent = true
+            resendSeconds = ContactBindingRule.resendInterval
+            notice = appState.contactVerificationRequiresCurrentEmailCode
+                ? BNBUL10n.text("验证码已分别发送到当前邮箱和新邮箱，10 分钟内有效。")
+                : BNBUL10n.text("验证码已发送，10 分钟内有效。")
         }
-        codeSent = true
-        resendSeconds = ContactBindingRule.resendInterval
-        notice = BNBUL10n.text("验证码已发送，10 分钟内有效。")
     }
 
     private func verify() {
-        guard appState.verifyContactCode(code, for: value, channel: channel) else {
-            notice = appState.errorMessage
-            return
+        Task { @MainActor in
+            guard canVerify else { return }
+            isVerifyingCode = true
+            defer { isVerifyingCode = false }
+            let success: Bool
+            if channel == .email {
+                success = await appState.completeContactEmailVerification(
+                    newEmailCode: code,
+                    currentEmailCode: currentEmailCode,
+                    email: value
+                )
+            } else {
+                success = appState.verifyContactCode(code, for: value, channel: channel)
+            }
+            guard success else {
+                notice = appState.errorMessage
+                return
+            }
+            verifiedValue = value
+            notice = nil
         }
-        verifiedValue = value
-        notice = nil
     }
 }
 

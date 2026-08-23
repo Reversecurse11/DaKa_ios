@@ -1,6 +1,175 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "" : {
+
+    },
+    "为保护隐私，本次仅提交问题类型、描述和基础 App/系统版本；不会上传截图、联系方式、日志或设备标识。处理回复会显示在反馈记录中。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "To protect your privacy, only the category, description, and basic app/OS versions are submitted. Screenshots, contact details, logs, and device identifiers are not uploaded. Replies appear in Feedback History." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "为保护隐私，本次仅提交问题类型、描述和基础 App/系统版本；不会上传截图、联系方式、日志或设备标识。处理回复会显示在反馈记录中。" } }
+      }
+    },
+    "功能建议" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feature suggestion" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "功能建议" } }
+      }
+    },
+    "反馈服务暂未开放，请稍后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback is not available yet. Try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "反馈服务暂未开放，请稍后重试。" } }
+      }
+    },
+    "反馈记录加载失败，请稍后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Feedback history could not be loaded. Try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "反馈记录加载失败，请稍后重试。" } }
+      }
+    },
+    "当前反馈接口不接收截图，请移除截图后提交。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The current feedback service does not accept screenshots. Remove them before submitting." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前反馈接口不接收截图，请移除截图后提交。" } }
+      }
+    },
+    "无障碍问题" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Accessibility issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无障碍问题" } }
+      }
+    },
+    "云端偏好同步暂未开放，本机语言设置仍然有效。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cloud preference sync is not available yet. Your on-device language setting remains active." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "云端偏好同步暂未开放，本机语言设置仍然有效。" } }
+      }
+    },
+    "云端偏好暂未同步，本机语言设置已保留。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cloud preferences could not be synchronized. Your on-device language setting was preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "云端偏好暂未同步，本机语言设置已保留。" } }
+      }
+    },
+    "语言已在本机生效，但云端同步失败，请稍后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The language changed on this device, but cloud sync failed. Try again later." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "语言已在本机生效，但云端同步失败，请稍后重试。" } }
+      }
+    },
+    "隐私问题" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Privacy issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "隐私问题" } }
+      }
+    },
+    "发送中…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sending…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发送中…" } }
+      }
+    },
+    "当前邮箱验证码" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current email code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前邮箱验证码" } }
+      }
+    },
+    "新邮箱验证码" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New email code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新邮箱验证码" } }
+      }
+    },
+    "验证中…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Verifying…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "验证中…" } }
+      }
+    },
+    "验证码已分别发送到当前邮箱和新邮箱，10 分钟内有效。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Codes were sent to both the current and new email addresses and remain valid for 10 minutes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "验证码已分别发送到当前邮箱和新邮箱，10 分钟内有效。" } }
+      }
+    },
+    "账号版本尚未同步，请重新登录后重试。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The account version is not synchronized. Sign in again and retry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "账号版本尚未同步，请重新登录后重试。" } }
+      }
+    },
+    "请输入当前邮箱收到的 6 位验证码。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enter the 6-digit code sent to the current email address." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入当前邮箱收到的 6 位验证码。" } }
+      }
+    },
+    "当前账号不是学生账号，无法进入学生端。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is not a student account. Please contact an administrator."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前账号不是学生账号，无法进入学生端。"
+          }
+        }
+      }
+    },
+    "当前账号不可用，请联系管理员。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is unavailable. Please contact an administrator."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前账号不可用，请联系管理员。"
+          }
+        }
+      }
+    },
+    "登录成功，但服务器未返回学生资料，请联系管理员。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in succeeded, but the server did not return a student profile. Please contact an administrator."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录成功，但服务器未返回学生资料，请联系管理员。"
+          }
+        }
+      }
+    },
+    "学生端仅支持邮箱验证码登录。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student sign-in supports email verification codes only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学生端仅支持邮箱验证码登录。"
+          }
+        }
+      }
+    },
     " / %@ 小时" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12,35 +181,41 @@
         }
       }
     },
-    "%@ / %@" : {
+    "，" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "，"
+          }
+        }
+      }
+    },
+    "/ %@" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ / %@"
+            "value" : "/ %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ / %2$@"
-          }
-        }
-      }
-    },
-    "%@ / %@ 小时" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ / %@ hours"
+            "value" : "/ %@"
           }
         }
       }
     },
     "%@ · %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -73,6 +248,7 @@
       }
     },
     "%@ · %@ · %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -84,6 +260,34 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ · %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%@ / %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ / %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ / %@ 小时" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ / %@ hours"
           }
         }
       }
@@ -120,6 +324,22 @@
         }
       }
     },
+    "%@ 已进入 Mock 审核队列。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ entered the local Mock review queue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已进入 Mock 审核队列。"
+          }
+        }
+      }
+    },
     "%@ 已进入审核流程。" : {
       "localizations" : {
         "en" : {
@@ -132,6 +352,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 已进入审核流程。"
+          }
+        }
+      }
+    },
+    "%@ 的材料已进入 Mock 复审队列。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supplementary materials for %@ entered the local Mock review queue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的材料已进入 Mock 复审队列。"
           }
         }
       }
@@ -163,22 +399,6 @@
         }
       }
     },
-    "%@已验证" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ verified"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@已验证"
-          }
-        }
-      }
-    },
     "%@：%@" : {
       "localizations" : {
         "en" : {
@@ -191,6 +411,22 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@：%2$@"
+          }
+        }
+      }
+    },
+    "%@已验证" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ verified"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@已验证"
           }
         }
       }
@@ -211,23 +447,6 @@
         }
       }
     },
-    "%lld x %@ = %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld × %@ = %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld x %2$@ = %3$@"
-          }
-        }
-      }
-    },
     "%lld × %@ = %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -241,6 +460,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld × %2$@ = %3$@"
+          }
+        }
+      }
+    },
+    "%lld x %@ = %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld × %@ = %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld x %2$@ = %3$@"
           }
         }
       }
@@ -325,22 +561,6 @@
         }
       }
     },
-    "%lld%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld%%"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld%%"
-          }
-        }
-      }
-    },
     "%lld/%lld" : {
       "localizations" : {
         "en" : {
@@ -353,6 +573,22 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "%lld%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
           }
         }
       }
@@ -389,6 +625,38 @@
         }
       }
     },
+    "′" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "′"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "′"
+          }
+        }
+      }
+    },
+    "″" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "″"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "″"
+          }
+        }
+      }
+    },
     "+%lld" : {
       "localizations" : {
         "en" : {
@@ -401,23 +669,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "+%lld"
-          }
-        }
-      }
-    },
-    "/ %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "/ %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "/ %@"
           }
         }
       }
@@ -438,46 +689,19 @@
         }
       }
     },
-    "1000 米" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1000 m"
-          }
-        }
-      }
-    },
-    "1000 米耐力跑免测" : {
+    "99+" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1000m Run Exemption"
+            "value" : "99+"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1000 米耐力跑免测"
-          }
-        }
-      }
-    },
-    "2025–2026 第二学期" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "2025–2026 Semester 2"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "2025–2026 第二学期"
+            "value" : "99+"
           }
         }
       }
@@ -538,19 +762,46 @@
         }
       }
     },
-    "99+" : {
+    "1000 米" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1000 m"
+          }
+        }
+      }
+    },
+    "1000 米耐力跑免测" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "99+"
+            "value" : "1000m Run Exemption"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "99+"
+            "value" : "1000 米耐力跑免测"
+          }
+        }
+      }
+    },
+    "2025–2026 第二学期" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2025–2026 Semester 2"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2025–2026 第二学期"
           }
         }
       }
@@ -603,6 +854,22 @@
         }
       }
     },
+    "BNBU SPORT" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BNBU SPORT"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BNBU SPORT"
+          }
+        }
+      }
+    },
     "BNBU 体育" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -643,38 +910,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "English"
-          }
-        }
-      }
-    },
-    "′" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "′"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "′"
-          }
-        }
-      }
-    },
-    "″" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "″"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "″"
           }
         }
       }
@@ -903,6 +1138,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "To provide sports education services, we process your student ID, name, courses, grades, and activity check-in records. The camera, selected photos or videos, and one-time foreground location are used only when you choose the related feature. Recording an on-site video also uses the microphone to capture sound. Notifications are generated on this device for now, and no push identifier is uploaded. This information is not used for advertising or personalised recommendations."
+          }
+        }
+      }
+    },
+    "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。业务消息目前仅在 App 内通知中心展示，不申请系统通知权限，也不上传推送标识。上述信息不用于广告或个性化推荐。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To provide sports teaching services, we process your student number, name, courses, grades, and exercise check-in records. We use the camera and access photos or videos only when you actively use those features. The current release does not request location access or collect raw coordinates. Recording an on-site video also uses the microphone to capture audio. Business messages are currently shown only in the in-app notification center; the app does not request system-notification permission or upload a push identifier. This information is not used for advertising or personalized recommendations."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。业务消息目前仅在 App 内通知中心展示，不申请系统通知权限，也不上传推送标识。上述信息不用于广告或个性化推荐。"
           }
         }
       }
@@ -1156,6 +1407,7 @@
       }
     },
     "以下内容保存在 App 内，无网络时也可以查看。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1399,6 +1651,23 @@
         }
       }
     },
+    "体育馆力量训练。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strength training in the gym."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "体育馆力量训练。"
+          }
+        }
+      }
+    },
     "你好，%@" : {
       "localizations" : {
         "en" : {
@@ -1497,7 +1766,6 @@
       }
     },
     "例如：操作步骤、预期结果和实际情况" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1625,7 +1893,6 @@
       }
     },
     "健身" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1748,6 +2015,33 @@
         }
       }
     },
+    "免测申请服务暂未开放，当前保留最近一次同步结果。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The exemption service is not available yet. The most recently synced results remain visible."
+          }
+        }
+      }
+    },
+    "免测申请最多只能添加 %lld 个证明材料。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An exemption request can include at most %lld supporting files."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免测申请最多只能添加 %lld 个证明材料。"
+          }
+        }
+      }
+    },
     "免测申请已在服务器成功提交，但本地待重试标记未能清理。请勿重复提交；释放存储空间后重新打开 App。" : {
       "localizations" : {
         "en" : {
@@ -1776,22 +2070,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "免测申请已提交"
-          }
-        }
-      }
-    },
-    "免测申请已提交到服务器，等待老师审核。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The exemption request was submitted to the server and is awaiting teacher review."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "免测申请已提交到服务器，等待老师审核。"
           }
         }
       }
@@ -1830,6 +2108,22 @@
         }
       }
     },
+    "免测申请已提交到服务器，等待老师审核。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The exemption request was submitted to the server and is awaiting teacher review."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免测申请已提交到服务器，等待老师审核。"
+          }
+        }
+      }
+    },
     "免测申请待重试" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1843,22 +2137,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "免测申请待重试"
-          }
-        }
-      }
-    },
-    "免测申请最多只能添加 %lld 个证明材料。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "An exemption request can include at most %lld supporting files."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "免测申请最多只能添加 %lld 个证明材料。"
           }
         }
       }
@@ -1996,6 +2274,7 @@
       }
     },
     "全部凭证总大小不能超过 120MB。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2123,7 +2402,6 @@
       }
     },
     "其他" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2283,7 +2561,137 @@
         }
       }
     },
+    "最多 %lld 张。截图可帮助我们更快定位问题。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to %lld. Screenshots help us find the problem faster."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多 %lld 张。截图可帮助我们更快定位问题。"
+          }
+        }
+      }
+    },
+    "最多 32 个字符" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to 32 characters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多 32 个字符"
+          }
+        }
+      }
+    },
+    "最多保存 %lld 个视频草稿。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At most %lld video drafts can be kept."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多保存 %lld 个视频草稿。"
+          }
+        }
+      }
+    },
+    "最多保存 %lld 张照片草稿。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At most %lld photo drafts can be kept."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多保存 %lld 张照片草稿。"
+          }
+        }
+      }
+    },
+    "最多只能添加 %lld 个凭证。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At most %lld proofs can be added."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多只能添加 %lld 个凭证。"
+          }
+        }
+      }
+    },
+    "最多只能添加 %lld 个视频。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At most %lld videos can be added."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多只能添加 %lld 个视频。"
+          }
+        }
+      }
+    },
+    "最多只能添加 %lld 张图片。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At most %lld images can be added."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多只能添加 %lld 张图片。"
+          }
+        }
+      }
+    },
+    "最近打卡" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent Check-Ins"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近打卡"
+          }
+        }
+      }
+    },
     "准备开始" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2297,8 +2705,7 @@
             "value" : "准备开始"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "准备提交" : {
       "extractionState" : "stale",
@@ -2575,7 +2982,6 @@
       }
     },
     "删除截图" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2762,6 +3168,22 @@
         }
       }
     },
+    "单个凭证超过上传安全上限。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A proof exceeds the upload safety limit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "单个凭证超过上传安全上限。"
+          }
+        }
+      }
+    },
     "单项得分" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2840,6 +3262,7 @@
       }
     },
     "去更新" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2915,7 +3338,6 @@
       }
     },
     "反馈工单接口尚未发布，暂时无法加载反馈记录。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2932,7 +3354,6 @@
       }
     },
     "反馈工单接口尚未发布，请等待服务端上线后重试。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2992,6 +3413,7 @@
       }
     },
     "可打卡" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3005,8 +3427,7 @@
             "value" : "可打卡"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "可计学时" : {
       "extractionState" : "stale",
@@ -3049,6 +3470,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Total"
+          }
+        }
+      }
+    },
+    "同一类型已有待审核申请，请等待处理后再提交。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A request of this type is already pending review. Wait for it to be processed before submitting again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同一类型已有待审核申请，请等待处理后再提交。"
           }
         }
       }
@@ -3143,6 +3580,23 @@
         }
       }
     },
+    "图片" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片"
+          }
+        }
+      }
+    },
     "图片 / 视频凭证" : {
       "localizations" : {
         "en" : {
@@ -3172,6 +3626,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "图片凭证"
+          }
+        }
+      }
+    },
+    "图片哈希命中历史记录，本次不计入有效学时。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This image matches a previous record, so these hours do not count."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片哈希命中历史记录，本次不计入有效学时。"
+          }
+        }
+      }
+    },
+    "图片处理失败，请重新拍摄。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image processing failed. Take the photo again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片处理失败，请重新拍摄。"
           }
         }
       }
@@ -3278,7 +3765,6 @@
       }
     },
     "填写校队或社团名称" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3345,7 +3831,6 @@
       }
     },
     "处理说明：" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3597,22 +4082,6 @@
         }
       }
     },
-    "姓名不能超过 %lld 个字符。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Name cannot exceed %lld characters."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "姓名不能超过 %lld 个字符。"
-          }
-        }
-      }
-    },
     "姓名（必填）" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3630,6 +4099,39 @@
         }
       }
     },
+    "姓名不能超过 %lld 个字符。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name cannot exceed %lld characters."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "姓名不能超过 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "媒体文件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media File"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "媒体文件"
+          }
+        }
+      }
+    },
     "学号" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3643,6 +4145,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "学号"
+          }
+        }
+      }
+    },
+    "学号（必填）" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student ID (required)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学号（必填）"
           }
         }
       }
@@ -3675,23 +4194,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "学号或邮箱"
-          }
-        }
-      }
-    },
-    "学号（必填）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Student ID (required)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "学号（必填）"
           }
         }
       }
@@ -3790,6 +4292,23 @@
         }
       }
     },
+    "学生未填写补充说明。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No additional note was provided."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学生未填写补充说明。"
+          }
+        }
+      }
+    },
     "学生登录" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3819,6 +4338,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "学生说明"
+          }
+        }
+      }
+    },
+    "学生身份必须通过课程二维码加入流程建立；旧密码登录不再连接后端。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student identity must be established through the course QR join flow; legacy password sign-in no longer connects to the backend."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "学生身份必须通过课程二维码加入流程建立；旧密码登录不再连接后端。"
           }
         }
       }
@@ -3897,6 +4432,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "定位"
+          }
+        }
+      }
+    },
+    "定位功能未开放" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location unavailable"
           }
         }
       }
@@ -4092,6 +4638,22 @@
         }
       }
     },
+    "尚无现场凭证。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No on-site proof yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无现场凭证。"
+          }
+        }
+      }
+    },
     "尚有 %lld 项成绩未录入，预估分会在教师录入后更新。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4175,6 +4737,23 @@
         }
       }
     },
+    "差课程 4 小时" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4 course hours remaining"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "差课程 4 小时"
+          }
+        }
+      }
+    },
     "已保存 %@，包含 %lld 个凭证。" : {
       "localizations" : {
         "en" : {
@@ -4208,7 +4787,6 @@
       }
     },
     "已切换至 %@，旧学期的本地数据已清除。请扫码或输入邀请码加入本学期课程。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4616,6 +5194,22 @@
         }
       }
     },
+    "本机已退出，但服务器会话撤销失败。如账号存在风险，请联系管理员。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed out on this device, but the server session could not be revoked. Contact an administrator if the account may be at risk."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机已退出，但服务器会话撤销失败。如账号存在风险，请联系管理员。"
+          }
+        }
+      }
+    },
     "已退回" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4840,23 +5434,6 @@
         }
       }
     },
-    "建议上传医院证明或校医室证明，说明不适合参加 1000 米耐力跑测试。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Upload a hospital or campus clinic certificate explaining why you cannot take the 1000m run test."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "建议上传医院证明或校医室证明，说明不适合参加 1000 米耐力跑测试。"
-          }
-        }
-      }
-    },
     "建议上传医院证明或校医室证明，说明不适合参加 800 米耐力跑测试。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4870,6 +5447,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "建议上传医院证明或校医室证明，说明不适合参加 800 米耐力跑测试。"
+          }
+        }
+      }
+    },
+    "建议上传医院证明或校医室证明，说明不适合参加 1000 米耐力跑测试。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload a hospital or campus clinic certificate explaining why you cannot take the 1000m run test."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议上传医院证明或校医室证明，说明不适合参加 1000 米耐力跑测试。"
           }
         }
       }
@@ -5233,6 +5827,23 @@
         }
       }
     },
+    "当前时长已满 1 小时" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current duration has reached 1 hour"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前时长已满 1 小时"
+          }
+        }
+      }
+    },
     "当前正在显示最近缓存的帮助内容。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5246,6 +5857,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "当前正在显示最近缓存的帮助内容。"
+          }
+        }
+      }
+    },
+    "当前没有可写的测试账号，请切换到 Mock 运行方案。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No writable test account is active. Switch to the Mock scheme."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前没有可写的测试账号，请切换到 Mock 运行方案。"
           }
         }
       }
@@ -5333,23 +5960,6 @@
         }
       }
     },
-    "当前状态稳定" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Current state is stable"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前状态稳定"
-          }
-        }
-      }
-    },
     "当前状态：" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5363,6 +5973,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "当前状态："
+          }
+        }
+      }
+    },
+    "当前状态稳定" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current state is stable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前状态稳定"
           }
         }
       }
@@ -5416,7 +6043,6 @@
       }
     },
     "当前设备没有可用的相机。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5480,6 +6106,22 @@
         }
       }
     },
+    "当前设备策略不允许使用麦克风，无法录制合规运动视频。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device policy does not allow microphone access, so a compliant exercise video cannot be recorded."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前设备策略不允许使用麦克风，无法录制合规运动视频。"
+          }
+        }
+      }
+    },
     "当前账号无权执行此操作，请联系课程老师。" : {
       "localizations" : {
         "en" : {
@@ -5530,6 +6172,7 @@
       }
     },
     "待同步时间" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5543,8 +6186,7 @@
             "value" : "待同步时间"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "待处理" : {
       "extractionState" : "stale",
@@ -5629,6 +6271,23 @@
         }
       }
     },
+    "待确认" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pending confirmation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待确认"
+          }
+        }
+      }
+    },
     "待计算" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5657,6 +6316,38 @@
         }
       }
     },
+    "选填" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选填"
+          }
+        }
+      }
+    },
+    "选填，最多 %lld 个字符" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional, up to %lld characters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选填，最多 %lld 个字符"
+          }
+        }
+      }
+    },
     "必填" : {
       "localizations" : {
         "en" : {
@@ -5673,18 +6364,18 @@
         }
       }
     },
-    "必填，与申请原因合计最多 2000 个字符" : {
+    "必填，与申请原因合计最多 1000 个字符" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Required; together with the reason, up to 2,000 characters"
+            "value" : "Required; together with the reason, up to 1,000 characters"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "必填，与申请原因合计最多 2000 个字符"
+            "value" : "必填，与申请原因合计最多 1000 个字符"
           }
         }
       }
@@ -5851,6 +6542,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "成绩"
+          }
+        }
+      }
+    },
+    "成绩：%lld 分" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score: %lld points"
+          }
+        }
+      }
+    },
+    "成绩：暂未评分" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Score: not assigned"
           }
         }
       }
@@ -6090,28 +6803,6 @@
         }
       }
     },
-    "成绩：%lld 分" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Score: %lld points"
-          }
-        }
-      }
-    },
-    "成绩：暂未评分" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Score: not assigned"
-          }
-        }
-      }
-    },
     "我们如何处理你的信息" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6124,7 +6815,6 @@
       }
     },
     "我们已收到你的问题。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6274,7 +6964,6 @@
       }
     },
     "截图 %lld" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6290,25 +6979,7 @@
         }
       }
     },
-    "截图最多 %lld 张。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At most %lld screenshots."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "截图最多 %lld 张。"
-          }
-        }
-      }
-    },
     "截图（可选）" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6320,6 +6991,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "截图（可选）"
+          }
+        }
+      }
+    },
+    "截图最多 %lld 张。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At most %lld screenshots."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图最多 %lld 张。"
           }
         }
       }
@@ -6408,22 +7095,6 @@
         }
       }
     },
-    "打卡凭证只能通过相机实时拍摄。模拟器或当前设备没有可用摄像头。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check-in proof must be captured live. The simulator or current device has no available camera."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打卡凭证只能通过相机实时拍摄。模拟器或当前设备没有可用摄像头。"
-          }
-        }
-      }
-    },
     "打卡凭证只能通过相机实时拍摄，需要允许 BNBU Student 使用摄像头。" : {
       "localizations" : {
         "en" : {
@@ -6436,6 +7107,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打卡凭证只能通过相机实时拍摄，需要允许 BNBU Student 使用摄像头。"
+          }
+        }
+      }
+    },
+    "打卡凭证只能通过相机实时拍摄。模拟器或当前设备没有可用摄像头。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check-in proof must be captured live. The simulator or current device has no available camera."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打卡凭证只能通过相机实时拍摄。模拟器或当前设备没有可用摄像头。"
           }
         }
       }
@@ -6679,6 +7366,22 @@
         }
       }
     },
+    "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan the course QR code from your instructor, check the course details, then submit your name and student ID. You can enter once the instructor approves."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。"
+          }
+        }
+      }
+    },
     "扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6692,22 +7395,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "扫描任课老师提供的课程二维码后自动填入邀请码，提交后需要老师审核通过才能开始打卡。"
-          }
-        }
-      }
-    },
-    "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scan the course QR code from your instructor, check the course details, then submit your name and student ID. You can enter once the instructor approves."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。"
           }
         }
       }
@@ -6811,7 +7498,25 @@
         }
       }
     },
+    "抵扣" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抵扣"
+          }
+        }
+      }
+    },
     "抵扣: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6867,6 +7572,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拍摄凭证有什么限制？"
+          }
+        }
+      }
+    },
+    "拍摄占位" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera Placeholder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拍摄占位"
           }
         }
       }
@@ -7084,7 +7806,6 @@
       }
     },
     "提交时间：" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7228,6 +7949,23 @@
         }
       }
     },
+    "摄像头" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摄像头"
+          }
+        }
+      }
+    },
     "摄像头受系统限制" : {
       "localizations" : {
         "en" : {
@@ -7276,13 +8014,47 @@
         }
       }
     },
-    "支持离线缓存和系统通知，便于及时查看业务状态。" : {
+    "操场跑步，全程计时 2 小时。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Offline caching and system notifications help you stay up to date."
+            "value" : "Ran on the track for a full 2-hour session."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操场跑步，全程计时 2 小时。"
+          }
+        }
+      }
+    },
+    "操场跑步记录。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Track running record."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操场跑步记录。"
+          }
+        }
+      }
+    },
+    "支持离线缓存和 App 内通知中心，便于查看业务状态。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline caching and the in-app notification center make it easier to review service status."
           }
         }
       }
@@ -7556,7 +8328,6 @@
       }
     },
     "新学期已开始" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7585,6 +8356,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无效"
+          }
+        }
+      }
+    },
+    "无法保存测试运动时长，请检查设备存储空间后重试。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save the test exercise duration. Check device storage and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存测试运动时长，请检查设备存储空间后重试。"
           }
         }
       }
@@ -7734,6 +8522,22 @@
         }
       }
     },
+    "无法读取视频实际时长，请重新录制。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The actual video duration could not be read. Record it again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取视频实际时长，请重新录制。"
+          }
+        }
+      }
+    },
     "无缺失" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7801,6 +8605,7 @@
       }
     },
     "暂不可打卡" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7814,8 +8619,7 @@
             "value" : "暂不可打卡"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "暂停" : {
       "extractionState" : "stale",
@@ -8050,120 +8854,6 @@
         }
       }
     },
-    "最多 %lld 张。截图可帮助我们更快定位问题。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Up to %lld. Screenshots help us find the problem faster."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多 %lld 张。截图可帮助我们更快定位问题。"
-          }
-        }
-      }
-    },
-    "最多 32 个字符" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Up to 32 characters"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多 32 个字符"
-          }
-        }
-      }
-    },
-    "最多保存 %lld 张照片草稿。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At most %lld photo drafts can be kept."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多保存 %lld 张照片草稿。"
-          }
-        }
-      }
-    },
-    "最多只能添加 %lld 个凭证。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At most %lld proofs can be added."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多只能添加 %lld 个凭证。"
-          }
-        }
-      }
-    },
-    "最多只能添加 %lld 个视频。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At most %lld videos can be added."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多只能添加 %lld 个视频。"
-          }
-        }
-      }
-    },
-    "最多只能添加 %lld 张图片。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "At most %lld images can be added."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多只能添加 %lld 张图片。"
-          }
-        }
-      }
-    },
-    "最近打卡" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recent Check-Ins"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近打卡"
-          }
-        }
-      }
-    },
     "有效" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8241,6 +8931,17 @@
         }
       }
     },
+    "服务端证明材料" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server supporting document"
+          }
+        }
+      }
+    },
     "服务反馈" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8254,6 +8955,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务反馈"
+          }
+        }
+      }
+    },
+    "服务器" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器"
+          }
+        }
+      }
+    },
+    "服务器：学生成绩接口" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server: student grades API"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器：学生成绩接口"
+          }
+        }
+      }
+    },
+    "服务器：成绩尚未返回" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server: grades have not been returned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器：成绩尚未返回"
+          }
+        }
+      }
+    },
+    "服务器：成绩规则尚未发布" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server: grading rules have not been published"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器：成绩规则尚未发布"
           }
         }
       }
@@ -8354,57 +9123,6 @@
         }
       }
     },
-    "服务器：学生成绩接口" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server: student grades API"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器：学生成绩接口"
-          }
-        }
-      }
-    },
-    "服务器：成绩尚未返回" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server: grades have not been returned"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器：成绩尚未返回"
-          }
-        }
-      }
-    },
-    "服务器：成绩规则尚未发布" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server: grading rules have not been published"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器：成绩规则尚未发布"
-          }
-        }
-      }
-    },
     "服务维护中；你仍可查看已有内容，但不能提交或修改。" : {
       "localizations" : {
         "en" : {
@@ -8499,6 +9217,22 @@
         }
       }
     },
+    "未找到该测试账号，请使用登录页显示的 Mock 邮箱或手机号。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test account not found. Use the Mock email address or phone number shown on the sign-in page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到该测试账号，请使用登录页显示的 Mock 邮箱或手机号。"
+          }
+        }
+      }
+    },
     "未提交内容或拍摄凭证还能找回吗？" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8564,17 +9298,6 @@
         }
       }
     },
-    "未获取位置" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No location"
-          }
-        }
-      }
-    },
     "未获取（不影响计时）" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8588,6 +9311,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未获取（不影响计时）"
+          }
+        }
+      }
+    },
+    "未获取位置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No location"
           }
         }
       }
@@ -9027,6 +9761,23 @@
         }
       }
     },
+    "校队" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "University team"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校队"
+          }
+        }
+      }
+    },
     "校队免打卡" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9057,6 +9808,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "校队或社团免打卡须填写组织名称并上传证明，审核通过后由教师确认可抵扣的运动时长。"
+          }
+        }
+      }
+    },
+    "校队身份抵扣" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varsity Team Credit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校队身份抵扣"
           }
         }
       }
@@ -9323,6 +10091,7 @@
       }
     },
     "每日 %@" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9336,8 +10105,7 @@
             "value" : "每日 %@"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "每日开放时段 %@ 内可开始运动；开始后即使超出时段也可正常结束和提交。开始后按实际运动时间计时，可随时暂停（暂停不计入时长）：不足 1 小时不计入，满 1 小时计 1 小时，满 2 小时自动结束并计 2 小时。凭证只能通过相机实时拍摄。开始时会尝试获取一次位置，获取失败不影响打卡。" : {
       "extractionState" : "stale",
@@ -9414,6 +10182,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "浅色模式"
+          }
+        }
+      }
+    },
+    "测试：增加 1 小时" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test: Add 1 hour"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试：增加 1 小时"
+          }
+        }
+      }
+    },
+    "测试账号或验证码不正确，请使用登录页显示的信息。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The test account or code is incorrect. Use the details shown on the sign-in page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试账号或验证码不正确，请使用登录页显示的信息。"
           }
         }
       }
@@ -9537,7 +10338,6 @@
       }
     },
     "游泳" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9915,7 +10715,6 @@
       }
     },
     "登录与安全" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10062,6 +10861,22 @@
         }
       }
     },
+    "登录验证码接口尚未发布，请使用 Mock 运行方案或等待服务端上线。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sign-in code service is not available yet. Use the Mock scheme or wait for the backend service."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录验证码接口尚未发布，请使用 Mock 运行方案或等待服务端上线。"
+          }
+        }
+      }
+    },
     "直接登录" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10103,6 +10918,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "相关记录"
+          }
+        }
+      }
+    },
+    "相册" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相册"
           }
         }
       }
@@ -10227,23 +11059,6 @@
         }
       }
     },
-    "确认提交后将进入老师审核流程。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "After confirmation, the application will enter teacher review."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认提交后将进入老师审核流程。"
-          }
-        }
-      }
-    },
     "确认提交后，补充凭证将进入老师复审流程。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10257,6 +11072,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确认提交后，补充凭证将进入老师复审流程。"
+          }
+        }
+      }
+    },
+    "确认提交后将进入老师审核流程。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After confirmation, the application will enter teacher review."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认提交后将进入老师审核流程。"
           }
         }
       }
@@ -10326,6 +11158,23 @@
         }
       }
     },
+    "社团" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student club"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "社团"
+          }
+        }
+      }
+    },
     "社团免打卡" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10339,6 +11188,138 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "社团免打卡"
+          }
+        }
+      }
+    },
+    "视频" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频"
+          }
+        }
+      }
+    },
+    "视频凭证" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video Proof"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频凭证"
+          }
+        }
+      }
+    },
+    "视频处理失败，请重新录制。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video processing failed. Record it again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频处理失败，请重新录制。"
+          }
+        }
+      }
+    },
+    "视频已达到 %lld 个上限，删除后可继续录制。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You have reached the limit of %lld video. Delete it to record again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频已达到 %lld 个上限，删除后可继续录制。"
+          }
+        }
+      }
+    },
+    "视频无法使用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频无法使用"
+          }
+        }
+      }
+    },
+    "视频草稿无法安全保存，请检查设备存储空间。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The video draft could not be saved safely. Check device storage."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频草稿无法安全保存，请检查设备存储空间。"
+          }
+        }
+      }
+    },
+    "视频超过 100MB" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video exceeds 100 MB"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频超过 100MB"
+          }
+        }
+      }
+    },
+    "视频超过上传安全上限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video exceeds the upload safety limit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频超过上传安全上限"
           }
         }
       }
@@ -10527,7 +11508,6 @@
       }
     },
     "篮球" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10561,6 +11541,7 @@
       }
     },
     "系统只读模式" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10588,6 +11569,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统将于 %@ 进行维护，请提前完成需要提交的操作。"
+          }
+        }
+      }
+    },
+    "系统当前为只读模式，暂时无法提交反馈。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system is currently read-only, so feedback cannot be submitted."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统当前为只读模式，暂时无法提交反馈。"
           }
         }
       }
@@ -10692,7 +11689,6 @@
       }
     },
     "组织名称" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10753,6 +11749,56 @@
         }
       }
     },
+    "组织认证抵扣，B 类最多计 10 小时。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified organization credit; up to 10 hours count toward Category B."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "组织认证抵扣，B 类最多计 10 小时。"
+          }
+        }
+      }
+    },
+    "绑定或更换邮箱" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link or change email"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "绑定或更换邮箱"
+          }
+        }
+      }
+    },
+    "绑定或更换邮箱，保持验证码登录方式可用。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link or change your email to keep verification-code sign-in available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "绑定或更换邮箱，保持验证码登录方式可用。"
+          }
+        }
+      }
+    },
     "绑定或更换邮箱、手机号" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10777,6 +11823,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "绑定手机号和邮箱"
+          }
+        }
+      }
+    },
+    "结束（本次不计入）" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Without Credit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束（本次不计入）"
           }
         }
       }
@@ -10810,23 +11873,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "结束运动"
-          }
-        }
-      }
-    },
-    "结束（本次不计入）" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End Without Credit"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "结束（本次不计入）"
           }
         }
       }
@@ -11003,7 +12049,6 @@
       }
     },
     "羽毛球" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11019,6 +12064,23 @@
         }
       }
     },
+    "羽毛球队官方名单" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Official badminton team roster"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "羽毛球队官方名单"
+          }
+        }
+      }
+    },
     "老师会提供课程二维码或邀请码。扫码或手动输入后，即可找到对应课程。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11026,6 +12088,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your teacher provides a course QR code or invitation code. Scan it or enter it manually to find the right course."
+          }
+        }
+      }
+    },
+    "老师已将该记录标记为无效，本次学时不计入。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The teacher marked this record invalid. These hours do not count."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "老师已将该记录标记为无效，本次学时不计入。"
           }
         }
       }
@@ -11124,23 +12203,57 @@
         }
       }
     },
-    "至少 2 个字符，与情况说明合计最多 2000 个字符" : {
+    "自主运动打卡" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "At least 2 characters; together with details, up to 2,000 characters"
+            "value" : "Independent Exercise Check-in"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "至少 2 个字符，与情况说明合计最多 2000 个字符"
+            "value" : "自主运动打卡"
+          }
+        }
+      }
+    },
+    "至少 2 个字符，与情况说明合计最多 1000 个字符" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At least 2 characters; together with details, up to 1,000 characters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少 2 个字符，与情况说明合计最多 1000 个字符"
+          }
+        }
+      }
+    },
+    "至少保留 1 张照片或 1 个视频；%@ 当前保留的全部素材都会上传，不支持从相册选择。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep at least 1 photo or 1 video. %@ All retained media will be uploaded; selecting from Photos is not supported."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少保留 1 张照片或 1 个视频；%@ 当前保留的全部素材都会上传，不支持从相册选择。"
           }
         }
       }
     },
     "至少选择 1 张照片或 1 个视频；%@ 凭证只能通过相机实时拍摄，不支持从相册选择。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11152,6 +12265,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "至少选择 1 张照片或 1 个视频；%@ 凭证只能通过相机实时拍摄，不支持从相册选择。"
+          }
+        }
+      }
+    },
+    "草稿" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draft"
           }
         }
       }
@@ -11271,22 +12395,6 @@
         }
       }
     },
-    "补充材料已提交到服务器，等待老师复审。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The supplementary material was submitted to the server and is awaiting re-review."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "补充材料已提交到服务器，等待老师复审。"
-          }
-        }
-      }
-    },
     "补充材料已提交，但最新申请列表暂未同步。请稍后下拉刷新，不要重复提交。" : {
       "localizations" : {
         "en" : {
@@ -11320,6 +12428,22 @@
         }
       }
     },
+    "补充材料已提交到服务器，等待老师复审。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The supplementary material was submitted to the server and is awaiting re-review."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "补充材料已提交到服务器，等待老师复审。"
+          }
+        }
+      }
+    },
     "规则未发布" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11337,68 +12461,19 @@
         }
       }
     },
-    "视频凭证" : {
+    "未计入学时" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Video Proof"
+            "value" : "Not credited"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "视频凭证"
-          }
-        }
-      }
-    },
-    "视频已达到 %lld 个上限，删除后可继续录制。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You have reached the limit of %lld video. Delete it to record again."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频已达到 %lld 个上限，删除后可继续录制。"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "视频草稿无法安全保存，请检查设备存储空间。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The video draft could not be saved safely. Check device storage."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频草稿无法安全保存，请检查设备存储空间。"
-          }
-        }
-      }
-    },
-    "视频超过 100MB" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video exceeds 100 MB"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频超过 100MB"
+            "value" : "未计入学时"
           }
         }
       }
@@ -11421,6 +12496,7 @@
       }
     },
     "计划维护通知" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11628,6 +12704,22 @@
         }
       }
     },
+    "该申请当前不能补充材料。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This request cannot accept supplementary material in its current state."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该申请当前不能补充材料。"
+          }
+        }
+      }
+    },
     "该记录暂无可预览凭证文件。" : {
       "localizations" : {
         "en" : {
@@ -11694,6 +12786,7 @@
       }
     },
     "请先完成手机号和邮箱绑定。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11721,6 +12814,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先完成运动后再提交。"
+          }
+        }
+      }
+    },
+    "请先完成邮箱登录和验证，再加入课程。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in and verify your email before joining a course."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先完成邮箱登录和验证，再加入课程。"
+          }
+        }
+      }
+    },
+    "请先完成邮箱验证。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify your email first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先完成邮箱验证。"
           }
         }
       }
@@ -11786,19 +12911,19 @@
         }
       }
     },
-    "请在 iPhone“设置 → 通知”中允许本 App 发送通知。通知不会包含姓名、具体成绩等个人信息；关键事项也可能通过学校邮箱送达。" : {
+    "当前版本的业务消息仅在 App 内通知中心展示，不会申请 iOS 系统通知权限，也不会注册 APNs 或上传推送令牌。请进入首页通知中心查看最新消息；关键事项也可能通过学校邮箱送达。" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Allow notifications in iPhone Settings → Notifications. Notifications do not include names or specific grades; important items may also be sent to your school email."
+            "value" : "Business messages are currently shown only in the in-app notification center. This release does not request iOS notification permission, register for APNs, or upload a push token. Open Notifications on the Home page to see the latest messages; important items may also be sent to your university email."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在 iPhone“设置 → 通知”中允许本 App 发送通知。通知不会包含姓名、具体成绩等个人信息；关键事项也可能通过学校邮箱送达。"
+            "value" : "当前版本的业务消息仅在 App 内通知中心展示，不会申请 iOS 系统通知权限，也不会注册 APNs 或上传推送令牌。请进入首页通知中心查看最新消息；关键事项也可能通过学校邮箱送达。"
           }
         }
       }
@@ -11903,7 +13028,6 @@
       }
     },
     "请填写校队或社团名称" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11936,7 +13060,6 @@
       }
     },
     "请填写问题描述。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11970,6 +13093,7 @@
       }
     },
     "请尝试搜索“打卡”“密码”“成绩”或“申请”。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12034,7 +13158,6 @@
       }
     },
     "请留下联系电话，便于跟进问题。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12051,7 +13174,6 @@
       }
     },
     "请留下邮箱，便于接收处理回复。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12111,7 +13233,6 @@
       }
     },
     "请至少填写一个新的手机号或邮箱，供老师换绑。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12144,7 +13265,6 @@
       }
     },
     "请说明当前无法接收验证码的原因。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12160,23 +13280,6 @@
         }
       }
     },
-    "请输入 11 位手机号" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter an 11-digit mobile number"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请输入 11 位手机号"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "请输入 6 位数字验证码" : {
       "localizations" : {
         "en" : {
@@ -12189,6 +13292,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请输入 6 位数字验证码"
+          }
+        }
+      }
+    },
+    "请输入 11 位手机号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter an 11-digit mobile number"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入 11 位手机号"
           }
         }
       }
@@ -12242,7 +13362,6 @@
       }
     },
     "请输入有效的联系电话。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12275,7 +13394,6 @@
       }
     },
     "请输入有效的邮箱地址。" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12656,6 +13774,23 @@
         }
       }
     },
+    "课程相关运动打卡" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Course Exercise Check-in"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "课程相关运动打卡"
+          }
+        }
+      }
+    },
     "课程相关运动由课程安排决定，不能自行更改。" : {
       "localizations" : {
         "en" : {
@@ -12668,23 +13803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "课程相关运动由课程安排决定，不能自行更改。"
-          }
-        }
-      }
-    },
-    "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You need %@ more course-related exercise. Organization credit has completed the other-exercise requirement but cannot replace course-related hours."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。"
           }
         }
       }
@@ -12702,6 +13820,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "课程相关还差 %@，其他运动还差 %@。请优先关注课程任务和可计入的自主运动。"
+          }
+        }
+      }
+    },
+    "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You need %@ more course-related exercise. Organization credit has completed the other-exercise requirement but cannot replace course-related hours."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "课程相关还差 %@。其他运动已由组织认证完成，但不能替代课程相关学时。"
           }
         }
       }
@@ -12847,7 +13982,6 @@
       }
     },
     "足球" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12864,7 +13998,6 @@
       }
     },
     "跑步" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12931,6 +14064,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skip the course guide and go to sign in"
+          }
+        }
+      }
+    },
+    "跳过运动指引并进入首页" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip the exercise guide and open Home"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过运动指引并进入首页"
           }
         }
       }
@@ -13121,6 +14270,17 @@
         }
       }
     },
+    "运动打卡免测" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise Check-in Exemption"
+          }
+        }
+      }
+    },
     "运动打卡动态演示：展示定位、计时、暂停和继续运动。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -13134,6 +14294,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运动打卡动态演示：展示定位、计时、暂停和继续运动。"
+          }
+        }
+      }
+    },
+    "运动拍摄" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise Capture"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动拍摄"
+          }
+        }
+      }
+    },
+    "运动指引" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise Guide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动指引"
           }
         }
       }
@@ -13205,6 +14398,54 @@
         }
       }
     },
+    "运动视频最长只能录制 15 秒。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise videos can be up to 15 seconds long."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动视频最长只能录制 15 秒。"
+          }
+        }
+      }
+    },
+    "运动视频必须包含声音，请开启麦克风后重新录制。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise videos must include audio. Enable the microphone and record again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动视频必须包含声音，请开启麦克风后重新录制。"
+          }
+        }
+      }
+    },
+    "运动视频必须包含现场声音，需要允许 BNBU Student 使用麦克风。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise videos must include on-site audio. Allow BNBU Student to use the microphone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动视频必须包含现场声音，需要允许 BNBU Student 使用麦克风。"
+          }
+        }
+      }
+    },
     "运动类型" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -13238,6 +14479,23 @@
         }
       }
     },
+    "运动说明：%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exercise notes: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动说明：%@"
+          }
+        }
+      }
+    },
     "运动说明不能超过 %lld 个字符。" : {
       "localizations" : {
         "en" : {
@@ -13253,23 +14511,6 @@
           }
         }
       }
-    },
-    "运动说明：%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exercise notes: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运动说明：%@"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "运动过程拍摄" : {
       "extractionState" : "stale",
@@ -13451,22 +14692,6 @@
         }
       }
     },
-    "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "After signing out or switching devices, a code sent to the mobile number or email bound here restores this account. Both must be verified before you can submit the join request."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。"
-          }
-        }
-      }
-    },
     "退出登录？" : {
       "localizations" : {
         "en" : {
@@ -13479,6 +14704,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出登录？"
+          }
+        }
+      }
+    },
+    "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After signing out or switching devices, a code sent to the mobile number or email bound here restores this account. Both must be verified before you can submit the join request."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。"
           }
         }
       }
@@ -13528,7 +14770,6 @@
       }
     },
     "选择申请类型" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13561,6 +14802,7 @@
       }
     },
     "选择运动项目，开始记录有效时长" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13574,8 +14816,7 @@
             "value" : "选择运动项目，开始记录有效时长"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "选课状态" : {
       "extractionState" : "stale",
@@ -13742,23 +14983,6 @@
         }
       }
     },
-    "邮箱验证码" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Email code"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "邮箱验证码"
-          }
-        }
-      }
-    },
     "邮箱（必填）" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -13793,6 +15017,55 @@
         }
       }
     },
+    "邮箱是唯一登录方式。完成验证后才可提交课程加入申请。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email is the only sign-in method. Verify it before submitting a course join request."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮箱是唯一登录方式。完成验证后才可提交课程加入申请。"
+          }
+        }
+      }
+    },
+    "邮箱验证成功后会自动保存。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The email is saved automatically after successful verification."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮箱验证成功后会自动保存。"
+          }
+        }
+      }
+    },
+    "邮箱验证码" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮箱验证码"
+          }
+        }
+      }
+    },
     "重大变更将通过 App 内通知或学校公告告知。最新修订日期：2026 年 7 月 23 日。" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -13806,6 +15079,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重大变更将通过 App 内通知或学校公告告知。最新修订日期：2026 年 7 月 23 日。"
+          }
+        }
+      }
+    },
+    "重新录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新录制"
           }
         }
       }
@@ -13889,25 +15178,7 @@
         }
       }
     },
-    "问题描述最多 %@ 字。" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The description cannot exceed %@ characters."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "问题描述最多 %@ 字。"
-          }
-        }
-      }
-    },
     "问题描述（必填）" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13923,8 +15194,23 @@
         }
       }
     },
+    "问题描述最多 %@ 字。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The description cannot exceed %@ characters."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题描述最多 %@ 字。"
+          }
+        }
+      }
+    },
     "问题类型" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13936,23 +15222,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "问题类型"
-          }
-        }
-      }
-    },
-    "随设备外观自动切换" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatically follows the device appearance"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "随设备外观自动切换"
           }
         }
       }
@@ -13985,6 +15254,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隐藏密码"
+          }
+        }
+      }
+    },
+    "随设备外观自动切换" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatically follows the device appearance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随设备外观自动切换"
           }
         }
       }
@@ -14197,7 +15483,6 @@
       }
     },
     "骑行" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14230,6 +15515,129 @@
         }
       }
     },
+    "麦克风受系统限制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone Restricted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风受系统限制"
+          }
+        }
+      }
+    },
+    "麦克风权限未开启" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone Access Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风权限未开启"
+          }
+        }
+      }
+    },
+    "视频最长 15 秒，请重新录制。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Videos can be up to 15 seconds. Record a new video." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视频最长 15 秒，请重新录制。" } }
+      }
+    },
+    "视频必须包含声音，请开启麦克风后重新录制。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The video must include audio. Enable the microphone and record again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "视频必须包含声音，请开启麦克风后重新录制。" } }
+      }
+    },
+    "凭证包含位置元数据，请重新拍摄或选择不含位置信息的文件。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This evidence contains location metadata. Capture it again or choose a file without location data." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "凭证包含位置元数据，请重新拍摄或选择不含位置信息的文件。" } }
+      }
+    },
+    "凭证格式不受支持，请重新拍摄。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This evidence format is not supported. Capture it again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "凭证格式不受支持，请重新拍摄。" } }
+      }
+    },
+    "凭证文件校验失败，请重新拍摄后上传。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The evidence file failed validation. Capture and upload it again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "凭证文件校验失败，请重新拍摄后上传。" } }
+      }
+    },
+    "上传会话已过期，请重新上传该凭证。" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The upload session expired. Upload this evidence again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上传会话已过期，请重新上传该凭证。" } }
+      }
+    },
+    "特殊情况免测" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Special-circumstance Exemption"
+          }
+        }
+      }
+    },
+    "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请。若无法使用原邮箱，请联系任课教师或系统管理员核验身份。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Student accounts use email verification codes and cannot file a password-recovery request in the app. If the linked email is unavailable, contact your course teacher or a system administrator for identity verification."
+          }
+        }
+      }
+    },
+    "登录与账号" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in and account"
+          }
+        }
+      }
+    },
+    "无法使用绑定邮箱怎么办？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What if I cannot use my linked email?"
+          }
+        }
+      }
+    },
+    "学生账号使用学校邮箱验证码登录，没有学生密码恢复流程。若原邮箱不可用，请联系任课教师或系统管理员，由学校线下核验身份后处理。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Students sign in with a university email verification code; there is no student password-recovery flow. If the linked email is unavailable, contact your course teacher or a system administrator so the university can verify your identity offline."
+          }
+        }
+      }
+    },
     "默认使用浅色模式；选择跟随系统后会随设备设置切换。" : {
       "localizations" : {
         "en" : {
@@ -14242,22 +15650,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "默认使用浅色模式；选择跟随系统后会随设备设置切换。"
-          }
-        }
-      }
-    },
-    "，" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ", "
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "，"
           }
         }
       }

@@ -7,6 +7,7 @@ import SwiftUI
 /// only, so no join or pending-application entry appears here.
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
     @State private var showNotifications = false
     var openCheckIn: () -> Void = {}
 
@@ -49,6 +50,10 @@ struct DashboardView: View {
                 await appState.refreshRemoteWorkspace()
             }
         }
+        // Recreate only the rendered page when the in-app language changes.
+        // Dashboard @State remains owned above this identity boundary, while
+        // ordinary Strings produced by BNBUL10n and formatters are rebuilt.
+        .id(locale.identifier)
         .accessibilityIdentifier("screen.dashboard")
         .task { appState.evaluateNewSemesterWelcome() }
         .sheet(isPresented: $showNotifications) {
@@ -147,7 +152,7 @@ struct DashboardView: View {
                     .foregroundStyle(BNBUTheme.onSurface)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HomeStatusPill(
-                    text: appState.workspace.progress.status,
+                    text: progressStatusText,
                     emphasized: !hasHourRisk
                 )
             }
@@ -208,6 +213,17 @@ struct DashboardView: View {
             "距离本学期目标还差 %@",
             appState.totalRemaining.localizedHourText
         )
+    }
+
+    private var progressStatusText: String {
+        if appState.courseRemaining > 0 {
+            if locale.identifier.hasPrefix("en") {
+                return "Remain \(appState.courseRemaining.localizedHourText)"
+            }
+            return "差课程 \(appState.courseRemaining.localizedHourText)"
+        }
+        let status = appState.workspace.progress.status
+        return status.isEmpty ? BNBUL10n.text("已达到本学期目标") : BNBUL10n.dynamicText(status)
     }
 
     private var progressBreakdown: some View {
@@ -290,7 +306,7 @@ private struct HomeProgressBar: View {
     let height: CGFloat
 
     private var ratio: Double {
-        guard total > 0 else { return 0 }
+        guard value.isFinite, total.isFinite, total > 0 else { return 0 }
         return min(max(value / total, 0), 1)
     }
 
@@ -300,7 +316,10 @@ private struct HomeProgressBar: View {
                 Capsule().fill(BNBUTheme.surfaceVariant)
                 Capsule()
                     .fill(BNBUTheme.primary)
-                    .frame(width: proxy.size.width * ratio)
+                    .frame(width: BNBUProgressGeometry.width(
+                        containerWidth: proxy.size.width,
+                        ratio: ratio
+                    ))
                     .animation(.easeInOut(duration: BNBUMotion.progress), value: ratio)
             }
         }

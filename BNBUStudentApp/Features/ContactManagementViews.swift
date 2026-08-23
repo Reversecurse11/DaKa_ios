@@ -1,15 +1,11 @@
 import SwiftUI
 
-/// Settings → 绑定或更换邮箱、手机号. Mirrors the Android `ContactBindingScreen`
-/// in its `ManageContacts` mode: each contact is verified on its own and saved
-/// as soon as it passes, so there is no submit button.
+/// Settings → bind or replace the single email authentication channel.
 struct ContactManagementView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var phone = ""
     @State private var email = ""
-    @State private var verifiedPhone: String?
     @State private var verifiedEmail: String?
 
     var body: some View {
@@ -19,22 +15,15 @@ struct ContactManagementView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
                         SectionTitle(eyebrow: "ACCOUNT", title: "登录与安全")
-                        Text("添加或更换邮箱、手机号，保持登录方式随时可用。")
+                        Text("绑定或更换邮箱，保持验证码登录方式可用。")
                             .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                             .fixedSize(horizontal: false, vertical: true)
 
                         ContactStatusPanel(
-                            verifiedPhone: verifiedPhone,
                             verifiedEmail: verifiedEmail
                         )
 
-                        ContactChannelPanel(
-                            channel: .phone,
-                            value: $phone,
-                            verifiedValue: $verifiedPhone,
-                            allowsReplacement: true
-                        )
                         ContactChannelPanel(
                             channel: .email,
                             value: $email,
@@ -42,7 +31,7 @@ struct ContactManagementView: View {
                             allowsReplacement: true
                         )
 
-                        Text("验证任一联系方式后会自动保存。")
+                        Text("邮箱验证成功后会自动保存。")
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
@@ -67,12 +56,8 @@ struct ContactManagementView: View {
     private func seedFromProfile() {
         guard verifiedEmail == nil else { return }
         let boundEmail = appState.workspace.student.email
-        if ContactBindingRule.isValid(boundEmail, for: .email) {
+        if appState.isEmailVerified, !boundEmail.isEmpty {
             verifiedEmail = boundEmail
-        }
-        if let boundPhone = appState.courseJoinRequest?.phone,
-           ContactBindingRule.isValid(boundPhone, for: .phone) {
-            verifiedPhone = boundPhone
         }
     }
 }
@@ -80,7 +65,6 @@ struct ContactManagementView: View {
 /// The "登录方式" summary Android shows above the forms, so a student can see
 /// at a glance which contacts can already receive a code.
 private struct ContactStatusPanel: View {
-    let verifiedPhone: String?
     let verifiedEmail: String?
 
     var body: some View {
@@ -88,8 +72,6 @@ private struct ContactStatusPanel: View {
             VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
                 BNBUGroupLabel("登录方式")
                 statusRow(channel: .email, value: verifiedEmail)
-                Divider().overlay(BNBUTheme.outlineVariant.opacity(0.45))
-                statusRow(channel: .phone, value: verifiedPhone)
             }
         }
     }

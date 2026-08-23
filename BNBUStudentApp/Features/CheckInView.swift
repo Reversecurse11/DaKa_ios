@@ -51,14 +51,16 @@ struct CheckInView: View {
     @State private var note = ""
     @State private var selectedSportType: ExerciseSportType?
     @State private var customSportType = ""
-    /// Draft-pool captures the student picked as proof for this submission.
-    @State private var selectedDraftIDs: Set<String> = []
-    /// Materialized attachments for the current selection. Rebuilt when the
-    /// selection or the draft pool changes, so render passes stay cheap.
+    /// Materialized attachments for every retained capture. The backend binds
+    /// the complete evidence set, so a draft can only be excluded by deleting it.
     @State private var proofAttachments: [ProofAttachment] = []
     @State private var submitted = false
     @State private var draftSaved = false
-    @State private var draftRestored = false
+    /// A completed session has two mutually exclusive presentations: either a
+    /// compact saved-draft summary or the editable evidence submission form.
+    @State private var isEditingCompletedSubmission = true
+    @State private var didPrepareDraftPresentation = false
+    @State private var isDiscardingDraft = false
     @State private var confirmSubmit = false
     @State private var confirmEndExercise = false
     @State private var endWillBeUncredited = false
@@ -70,6 +72,7 @@ struct CheckInView: View {
     var body: some View {
         scaffoldWithSubmitDialogs
             .modifier(sessionDialogs)
+            .id(locale.identifier)
     }
 
     private var scaffoldWithSubmitDialogs: some View {
@@ -143,12 +146,12 @@ struct CheckInView: View {
         }
         .onAppear {
             appState.reconcileExerciseSession()
-            restoreDraftIfNeeded()
+            prepareDraftPresentationIfNeeded()
             rebuildProofAttachments()
             syncSportTypeWithCategory()
             // Business rule 5.4: one-time health reminder per account.
             // Suppressed under UI testing so dialogs stay deterministic.
-            if !ProcessInfo.processInfo.arguments.contains("-ui-testing-reset"),
+            if !UITestingPolicy.isEnabled(),
                !UserDefaults.standard.bool(forKey: healthReminderKey) {
                 showHealthReminder = true
             }
@@ -168,17 +171,8 @@ struct CheckInView: View {
         .onChange(of: appState.currentExerciseCourse) { _, _ in
             syncSportTypeWithCategory()
         }
-        .onChange(of: selectedDraftIDs) { _, _ in
+        .onChange(of: appState.exerciseMediaDrafts) { _, _ in
             rebuildProofAttachments()
-        }
-        .onChange(of: appState.exerciseMediaDrafts) { _, drafts in
-            let validIDs = Set(drafts.map(\.id))
-            let pruned = selectedDraftIDs.intersection(validIDs)
-            if pruned != selectedDraftIDs {
-                selectedDraftIDs = pruned
-            } else {
-                rebuildProofAttachments()
-            }
         }
     }
 
@@ -193,8 +187,11 @@ struct CheckInView: View {
             healthReminderKey: healthReminderKey,
             confirmEndAction: { performConfirmedEndExercise() },
             abandonAction: {
-                appState.discardExerciseSession()
-                resetFormAfterSubmit()
+                Task {
+                    if await appState.cancelCurrentExerciseSession() {
+                        resetFormAfterSubmit()
+                    }
+                }
             }
         )
     }
@@ -205,7 +202,6 @@ struct CheckInView: View {
 
     private func rebuildProofAttachments() {
         proofAttachments = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) }
             .compactMap { appState.proofAttachment(from: $0) }
         draftSaved = false
     }
@@ -266,12 +262,26 @@ struct CheckInView: View {
 
             if let session = appState.exerciseSession {
                 exerciseSessionPanel(session)
-                if session.status == .completed, session.creditedHours() > 0 {
-                    evidenceSubmissionForm(session)
+                if session.status == .completed,
+                   appState.creditedExerciseHours(for: session) > 0 {
+                    completedSubmissionContent(session)
                 }
             } else {
                 exerciseStartForm
             }
+        }
+    }
+
+    @ViewBuilder
+    private func completedSubmissionContent(_ session: ExerciseSession) -> some View {
+        if let draft = appState.draft, !isEditingCompletedSubmission {
+            DraftBanner(draft: draft, isProcessing: isDiscardingDraft) {
+                restoreDraft(draft)
+            } clearAction: {
+                discardSavedDraft()
+            }
+        } else {
+            evidenceSubmissionForm(session)
         }
     }
 
@@ -461,7 +471,9 @@ struct CheckInView: View {
                             sessionDetailRow(title: "结束时间", value: formattedTime(displayedSession.endTime ?? context.date))
                             sessionDetailRow(
                                 title: "可计学时",
-                                value: displayedSession.creditedHours().localizedHourText
+                                value: appState.creditedExerciseHours(
+                                    for: displayedSession
+                                ).localizedHourText
                             )
                         }
                     }
@@ -472,14 +484,29 @@ struct CheckInView: View {
                     // (business rule 5.5); captures land in the draft pool.
                     exerciseCaptureSection(displayedSession)
 
+#if BNBU_FIXTURES && DEBUG
+                    if appState.isMockTestAccountSession {
+                        let canAddTestHour = displayedSession.elapsed(at: context.date) < ExerciseSession.oneHour
+                        SecondaryActionButton(
+                            title: canAddTestHour ? "测试：增加 1 小时" : "当前时长已满 1 小时",
+                            systemImage: canAddTestHour ? "clock.badge.plus" : "checkmark.circle.fill"
+                        ) {
+                            appState.addOneHourToMockExercise(at: context.date)
+                        }
+                        .disabled(!canAddTestHour)
+                        .opacity(canAddTestHour ? 1 : 0.55)
+                        .accessibilityIdentifier("checkin.mock.addHour")
+                    }
+#endif
+
                     if displayedSession.isPaused {
                         PrimaryActionButton(title: "继续运动", systemImage: "play.fill") {
-                            appState.resumeExerciseSession()
+                            Task { await appState.resumeCurrentExerciseSession() }
                         }
                         .accessibilityIdentifier("checkin.exercise.resume")
                     } else {
                         PrimaryActionButton(title: "暂停运动", systemImage: "pause.fill") {
-                            appState.pauseExerciseSession()
+                            Task { await appState.pauseCurrentExerciseSession() }
                         }
                         .accessibilityIdentifier("checkin.exercise.pause")
                     }
@@ -502,7 +529,7 @@ struct CheckInView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("checkin.exercise.abandon")
-                } else if displayedSession.creditedHours() == 0 {
+                } else if appState.creditedExerciseHours(for: displayedSession) == 0 {
                     Text("本次运动不足 1 小时，不计入体育学时，不占用今日打卡次数。已拍摄的照片/视频草稿已保留，今天继续运动后仍可选用。")
                         .font(BNBUFont.labelMedium)
                         .foregroundStyle(BNBUTheme.muted)
@@ -548,7 +575,10 @@ struct CheckInView: View {
         HStack(alignment: .top, spacing: BNBUSpacing.space8) {
             sessionStat(value: formattedTime(session.startTime), caption: "开始")
             sessionStat(
-                value: session.creditedHours(at: date).localizedHourText,
+                value: appState.creditedExerciseHours(
+                    for: session,
+                    at: date
+                ).localizedHourText,
                 caption: "预计学时"
             )
             sessionStat(
@@ -587,15 +617,7 @@ struct CheckInView: View {
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
                     Spacer(minLength: BNBUSpacing.space8)
-                    SessionStatePill(
-                        text: session.locationStatus == .available
-                            ? BNBUL10n.text("已获取位置")
-                            : BNBUL10n.text("未获取位置"),
-                        tint: session.locationStatus == .available
-                            ? BNBUTheme.tertiary
-                            : BNBUTheme.secondary
-                    )
-                    .accessibilityIdentifier("checkin.location.status")
+                    exerciseLocationPill(session)
                 }
 
                 HStack(spacing: 10) {
@@ -606,7 +628,7 @@ struct CheckInView: View {
                         isDisabled: appState.exercisePhotoDraftCount >= ExerciseMediaDraftRule.maximumPhotoDrafts,
                         accessibilityIdentifier: "checkin.capture.photo"
                     ) { attachment in
-                        handleCapturedAttachment(attachment, autoSelect: false)
+                        handleCapturedAttachment(attachment)
                     }
 
                     ExerciseCameraCaptureButton(
@@ -616,7 +638,7 @@ struct CheckInView: View {
                         isDisabled: appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts,
                         accessibilityIdentifier: "checkin.capture.video"
                     ) { attachment in
-                        handleCapturedAttachment(attachment, autoSelect: false)
+                        handleCapturedAttachment(attachment)
                     }
                 }
 
@@ -658,6 +680,26 @@ struct CheckInView: View {
         }
     }
 
+    private func exerciseLocationPill(_ session: ExerciseSession) -> some View {
+        #if BNBU_FIXTURES && DEBUG
+        return SessionStatePill(
+            text: session.locationStatus == .available
+                ? BNBUL10n.text("已获取位置")
+                : BNBUL10n.text("未获取位置"),
+            tint: session.locationStatus == .available
+                ? BNBUTheme.tertiary
+                : BNBUTheme.secondary
+        )
+        .accessibilityIdentifier("checkin.location.status")
+        #else
+        return SessionStatePill(
+            text: BNBUL10n.text("定位功能未开放"),
+            tint: BNBUTheme.secondary
+        )
+        .accessibilityIdentifier("checkin.location.status")
+        #endif
+    }
+
     private func sessionStatusTitle(_ session: ExerciseSession) -> String {
         if session.status == .completed { return BNBUL10n.text("已结束") }
         return session.isPaused
@@ -671,7 +713,7 @@ struct CheckInView: View {
     }
 
     private func creditSummary(for session: ExerciseSession, at date: Date) -> String {
-        switch session.creditedHours(at: date) {
+        switch appState.creditedExerciseHours(for: session, at: date) {
         case 2: return BNBUL10n.text("当前可计学时：2 小时（已达今日上限）")
         case 1: return BNBUL10n.text("当前可计学时：1 小时 · 满 2 小时自动结束")
         default: return BNBUL10n.text("不足 1 小时不计入 · 满 1 小时计 1 小时")
@@ -688,15 +730,18 @@ struct CheckInView: View {
     /// Runs after 「确认结束」: an under-one-hour end closes the session with a
     /// notice, without a record or quota usage, keeping drafts for later today.
     private func performConfirmedEndExercise() {
-        guard appState.endExerciseSession() else { return }
-        if appState.exerciseSession?.creditedHours() == 0 {
-            appState.finishUncreditedExerciseSession()
-            resetFormAfterSubmit()
-            showUnderHourNotice = true
+        Task {
+            guard await appState.finishCurrentExerciseSession() else { return }
+            if let session = appState.exerciseSession,
+               appState.creditedExerciseHours(for: session) == 0 {
+                appState.finishUncreditedExerciseSession()
+                resetFormAfterSubmit()
+                showUnderHourNotice = true
+            }
         }
     }
 
-    private func handleCapturedAttachment(_ attachment: ProofAttachment, autoSelect: Bool) {
+    private func handleCapturedAttachment(_ attachment: ProofAttachment) {
         let added: Bool
         switch attachment.type {
         case .image:
@@ -711,46 +756,32 @@ struct CheckInView: View {
                 fileURL: fileURL,
                 byteCount: attachment.byteCount ?? 0,
                 durationSeconds: attachment.durationSeconds,
+                hasAudioTrack: attachment.hasAudioTrack,
                 thumbnailData: attachment.thumbnailData
             )
         }
-        guard added, autoSelect, let newDraft = appState.exerciseMediaDrafts.last else { return }
-        let selectedImages = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) && $0.type == .image }.count
-        let selectedVideos = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) && $0.type == .video }.count
-        if newDraft.type == .image, selectedImages < ProofUploadRule.maxImageCount {
-            selectedDraftIDs.insert(newDraft.id)
-        } else if newDraft.type == .video, selectedVideos < ProofUploadRule.maxVideoCount {
-            selectedDraftIDs.insert(newDraft.id)
-        }
+        if added { rebuildProofAttachments() }
     }
 
     private func deleteDraft(_ mediaDraft: ExerciseMediaDraft) {
-        selectedDraftIDs.remove(mediaDraft.id)
         appState.removeExerciseMediaDraft(id: mediaDraft.id)
     }
 
     private func evidenceSubmissionForm(_ session: ExerciseSession) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let draft = appState.draft {
-                DraftBanner(draft: draft) {
-                    restoreDraft(draft)
-                } clearAction: {
-                    clearDraftAndForm()
-                }
-            }
-
             SwissPanel {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("提交运动凭证")
                         .font(BNBUFont.titleMedium)
+                        .accessibilityIdentifier("checkin.evidence.form.title")
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text("运动说明")
                                 .font(BNBUFont.titleMedium)
-                            Text("必填")
+                            Text(verbatim: BNBUL10n.text(
+                                session.category == .courseRelated ? "选填" : "必填"
+                            ))
                                 .font(BNBUFont.labelMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                             Spacer()
@@ -775,7 +806,15 @@ struct CheckInView: View {
                         TextEditor(text: $note)
                             .bnbuInputText()
                             .accessibilityLabel("运动说明")
-                            .accessibilityHint("必填，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符")
+                            .accessibilityHint(session.category == .courseRelated
+                                ? BNBUL10n.formatted(
+                                    "选填，最多 %lld 个字符",
+                                    CheckInInputRule.maximumDescriptionLength
+                                )
+                                : BNBUL10n.formatted(
+                                    "必填，最多 %lld 个字符",
+                                    CheckInInputRule.maximumDescriptionLength
+                                ))
                             .focused($focusedField, equals: .note)
                             .frame(minHeight: 100)
                             .padding(8)
@@ -805,6 +844,7 @@ struct CheckInView: View {
                         SecondaryActionButton(title: draftSaved ? "草稿已保存" : "保存草稿", systemImage: "tray.and.arrow.down") {
                             saveDraft()
                         }
+                        .accessibilityIdentifier("checkin.draft.save")
                         SecondaryActionButton(title: "清空凭证", systemImage: "trash") {
                             clearDraftAndForm()
                         }
@@ -830,23 +870,46 @@ struct CheckInView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("打卡凭证")
                     .font(BNBUFont.titleMedium)
-                Text("至少选择 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 凭证只能通过相机实时拍摄，不支持从相册选择。")
+                Text("至少保留 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 当前保留的全部素材都会上传，不支持从相册选择。")
                     .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
             }
 
-            ExerciseCameraCaptureButton(
-                title: "现场拍摄照片 / 视频",
-                accessibilityIdentifier: "checkin.capture.camera"
-            ) { attachment in
-                handleCapturedAttachment(attachment, autoSelect: true)
+            HStack(spacing: 10) {
+                ExerciseCameraCaptureButton(
+                    title: "现场拍照",
+                    systemImage: "camera.fill",
+                    initialCaptureMode: .photo,
+                    isDisabled: appState.exercisePhotoDraftCount >= ExerciseMediaDraftRule.maximumPhotoDrafts,
+                    accessibilityIdentifier: "checkin.capture.photo"
+                ) { attachment in
+                    handleCapturedAttachment(attachment)
+                }
+
+                ExerciseCameraCaptureButton(
+                    title: "现场录像",
+                    systemImage: "video.fill",
+                    initialCaptureMode: .video,
+                    isDisabled: appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts,
+                    accessibilityIdentifier: "checkin.capture.video"
+                ) { attachment in
+                    handleCapturedAttachment(attachment)
+                }
             }
 
-            ExerciseProofSelectionPanel(
-                drafts: appState.exerciseMediaDrafts,
-                selectedDraftIDs: $selectedDraftIDs
-            ) { mediaDraft in
-                deleteDraft(mediaDraft)
+            if appState.exerciseMediaDrafts.isEmpty {
+                Text("尚无现场凭证。")
+                    .font(BNBUFont.labelMedium)
+                    .foregroundStyle(BNBUTheme.muted)
+            } else {
+                HStack(spacing: 8) {
+                    StatusBadge(text: "照片 \(appState.exercisePhotoDraftCount)/\(ExerciseMediaDraftRule.maximumPhotoDrafts)")
+                    StatusBadge(text: "视频 \(appState.exerciseVideoDraftCount)/\(ExerciseMediaDraftRule.maximumVideoDrafts)")
+                    Spacer()
+                }
+                ExerciseDraftThumbnailStrip(drafts: appState.exerciseMediaDrafts) { mediaDraft in
+                    deleteDraft(mediaDraft)
+                }
             }
         }
         .padding(16)
@@ -873,6 +936,7 @@ struct CheckInView: View {
                     RecordCard(record: record, courseTitle: courseTitle(for: record))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("record.\(record.id).open")
             }
         }
     }
@@ -892,10 +956,13 @@ struct CheckInView: View {
               let session = appState.exerciseSession,
               session.status == .completed,
               submissionContext != nil else { return false }
-        let creditedHours = session.creditedHours()
+        let creditedHours = appState.creditedExerciseHours(for: session)
         return !appState.hasSubmittedCheckInToday() &&
             (creditedHours == 1 || creditedHours == 2) &&
-            CheckInInputRule.validationMessage(note: submissionNote(for: session)) == nil &&
+            CheckInInputRule.validationMessage(
+                note: submissionNote(for: session),
+                for: session.category
+            ) == nil &&
             !proofAttachments.isEmpty &&
             ProofUploadRule.accepts(proofAttachments) &&
             (proofAttachments.allSatisfy(\.isValidForUpload) || canResumePendingUpload)
@@ -909,10 +976,14 @@ struct CheckInView: View {
         if submissionContext == nil {
             return BNBUL10n.text("本次运动关联的课程已失效，请刷新课程后重试。")
         }
-        if session.creditedHours() != 1 && session.creditedHours() != 2 {
+        let creditedHours = appState.creditedExerciseHours(for: session)
+        if creditedHours != 1 && creditedHours != 2 {
             return BNBUL10n.text("运动不足 1 小时，不能提交。")
         }
-        if let inputMessage = CheckInInputRule.validationMessage(note: submissionNote(for: session)) {
+        if let inputMessage = CheckInInputRule.validationMessage(
+            note: submissionNote(for: session),
+            for: session.category
+        ) {
             return inputMessage
         }
         if proofAttachments.isEmpty {
@@ -955,8 +1026,8 @@ struct CheckInView: View {
             BNBUL10n.dynamicText(session.resolvedSportName),
             startText,
             endText,
-            formatDuration(session.elapsed()),
-            session.creditedHours().localizedHourText,
+            formatDuration(appState.elapsedExerciseDuration(for: session)),
+            appState.creditedExerciseHours(for: session).localizedHourText,
             proofSummary
         )
     }
@@ -966,7 +1037,7 @@ struct CheckInView: View {
         return appState.canResumePendingCheckIn(
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
-            hours: session.creditedHours(),
+            hours: appState.creditedExerciseHours(for: session),
             note: submissionNote(for: session),
             sportType: resolvedSportType,
             proofAttachments: proofAttachments
@@ -1005,52 +1076,69 @@ struct CheckInView: View {
         }
     }
 
-    private func restoreDraftIfNeeded() {
-        guard !draftRestored else { return }
-        draftRestored = true
-        guard appState.exerciseSession?.status == .completed,
-              let draft = appState.draft else { return }
-        restoreDraft(draft)
+    private func prepareDraftPresentationIfNeeded() {
+        guard !didPrepareDraftPresentation else { return }
+        didPrepareDraftPresentation = true
+        guard appState.exerciseSession?.status == .completed else { return }
+        isEditingCompletedSubmission = appState.draft == nil
     }
 
     private func restoreDraft(_ draft: CheckInDraft) {
-        guard let submissionContext,
-              draft.creditType == submissionContext.creditType,
+        guard !isDiscardingDraft else { return }
+        // Course projection may still be loading when the page first appears.
+        // Keep the saved draft available instead of treating a missing context
+        // as a stale draft and deleting it.
+        guard let submissionContext else { return }
+        guard draft.creditType == submissionContext.creditType,
               draft.courseId == submissionContext.courseId else {
             clearDraftAndForm()
             return
         }
         note = appState.exerciseSession.map { submissionNote(draft.note, for: $0) } ?? ""
-        // Proof bytes live in the media draft pool; restore the selection by
-        // intersecting the saved attachment ids with what is still on disk.
-        let poolIDs = Set(appState.exerciseMediaDrafts.map(\.id))
-        selectedDraftIDs = Set(draft.proofAttachments.map(\.id)).intersection(poolIDs)
+        // Proof bytes live in the media draft pool. The final submission always
+        // includes the complete retained set rather than a saved subset.
         rebuildProofAttachments()
         selectedSegment = .submit
+        isEditingCompletedSubmission = true
         draftSaved = false
     }
 
     private func saveDraft() {
         guard let submissionContext, let session = appState.exerciseSession else { return }
-        appState.saveDraft(
+        guard appState.saveDraft(
             creditType: submissionContext.creditType,
             courseId: submissionContext.courseId,
-            hours: session.creditedHours(),
+            hours: appState.creditedExerciseHours(for: session),
             note: submissionNote(for: session),
             sportType: session.sportType.rawValue,
             customSportType: session.customSportName ?? "",
             proofAttachments: proofAttachments
-        )
+        ) else { return }
+        focusedField = nil
+        dismissBNBUKeyboard()
         draftSaved = true
+        isEditingCompletedSubmission = false
+    }
+
+    private func discardSavedDraft() {
+        guard !isDiscardingDraft else { return }
+        isDiscardingDraft = true
+        Task {
+            defer { isDiscardingDraft = false }
+            guard await appState.discardCompletedCheckInDraft() else { return }
+            resetFormAfterSubmit()
+            isEditingCompletedSubmission = false
+        }
     }
 
     private func clearDraftAndForm() {
-        appState.clearDraft()
+        guard appState.clearDraft() else { return }
+        guard appState.removeAllExerciseMediaDrafts() else { return }
         note = ""
         selectedSportType = nil
         customSportType = ""
-        selectedDraftIDs = []
         proofAttachments = []
+        isEditingCompletedSubmission = true
         draftSaved = false
     }
 
@@ -1059,7 +1147,6 @@ struct CheckInView: View {
         selectedSportType = nil
         selectedCategory = .general
         customSportType = ""
-        selectedDraftIDs = []
         proofAttachments = []
         draftSaved = false
     }
@@ -1073,7 +1160,7 @@ struct CheckInView: View {
             let success = await appState.submitCheckIn(
                 creditType: submissionContext.creditType,
                 courseId: submissionContext.courseId,
-                hours: session.creditedHours(),
+                hours: appState.creditedExerciseHours(for: session),
                 note: submissionNote(for: session),
                 sportType: resolvedSportType,
                 proofAttachments: proofAttachments,
@@ -1082,6 +1169,7 @@ struct CheckInView: View {
             guard success else { return }
             appState.markExerciseSessionSubmitted()
             resetFormAfterSubmit()
+            isEditingCompletedSubmission = false
             submitted = true
         }
     }
@@ -1111,30 +1199,32 @@ struct CheckInView: View {
 
     private func startExercise() {
         guard startValidationMessage == nil else { return }
-        appState.clearDraft()
-        // Retained media drafts from an earlier <1h attempt stay in the pool;
-        // only the form selection resets for the new session.
-        selectedDraftIDs = []
-        proofAttachments = []
+        guard appState.clearDraft() else { return }
+        isEditingCompletedSubmission = true
+        // Retained media drafts from an earlier <1h attempt stay in the pool and
+        // therefore remain part of the next eligible final submission.
+        rebuildProofAttachments()
         note = ""
         draftSaved = false
-        guard appState.startExerciseSession(
-            category: selectedCategory,
-            sportType: selectedSportType,
-            customSportName: customSportType
-        ) else { return }
-        // Business rule 5.5: the timer starts immediately; a single location
-        // fix is fetched in the background and attached if it arrives while
-        // the session is still running. Failure just leaves "未获取位置".
-        // UI tests skip the fetch (permission alerts break determinism)
-        // except the dedicated GPS test, which opts back in.
+        Task {
+            guard await appState.beginExerciseSession(
+                category: selectedCategory,
+                sportType: selectedSportType,
+                customSportName: customSportType
+            ) else { return }
+        // OpenAPI 1.1 publishes GPS routes as stable default-deny contracts.
+        // Keep only the explicit Debug permission fixture until both the
+        // backend gate and the privacy policy are approved.
+        #if BNBU_FIXTURES && DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if !arguments.contains("-ui-testing-reset") || arguments.contains("-ui-testing-location-check") {
+        if arguments.contains("-ui-testing-location-check") {
             Task {
                 if let fix = await ExerciseLocationProvider.shared.requestCurrentLocation() {
                     appState.attachExerciseSessionLocation(latitude: fix.latitude, longitude: fix.longitude)
                 }
             }
+        }
+        #endif
         }
     }
 
@@ -1510,6 +1600,7 @@ private struct CheckInSubmissionProgressPanel: View {
 
 private struct DraftBanner: View {
     let draft: CheckInDraft
+    let isProcessing: Bool
     let restoreAction: () -> Void
     let clearAction: () -> Void
 
@@ -1520,6 +1611,7 @@ private struct DraftBanner: View {
                     Label("有未提交草稿", systemImage: "doc.badge.clock")
                         .font(BNBUFont.titleMedium)
                         .foregroundStyle(BNBUTheme.ink)
+                        .accessibilityIdentifier("checkin.draft.banner")
                     Spacer()
                     StatusBadge(text: draft.updatedAt)
                 }
@@ -1530,7 +1622,15 @@ private struct DraftBanner: View {
 
                 HStack(spacing: 10) {
                     SecondaryActionButton(title: "恢复草稿", systemImage: "arrow.clockwise", action: restoreAction)
-                    SecondaryActionButton(title: "丢弃", systemImage: "xmark", action: clearAction)
+                        .accessibilityIdentifier("checkin.draft.restore")
+                        .disabled(isProcessing)
+                    SecondaryActionButton(
+                        title: "丢弃",
+                        systemImage: isProcessing ? "hourglass" : "xmark",
+                        action: clearAction
+                    )
+                        .accessibilityIdentifier("checkin.draft.discard")
+                        .disabled(isProcessing)
                 }
             }
         }

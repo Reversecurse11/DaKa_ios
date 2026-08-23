@@ -5,10 +5,6 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const iosRoot = path.resolve(scriptDirectory, "..");
-const workspaceRoot = path.resolve(iosRoot, "..", "..");
-const backendRoot = process.env.BNBU_BACKEND_ROOT
-  ? path.resolve(process.env.BNBU_BACKEND_ROOT)
-  : path.join(workspaceRoot, "BNBU-Sports-Android", "backend");
 
 function read(relativePath) {
   return fs.readFileSync(path.join(iosRoot, relativePath), "utf8");
@@ -150,30 +146,43 @@ const remote = read("BNBUStudentApp/Core/RemoteStudentRepository.swift");
 const models = read("BNBUStudentApp/Core/Models.swift");
 const theme = read("BNBUStudentApp/Core/Theme.swift");
 const appState = read("BNBUStudentApp/Core/AppState.swift");
+const studentAPIClient = read("BNBUStudentApp/Core/StudentAPIClient.swift");
+const backendPolicies = read("BNBUStudentApp/Backend/BackendPolicies.swift");
+const backendGateways = read("BNBUStudentApp/Backend/BackendDomainGateways.swift");
 const localStore = read("BNBUStudentApp/Core/AppLocalStore.swift");
 const credentialStore = read("BNBUStudentApp/Core/SecureCredentialStore.swift");
 const components = read("BNBUStudentApp/Features/Components.swift");
 const loginView = read("BNBUStudentApp/Features/LoginView.swift");
+const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");
 const profileView = read("BNBUStudentApp/Features/ProfileView.swift");
 const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
 const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
 const checkinView = read("BNBUStudentApp/Features/CheckInView.swift");
+const locationProvider = read("BNBUStudentApp/Core/ExerciseLocationProvider.swift");
 const gradesView = read("BNBUStudentApp/Features/GradesView.swift");
 const dashboardView = read("BNBUStudentApp/Features/DashboardView.swift");
 const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
 const debugInfoPlist = read("BNBUStudentApp/Resources/Info-Debug.plist");
 const privacyManifest = read("BNBUStudentApp/Resources/PrivacyInfo.xcprivacy");
+const privacyPolicyZH = read("BNBUStudentApp/Resources/privacy_policy_zh_cn.md");
+const privacyPolicyEN = read("BNBUStudentApp/Resources/privacy_policy_en.md");
 const releaseValidator = read("scripts/validate-release-config.sh");
 const macReleaseGate = read("scripts/run-macos-release-gate.sh");
 const modelTests = read("BNBUStudentTests/BNBUStudentModelTests.swift");
+const backendFoundationTests = read("BNBUStudentTests/BackendFoundationTests.swift");
 const project = read("BNBUStudent.xcodeproj/project.pbxproj");
+const backendEnvironment = read("BNBUStudentApp/Backend/BackendEnvironment.swift");
+const backendAuth = read("BNBUStudentApp/Backend/BackendAuthSession.swift");
+const generatedModels = read("BNBUStudentApp/Backend/Generated/APIV1Models.generated.swift");
+const productionConfiguration = read("Configurations/Production.xcconfig");
+const stagingConfiguration = read("Configurations/Staging.xcconfig");
 const appSources = swiftFiles(path.join(iosRoot, "BNBUStudentApp"))
   .map((file) => fs.readFileSync(file, "utf8"))
   .join("\n");
-const openapiPath = path.join(backendRoot, "openapi", "openapi.yaml");
+const openapiPath = path.join(iosRoot, "Contracts", "openapi.snapshot.yaml");
 
 if (!fs.existsSync(openapiPath)) {
-  throw new Error(`Backend OpenAPI not found: ${openapiPath}`);
+  throw new Error(`Pinned OpenAPI snapshot not found: ${openapiPath}`);
 }
 const openapi = fs.readFileSync(openapiPath, "utf8");
 
@@ -182,8 +191,13 @@ for (const swiftFile of swiftFiles(path.join(iosRoot, "BNBUStudentApp")).concat(
 }
 console.log("PASS Swift source delimiters are structurally balanced");
 
-requireText(remote, 'http://123.207.5.70:82/api/v1', "Debug targets the current IP:82 /api/v1 server");
-rejectText(remote, "123.207.5.70:3333", "Obsolete iOS API port is absent from runtime source");
+requireText(backendEnvironment, 'http://127.0.0.1:3000/api/v1', "Local builds target the contract Docker API");
+rejectText(remote, "123.207.5.70", "Legacy remote IP is absent from the compatibility repository");
+requireText(backendEnvironment, 'host != "123.207.5.70"', "Environment validation explicitly rejects the legacy host");
+requireText(generatedModels, "APIV1ContractMetadata", "Generated models carry pinned contract metadata");
+requireText(generatedModels, 'static let contractVersion = "2.0.10-contract"', "Generated models bind Contract 2.0.10");
+requireText(generatedModels, 'static let sourceSHA256 = "56f7f13cdd8122dae630fec93bf198f7ed6d92a5fc4f67ae4f866a3b41c38ad7"', "Generated models bind the published 2.0.10 hash");
+requireText(openapi, "version: 2.0.10-contract", "Pinned OpenAPI is the published 2.0.10 release");
 requireText(remote, '"role": "student"', "Student login explicitly requests the student role");
 requireText(remote, '"clientType": "mobile"', "Student login identifies the mobile client");
 
@@ -205,18 +219,20 @@ for (const endpoint of workspaceEndpoints) {
     [`get("${endpoint}")`, `getIfBusinessReady("${endpoint}")`],
     `Workspace requests ${endpoint}`
   );
-  requireText(openapi, `/${endpoint}:`, `OpenAPI publishes ${endpoint}`);
 }
-
-for (const endpoint of ["/auth/login:", "/scoring/convert-endurance:", "/upload/proof:"]) {
-  requireText(openapi, endpoint, `OpenAPI publishes ${endpoint.slice(1, -1)}`);
+for (const endpoint of ["/auth/refresh:", "/auth/logout:", "/course-invites/{inviteToken}/join:", "/media-uploads:"]) {
+  requireText(openapi, endpoint, `Pinned OpenAPI publishes ${endpoint.slice(1, -1)}`);
+}
+for (const endpoint of ["/exercise-records/{recordId}/evidence-context:", "/exemption-application-details:"]) {
+  requireText(openapi, endpoint, `Contract 2.0.10 publishes ${endpoint.slice(1, -1)}`);
 }
 
 requireText(remote, "StudentCoursesPayload", "Course-list response has a dedicated decoder");
 requireText(remote, "StudentGradesPayload", "Grades response has a dedicated decoder");
 
-// New business model: no task publishing, no review states. The legacy
-// CourseTask/ReviewStatus chain and the check-in supplement flow are removed.
+// Contract 2.0.10 has no client-authored review state. New submissions are
+// system VALID, while legacy/reopened PENDING and teacher INVALID remain exact
+// server projections.
 rejectText(appSources, "struct CourseTask", "Legacy CourseTask model is removed");
 rejectText(appSources, "enum TaskStatus", "Legacy TaskStatus model is removed");
 rejectText(appSources, "enum ReviewStatus", "Legacy ReviewStatus model is removed");
@@ -225,8 +241,20 @@ rejectText(appSources, 'get("student/tasks")', "iOS no longer requests the remov
 rejectText(appSources, 'getIfBusinessReady("student/tasks")', "iOS no longer requests the removed task list defensively");
 rejectText(remote, '"taskId"', "Check-in submission no longer sends a task reference");
 rejectText(remote, "supplementCheckIn", "The check-in supplement route is removed");
-requireText(models, "enum RecordValidity", "Records use the valid/invalid model");
-requireText(models, "case \"invalid\", \"INVALID\", \"无效\", \"rejected\", \"REJECTED\", \"被驳回\", \"已驳回\":", "Legacy review states map deterministically onto validity");
+requireText(models, "enum RecordValidity", "Records preserve the server review projection");
+requireText(models, "case pending = \"待审核\"", "Legacy or reopened PENDING remains distinct");
+requireText(models, "init(serverReviewResult: APIV1ReviewResult)", "API-v1 review status maps directly from the generated enum");
+requireText(appState, "let validity = RecordValidity(serverReviewResult: currentReview.result)", "Check-in completion uses the Backend review result");
+requireText(backendPolicies, "enum ExerciseRecordSubmissionProjectionPolicy", "Record submission accepts only coherent Backend status/review pairs");
+requireText(backendFoundationTests, "testExerciseRecordSubmissionProjectionPreservesAuthoritativeReviewState", "XCTest covers both pending and decided record submissions");
+requireText(backendGateways, 'operationID: "getExerciseRecordEvidenceContext"', "Record evidence context uses the additive 2.0.10 route");
+requireText(backendGateways, "func listOwned(limit: Int = 100)", "Student records use a role-scoped canonical list gateway");
+rejectText(backendGateways, 'URLQueryItem(name: "studentId", value: studentID)', "Student enrollment reads rely on token-owned role scope instead of a forbidden explicit studentId filter");
+requireText(backendGateways, "enrollments.value.allSatisfy({ $0.studentId == studentID })", "Student enrollment projections are still ownership-checked client-side");
+requireText(appState, "func refreshAPIV1ExerciseRecords()", "API-v1 sessions refresh the server-owned record list");
+requireText(appState, "RecordValidity(serverReviewResult: $0.result)", "Refreshed records preserve the Backend review result");
+requireText(appShellViews, 'contains("-ui-testing-real-backend")', "Local Docker UI tests can bypass deterministic fixtures explicitly");
+requireText(backendGateways, 'operationID: "listStructuredExemptionApplications"', "Exemption reads preserve structured 2.0.10 details");
 requireText(models, "var invalidReason: String?", "Invalid records surface the teacher-provided reason");
 requireText(models, "struct CheckInSubmission", "Check-in submissions have a validated value type");
 requireText(appState, "func validatedSubmission(creditType: CreditType, courseId: String?, hours: Double)", "Submission validation is centralized and fail-closed");
@@ -239,12 +267,24 @@ rejectText(coursesView, "currentSemesterKey", "Course scope no longer depends on
 
 rejectText(appState, "max(hours, 0.5)", "Submission hours cannot produce backend-invalid 0.5h values");
 requireText(appState, "hours == 1 || hours == 2", "Submission hours are restricted to the 1h/2h API enum");
-requireText(appState, 'TimeZone(identifier: "Asia/Shanghai")', "Daily submission guard uses the backend business timezone");
-requireText(appState, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
-requireText(models, "static let maxRequestBytes = 120_000_000", "Check-in proof batch enforces the 120MB request limit");
+requireText(models, 'static let businessTimeZone = TimeZone(identifier: "Asia/Shanghai")!', "The check-in policy owns the backend business timezone");
+requireText(appState, "CheckInTimeWindowRule.businessDateString", "Daily submission guard uses the centralized Beijing business date");
+requireText(models, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
+requireText(models, "static let maxTransportBytes = 512 * 1_024 * 1_024", "Media uses only the backend transport safety ceiling");
+rejectText(models, "maxVideoBytes = 100_000_000", "iOS does not invent a 100MB video business limit");
+requireText(models, "enum ExerciseVideoRule", "Exercise video rules are centralized");
+requireText(models, "static let maximumDurationSeconds = 15.0", "Exercise video is capped at 15 seconds");
+requireText(components, "videoHasAudioTrack", "Captured video is checked for an audio track");
+requireText(components, "picker.videoMaximumDuration = ExerciseVideoRule.maximumDurationSeconds", "The camera enforces the published duration cap");
+requireText(models, "var hasAudioTrack: Bool? = nil", "Audio-track verification survives draft persistence");
 requireText(models, "enum ExemptionProofRule", "Physical exemptions have a dedicated proof rule");
 requireText(models, "static let maxAttachmentCount = 5", "Physical exemptions enforce the five-proof API limit");
-requireText(models, "static let maximumCombinedReasonLength = 2_000", "Physical exemption reason enforces the 2000-character API limit");
+requireText(models, "static let maximumCombinedReasonLength = 1_000", "Physical exemption reason enforces the 1000-character API limit");
+requireText(backendGateways, "actor AuthoritativeExemptionApplicationGateway", "API-v1 exemptions use the authoritative application lifecycle");
+requireText(appState, "private func submitExemptionAPIV1(", "AppState routes API-v1 exemption writes through the authoritative backend");
+requireText(appState, "var exemptionEligibleCourses: [Course]", "Exemption applications resolve an eligible enrollment explicitly");
+requireText(gradesView, '.accessibilityIdentifier("exemption.course.picker")', "Multiple eligible courses require an explicit exemption-course choice");
+requireText(backendFoundationTests, "testExemptionGatewayCreatesDraftThenSubmitsWithAuthoritativeVersion", "XCTest covers exemption draft creation and versioned submission");
 requireText(models, "static let maximumDescriptionLength = 200", "Check-in note enforces the 200-character business rule (stricter than the 2000-character API limit)");
 requireText(models, "struct ExercisePause", "Exercise sessions record every pause/resume instant");
 requireText(models, "static let maximumPauseBeforeAutoEnd: TimeInterval = 6 * oneHour", "A pause over six hours auto-ends the session");
@@ -253,7 +293,11 @@ requireText(models, "static let maximumPhotoDrafts = 6", "In-session photo draft
 requireText(checkinView, "ExerciseCameraCaptureButton", "Check-in proofs are captured through the camera-only flow");
 rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from the photo library");
 rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
-requireText(models, "请填写运动说明", "The sport note is required for all check-ins (Q&A 7/23 Q5)");
+rejectText(checkinView, "selectedDraftIDs", "Students cannot submit only a hand-picked subset of retained evidence");
+requireText(checkinView, "当前保留的全部素材都会上传", "The UI explains complete evidence binding");
+requireText(models, "category == .general", "Contract 2.0.10 keeps GENERAL descriptions required");
+requireText(models, "creditType == .courseRelated { return nil }", "Contract 2.0.10 sends an omitted/null COURSE_RELATED description");
+requireText(checkinView, 'session.category == .courseRelated ? "选填" : "必填"', "The note requirement follows the Contract 2.0.10 credit type");
 requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
 requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
 requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
@@ -313,6 +357,15 @@ requireText(models, "var validUntilText", "Membership expiry prints as a written
 
 requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
 requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
+requireText(models, "localSecond <= effectiveEnd", "The 22:00:00 start boundary is inclusive at second precision");
+requireText(models, "max(defaultStartSecond, configuredStart)", "Class windows can only narrow the Beijing start boundary");
+requireText(models, "min(defaultEndSecond, configuredEnd)", "Class windows can only narrow the Beijing end boundary");
+requireText(appState, "serverBusinessDate == targetBusinessDate", "Server businessDate is consumed without device-timezone conversion");
+requireText(detailViews, "record.studentLocalSubmittedAt", "Student record timestamps use the device display timezone");
+requireText(studentAPIClient, "APIUploadProgressDelegate", "V1 signed uploads report actual network progress");
+requireText(backendGateways, "progressHandler: progressHandler", "Media gateways forward signed upload progress");
+requireText(backendPolicies, ".sessionAlreadyCompleted", "Qualified session denial has a stable client mapping");
+requireText(backendPolicies, "已达到合格时长，无需继续打卡。", "Qualified students receive the confirmed stop-checking-in message");
 requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
 
 // Course join application (business rule 4.2)
@@ -321,23 +374,32 @@ requireText(models, "static let backwardCompatibleDefault = CourseEnrollmentStat
 requireText(models, "var allowsCheckIn: Bool { enrollmentStatus == .approved }", "Only an approved enrolment can back a check-in");
 requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side rule");
 requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
+requireText(models, "enum CourseInviteTokenRule", "Contract 2.0.10 opaque invite tokens have a lossless validation rule");
+requireText(models, "static func token(fromScannedPayload payload: String)", "Course QR payloads preserve the opaque invite token bytes");
+rejectText(models, "approvedHTTPSHosts", "Course invite parsing does not hard-code a platform-specific portal host");
+requireText(models, 'components.scheme?.lowercased() == "https"', "Course invite URL transports require HTTPS");
+requireText(models, "components.user == nil", "Course invite URLs reject user information");
+requireText(models, "components.query == nil", "Course invite URLs reject query data");
+requireText(models, "components.host?.isEmpty == false", "Course invite URLs require a syntactically valid host");
+requireText(models, 'path.count == 2, path[0].lowercased() == "join"', "Course invite URLs use the exact /join/{token} shape");
 requireText(appState, "func lookupCourseInvite(rawCode: String)", "An invite code resolves to a course before the student applies");
 requireText(appState, "func submitCourseJoinRequest(", "Students can submit a course join application");
-// Joining precedes sign-in: the application is what creates the relationship,
-// so it must not be gated on an account.
-rejectText(appState, "请先登录后再提交课程加入申请。", "A join application is filed before the student has an account");
+requireText(loginView, "login.initialCourseJoin", "Unauthenticated students can begin the required enrolment-first flow");
+requireText(appShellViews, "case initialCourseJoin", "The app shell has a dedicated pre-authentication course-join stage");
+requireText(courseJoinViews, "struct PreLoginCourseJoinView", "The first-use flow previews and joins a course before email binding");
+requireText(appState, "func previewInitialCourseJoin(", "The AppState binds public course preview before authentication");
+requireText(appState, "func joinCourseBeforeLogin(", "The AppState binds capability issuance and atomic course joining");
+requireText(appState, "result.authSession.user.status == .pendingContactBinding", "Join accepts only the restricted PENDING_CONTACT_BINDING session");
+requireText(appShellViews, "PendingContactBindingShellView", "A restricted join session cannot enter the normal tab shell");
+requireText(backendFoundationTests, "testAppStateRestoresPendingContactSessionWithoutOpeningVerifiedWorkspace", "XCTest keeps a restored pending session inside the binding-only shell");
+requireText(backendFoundationTests, "testAppStateFirstEmailBindingKeepsJoinSessionAndTrustsServerActivation", "XCTest proves first email binding keeps the join session");
+requireText(backendFoundationTests, "testInitialJoinMapsStableInviteErrorsWithoutRetryOrSession", "XCTest covers stable invite errors without creating a session");
 requireText(courseJoinViews, "struct CourseJoinConfirmView", "The invite is confirmed on its own page before identity details are typed");
 requireText(courseJoinViews, "courseJoinConfirm.submit", "The confirmation page submits the application");
 requireText(models, "enum CourseJoinRequestRule", "Name and student number are validated client-side");
-// Registration binds both contacts: a reinstalled app signs back in with a
-// code, so an unreachable student must never reach the teacher's queue.
 requireText(models, "enum ContactBindingRule", "Contact binding has client-side rules");
-requireText(models, "enum ContactChannel", "Phone and email are bound as named channels");
-requireText(courseJoinViews, "struct ContactBindingView", "Contact binding is its own step in the join flow");
-requireText(courseJoinViews, ").sendCode\")", "Binding a contact sends a verification code");
-requireText(courseJoinViews, "ContactBindingRule.resendInterval", "The send button waits out the server's resend window");
-requireText(appState, "请先完成手机号和邮箱绑定。", "An application without both contacts bound is refused");
-requireText(modelTests, "testCourseJoinRequestRequiresBothContactsBound", "XCTest covers the contact-binding gate");
+requireText(appState, "请先完成邮箱验证。", "An application without verified email is refused");
+requireText(modelTests, "testCourseJoinRequestRequiresVerifiedEmailOnly", "XCTest covers the email-only enrollment gate");
 requireText(modelTests, "testContactBindingChecksFormatAndCodeBeforeAccepting", "XCTest covers contact and code validation");
 requireText(modelTests, "testBoundContactsAreShownMasked", "XCTest covers masking bound contacts");
 
@@ -363,24 +425,29 @@ rejectText(settingsSource, "验证码登录接口发布后开放", "The contact 
 rejectText(settingsSource, "反馈工单接口发布后开放", "The feedback row is no longer greyed out");
 requireText(loginView, "appState.signInWithCode", "Verification-code sign-in submits instead of reporting a stub");
 requireText(loginView, "verification.sendCode", "Requesting a sign-in code is its own control");
-requireText(loginView, "screen.recoverySubmitted", "A filed recovery request confirms what happens next");
+requireText(loginView, "studentRecoveryInformation", "Student account help does not expose a fake password-recovery form");
+requireText(loginView, "recovery.studentUnsupported", "Student recovery limits are visible to accessibility tests");
+rejectText(loginView, "recovery.submit", "Student account help cannot expose a local-only recovery submit action");
+rejectText(loginView, "恢复申请已提交", "Student account help cannot claim that an unsupported recovery write succeeded");
+requireText(appState, "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请", "Student recovery fails closed instead of reporting a local success");
+requireText(modelTests, "testStudentRecoveryNeverCreatesALocalFalseSuccess", "XCTest covers the student recovery contract boundary");
 rejectText(loginView, "验证码登录接口尚未接入 iOS", "The sign-in stub notice is gone");
 rejectText(loginView, "账号恢复接口尚未接入 iOS", "The recovery stub notice is gone");
 requireText(models, "struct CourseInvite", "An invite lookup has its own model");
-requireText(loginView, "login.joinRequest.entry", "The sign-in screen reports an application under review");
-requireText(modelTests, "testCourseJoinRequestIsFiledBeforeSignIn", "XCTest covers filing an application without an account");
+requireText(modelTests, "testCourseJoinRequestRequiresEmailSignIn", "XCTest covers the authenticated enrollment gate");
 requireText(modelTests, "testCourseJoinRequestRequiresANameAndStudentNumber", "XCTest covers the identity form rules");
-requireText(modelTests, "testCourseJoinRequestSurvivesRelaunchBeforeSignIn", "XCTest covers the pre-sign-in application cache");
+requireText(modelTests, "testCourseJoinRequestSurvivesRelaunchAfterSignIn", "XCTest covers the enrollment application cache");
 requireText(appState, "$0.isCurrent && $0.allowsCheckIn", "A pending course is never selected as the exercise course");
 requireText(appState, "workspace.courses.contains(where: { $0.id == courseId && $0.allowsCheckIn })", "Course-related submissions revalidate the approved enrolment");
 requireText(courseJoinViews, "CourseQRScannerView", "Course joining offers a QR scanning entry");
 requireText(courseJoinViews, "AVCaptureMetadataOutput", "The QR entry reads codes through live capture");
 requireText(courseJoinViews, "case .unavailable:", "The QR entry degrades gracefully without a camera");
-rejectText(coursesView, "courses.join.entry", "Joining a course is offered on the sign-in screen only");
+requireText(coursesView, "courses.join.entry", "Course joining is offered after authentication");
 rejectText(coursesView, "JoinRequestEntryPanel", "The courses page lists courses, not join applications");
 rejectText(dashboardView, "JoinRequestEntryPanel", "The dashboard lists no join application entry");
 rejectText(dashboardView, "dashboard.join.scan", "The dashboard offers no scan entry");
-requireText(loginView, "扫码加入课程", "The sign-in screen keeps the only join entry");
+rejectText(loginView, 'accessibilityIdentifier("login.phone")', "Phone/SMS sign-in is retired");
+requireText(loginView, "邮箱验证码登录", "Email code is the sole student sign-in entry");
 rejectText(loginView, "login.password.route", "Students are not offered account-and-password sign-in");
 requireText(coursesView, "PendingEnrollmentCard", "Pending applications render as their own state");
 requireText(modelTests, "testPendingEnrollmentBlocksExerciseStartAndSubmission", "Pending enrolments are proven not to produce check-ins");
@@ -440,8 +507,20 @@ requireText(dashboardView, "if hasActiveEnrollment {", "Today's check-in panel n
 requireText(dashboardView, "CheckInTimeWindowRule.canStartExercise(at: date)", "The dashboard reuses the check-in window rule rather than its own copy");
 rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
 requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
-requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");
+rejectText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build does not request default-denied location access");
+requireText(locationProvider, "#if BNBU_FIXTURES && DEBUG", "Core Location exists only in the explicit Debug fixture build");
+requireText(productionConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Production excludes the location provider source");
+requireText(stagingConfiguration, "EXCLUDED_SOURCE_FILE_NAMES = $(inherited) ExerciseLocationProvider.swift", "Staging excludes the location provider source");
+requireText(stagingConfiguration, "https:/$()/api.verityai.cn/api/v1", "Staging uses the frozen R01 HTTPS API URL");
+requireText(checkinView, 'arguments.contains("-ui-testing-location-check")', "Only the dedicated UI fixture can start a location request");
+requireText(checkinView, 'BNBUL10n.text("定位功能未开放")', "Formal builds label the default-denied location state accurately");
+rejectText(models, "var latitude: Double?", "Legacy exercise sessions cannot retain raw latitude");
+rejectText(models, "var longitude: Double?", "Legacy exercise sessions cannot retain raw longitude");
 rejectText(debugInfoPlist + releaseInfoPlist, "NSLocationAlwaysAndWhenInUseUsageDescription", "Background location is never requested");
+requireText(components, "ProofMediaSanitizer.sanitizedJPEGData", "Images are redrawn before upload instead of forwarding EXIF/GPS metadata");
+requireText(components, "exporter.metadata = []", "Video export never adds replacement container metadata");
+requireText(components, "exporter.metadataItemFilter = .forSharing()", "Video export removes user-identifying metadata including location");
+requireText(modelTests, "testImageSanitizerDropsSourceGPSAndEXIFMetadata", "XCTest proves image metadata is removed before upload");
 requireText(gradesView, "maxAttachmentCount: ExemptionProofRule.maxAttachmentCount", "Exemption picker stops at five proofs");
 requireText(appState, "guard ExemptionProofRule.accepts(proofAttachments)", "Exemption submission revalidates its proof contract");
 requireText(remote, "guard attachment.uploadData != nil || attachment.sourceFileURL != nil", "Uploads require original bounded Data or the selected local file rather than a thumbnail");
@@ -457,10 +536,10 @@ rejectText(remote, "UserDefaults.standard.set(accessToken", "Access tokens are n
 requireText(remote, "credentialStore.set(Data(accessToken.utf8)", "Access tokens are persisted through secure storage");
 requireText(remote, "legacyAccessTokenDefaultsKey", "Legacy plaintext token storage is migrated");
 
-rejectText(remote, 'url(for: "auth/logout")', "Frozen v1 logout performs no unsupported network call");
-rejectText(remote, 'url(for: "auth/refresh")', "Frozen v1 performs no unsupported token refresh");
-rejectText(openapi, "/auth/logout:", "OpenAPI confirms there is no server logout endpoint");
-rejectText(openapi, "/auth/refresh:", "OpenAPI confirms there is no refresh endpoint");
+requireText(backendAuth, 'path: "auth/logout"', "Foundation logout revokes the server session");
+requireText(backendAuth, 'path: "auth/refresh"', "Foundation rotates access and refresh tokens");
+requireText(openapi, "/auth/logout:", "OpenAPI publishes server logout");
+requireText(openapi, "/auth/refresh:", "OpenAPI publishes token rotation");
 requireText(remote, "func logout() -> Bool", "Repository logout is deterministic local cleanup");
 requireText(remote, "authenticationEpoch &+= 1", "Authentication responses are generation-guarded");
 requireText(remote, "guard loginEpoch == authenticationEpoch", "A late login response cannot restore a logged-out session");
@@ -560,7 +639,6 @@ requireText(remote, "[408, 425, 429].contains(statusCode)", "Timeout, Too Early 
 requireText(remote, 'request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")', "Repository sends the stable Idempotency-Key header");
 requireText(remote, '"student/physical-test-exemptions"', "Exemptions use the canonical physical-test route");
 requireText(remote, '"student/physical-test-exemptions/\\(application.id)/supplements"', "Exemption supplements use the canonical route");
-requireText(openapi, "/student/physical-test-exemptions/{id}/supplements:", "OpenAPI publishes canonical exemption supplements");
 rejectText(remote, 'post("student/exemptions"', "iOS no longer writes through the deprecated exemption route");
 rejectText(remote, 'get("student/exemptions")', "iOS no longer lists through the deprecated exemption route");
 requireText(models, "case supplementRequired", "Supplement-required exemption state remains distinct");
@@ -587,14 +665,13 @@ requireText(remote, "sourceHandle.read(upToCount: ProofContentDigest.streamingCh
 requireText(remote, "ProofTransientFileStore.removeStaleCopies()", "Crash-leftover local proof copies are removed on startup");
 requireText(components, "struct ImportedProofFile: Transferable", "PhotosPicker imports large proofs as file representations");
 requireText(components, "FileRepresentation(importedContentType: .movie)", "Photo-library videos remain file-backed");
-requireText(components, "let digest = try ProofContentDigest.sha256(fileURL: fileURL)", "Photo-library file identity uses streaming SHA-256");
-requireText(components, "let digest = try ProofContentDigest.sha256(fileURL: protectedURL)", "Camera video identity uses streaming SHA-256");
+requireCount(components, "let digest = try ProofContentDigest.sha256(fileURL: sanitizedURL)", 2, "Imported and camera video identity uses the sanitized file's streaming SHA-256");
 requireText(models, "attributes: [.protectionKey: FileProtectionType.complete]", "Transient proof files use complete file protection");
 requireText(models, "values.isExcludedFromBackup = true", "Transient proof files are excluded from backup");
 
 requireText(debugInfoPlist, "<key>NSAllowsArbitraryLoads</key>\n\t\t<false/>", "Debug ATS arbitrary network access is disabled");
 requireText(debugInfoPlist, "<key>NSAllowsLocalNetworking</key>\n\t\t<true/>", "Debug keeps local simulator networking");
-requireText(debugInfoPlist, "<key>123.207.5.70</key>", "Debug has a narrow temporary HTTP test-host exception");
+requireText(debugInfoPlist, "<key>127.0.0.1</key>", "Debug has a narrow loopback HTTP exception");
 requireText(releaseInfoPlist, "<key>NSAllowsArbitraryLoads</key>\n\t\t<false/>", "Release ATS arbitrary network access is disabled");
 rejectText(releaseInfoPlist, "NSAllowsLocalNetworking", "Release does not allow local networking");
 rejectText(releaseInfoPlist, "NSExceptionDomains", "Release contains no insecure HTTP exception");
@@ -609,9 +686,16 @@ requireText(components, ".photosPicker(", "Photo evidence uses the system privac
 requireText(privacyManifest, "<key>NSPrivacyTracking</key>\n\t<false/>", "Privacy manifest declares no tracking");
 requireText(privacyManifest, "NSPrivacyAccessedAPICategoryUserDefaults", "Privacy manifest declares UserDefaults required-reason API");
 requireText(privacyManifest, "CA92.1", "UserDefaults access has the app-only required reason");
-for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo", "PreciseLocation"]) {
+for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo"]) {
   requireText(privacyManifest, `NSPrivacyCollectedDataType${dataType}`, `Privacy manifest declares ${dataType}`);
 }
+rejectText(privacyManifest, "NSPrivacyCollectedDataTypePreciseLocation", "Release privacy manifest does not claim disabled precise-location collection");
+rejectText(appSources, "import UserNotifications", "The current release does not link an unused system-notification flow");
+rejectText(appSources, "requestAuthorization(options:", "The current release does not ask for unused notification permission");
+rejectText(appSources, "registerForRemoteNotifications", "The current release does not register for APNs");
+requireText(appShellViews, "业务消息目前仅在 App 内通知中心展示", "The consent summary describes in-app-only notifications");
+requireText(privacyPolicyZH, "不申请系统通知权限", "The Chinese privacy policy matches in-app-only notifications");
+requireText(privacyPolicyEN, "neither schedules local system notifications nor registers with a push service", "The English privacy policy matches in-app-only notifications");
 
 rejectText(debugInfoPlist + releaseInfoPlist, "CFBundleURLTypes", "No custom URL-scheme deep-link surface is registered");
 rejectText(project, "com.apple.developer.associated-domains", "No unreviewed universal-link entitlement is enabled");
@@ -625,11 +709,16 @@ requireText(theme, 'ofType: "lproj"', "The language helper loads the language-sp
 
 requireText(project, 'INFOPLIST_FILE = "BNBUStudentApp/Resources/Info-Debug.plist";', "Debug uses the debug-only ATS plist");
 requireText(project, "INFOPLIST_FILE = BNBUStudentApp/Resources/Info.plist;", "Release uses the hardened plist");
-requireText(project, 'BNBU_API_BASE_URL = "https://configuration-required.invalid/api/v1";', "Release starts with an explicit non-shippable API placeholder");
+requireText(productionConfiguration, "https:/$()/configuration-required.invalid/api/v1", "Release starts with an explicit non-shippable API placeholder");
 requireText(project, "Validate Release Configuration", "Xcode runs the Release configuration gate");
-requireText(releaseValidator, 'if [ "${CONFIGURATION:-}" != "Release" ]', "Release validator leaves Debug builds untouched");
+requireText(releaseValidator, 'BNBU_REQUIRE_APPROVED_API_URL', "Configuration validator applies only to formal builds");
 requireText(releaseValidator, "configuration-required.invalid", "Release validator rejects the placeholder host");
 requireText(releaseValidator, "*/api/v1", "Release validator enforces the frozen API prefix");
+requireText(releaseValidator, 'organization_code" != "BNBU"', "Release validator freezes the R01 organization code");
+requireText(releaseValidator, 'contract_version" != "2.0.10-contract"', "Release validator freezes Contract 2.0.10");
+requireText(releaseValidator, 'https://api.verityai.cn/api/v1', "Release validator freezes the R01 Staging endpoint");
+requireText(backendEnvironment, 'approvedStagingHost = "api.verityai.cn"', "Runtime validation freezes the Staging host");
+requireText(backendEnvironment, "contractSHA256Mismatch", "Runtime validation fails closed on Contract hash drift");
 requireText(macReleaseGate, "set -Eeuo pipefail", "Mac Release gate fails closed on shell errors");
 for (const step of [
   "preflight",
@@ -709,16 +798,19 @@ rejectText(
   "BNBUTheme.background.frame(height:",
   "No page-background strip is pinned over scrolling content"
 );
+requireText(components, "enum BNBUProgressGeometry", "Progress bars share a safe layout-width policy");
+requireText(components, "containerWidth.isFinite", "Progress bars reject non-finite geometry proposals");
+rejectText(featureSources, ".frame(width: proxy.size.width *", "Progress bars never forward unchecked geometry into frame width");
+requireText(modelTests, "testProgressGeometryRejectsInvalidLayoutProposals", "XCTest covers negative and non-finite progress geometry");
 
 // Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch
 // course guide, then sign-in.
-const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");
 const profileDetailViews = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
 const joinRequestStatusView = read("BNBUStudentApp/Features/JoinRequestStatusView.swift");
 
 requireOrder(
   appShellViews,
-  ["case restoring", "case privacyConsent", "case preLoginGuide", "case login", "case authenticated"],
+  ["case restoring", "case privacyConsent", "case preLoginGuide", "case initialCourseJoin", "case login", "case authenticated"],
   "The app shell keeps Android's startup gate order"
 );
 requireText(
@@ -726,12 +818,24 @@ requireText(
   "guard BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults) else {",
   "Privacy consent is a gate ahead of sign-in, not a login-form checkbox"
 );
-// Resolving the stage one frame late swapped the root view under the tab bar,
-// which dropped the accessibility identifiers on its items.
+// UI fixtures remain deterministic before the first frame, while production
+// stays on the restoring stage until the rotating session has been validated
+// against `/me`. A cached token alone must never open the authenticated shell.
+const appEntry = read("BNBUStudentApp/BNBUStudentApp.swift");
 requireText(
-  read("BNBUStudentApp/BNBUStudentApp.swift"),
-  "initialValue: AppShellStage.resolved(",
-  "The startup destination is resolved before the first frame"
+  appEntry,
+  "? AppShellStage.resolved(",
+  "UI fixtures resolve their startup destination before the first frame"
+);
+requireText(
+  appEntry,
+  ": .restoring)",
+  "Production starts behind the asynchronous session-restore gate"
+);
+requireOrder(
+  appShellViews,
+  ["await appState.restoreBackendSession()", "        resolveInitialStage()"],
+  "Production validates the Backend session before resolving its destination"
 );
 requireText(
   appShellViews,
@@ -742,6 +846,7 @@ requireText(
 // names Firebase and promises no microphone, neither of which is true here.
 rejectText(appShellViews, "Firebase", "The iOS consent summary does not claim Firebase messaging");
 requireText(appShellViews, "麦克风记录声音", "The iOS consent summary discloses microphone use during video capture");
+requireText(appShellViews, "当前正式版本不申请定位权限，也不采集原始坐标", "The consent summary discloses the default-denied location state");
 requireText(
   appState,
   "localStore.saveCourseJoinRequest(request)",
@@ -834,7 +939,8 @@ requireText(dashboardView, "navigationDestination(item: $openedNotice)", "The no
 requireText(project, "PrivacyInfo.xcprivacy in Resources", "Xcode copies the privacy manifest into the app");
 
 requireText(modelTests, "testCurrentBackendStudentWorkspacePayloadsDecode", "XCTest covers current workspace payload shapes");
-requireText(modelTests, "testRecordValidityMapsLegacyReviewStatesOntoValidInvalid", "XCTest covers legacy review-state mapping onto validity");
+requireText(modelTests, "testRecordValidityPreservesServerReviewStatesWithoutClientDerivation", "XCTest covers exact Backend review-state mapping");
+requireText(backendFoundationTests, "testContract202StudentRecordListUsesTheRoleScopedCanonicalRoute", "XCTest covers the Contract 2.0.10 record-list binding");
 requireText(modelTests, "testMutationResultsAreNotMistakenForCompleteDomainObjects", "XCTest covers mutation-result classification");
 requireText(modelTests, "testStudentProgressWithoutIdentityFailsClosedToEmptyIdentifier", "XCTest covers missing progress identity without a hard-coded student fallback");
 requireText(modelTests, "testSubmissionHoursAlwaysMatchBackendOneOrTwoHourContract", "XCTest covers the hours enum");

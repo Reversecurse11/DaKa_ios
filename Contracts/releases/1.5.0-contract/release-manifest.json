@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "contractVersion": "1.5.0-contract",
+  "openapiVersion": "3.1.0",
+  "sha256": "f0b4916cb0abd1ec4057f690763de8d7e6f79ca2b7e666a8cd6f3d8c37c69bed",
+  "byteLength": 311725,
+  "sourceCommit": "b014fb01051acc99dd7f15a971efed0c46642e8e",
+  "canonicalPath": "docs/backend-contracts/openapi.yaml",
+  "immutableCandidateSnapshot": "docs/backend-contracts/releases/1.5.0-contract/openapi.candidate.yaml",
+  "publishedBaseline": {
+    "version": "1.4.0-contract",
+    "sha256": "c5d18c4894bbe421074cba27da3b39a9076328c499cc742b273665994c29059b",
+    "sourceCommit": "75235c4ab46b909d0b0b487d5de954f120fdf15d"
+  },
+  "counts": {
+    "paths": 106,
+    "operations": 123,
+    "schemas": 279
+  },
+  "compatibility": {
+    "result": "PASS",
+    "classifiedChanges": 65,
+    "unapprovedBlockers": 0
+  },
+  "runtime": {
+    "implementedAndConformant": 106,
+    "intentionallyDisabled": 17,
+    "notImplemented": 0
+  }
+}

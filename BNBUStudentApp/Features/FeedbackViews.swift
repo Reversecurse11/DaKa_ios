@@ -71,7 +71,9 @@ struct FeedbackView: View {
         .scrollDismissesKeyboard(.immediately)
         .onChange(of: tab) { _, newValue in
             appState.errorMessage = nil
-            if newValue == .tickets { appState.refreshFeedbackTickets() }
+            if newValue == .tickets {
+                Task { await appState.refreshFeedbackTickets() }
+            }
         }
     }
 }
@@ -114,25 +116,32 @@ private struct FeedbackForm: View {
                 }
             }
 
-            FeedbackScreenshotPanel(screenshots: $screenshots)
+            if appState.isAPIV1Session {
+                ValidationPanel(message: BNBUL10n.text(
+                    "为保护隐私，本次仅提交问题类型、描述和基础 App/系统版本；不会上传截图、联系方式、日志或设备标识。处理回复会显示在反馈记录中。"
+                ))
+                .accessibilityIdentifier("feedback.privacyNotice")
+            } else {
+                FeedbackScreenshotPanel(screenshots: $screenshots)
 
-            SwissPanel {
-                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
-                    panelHeader(title: "联系方式", helper: "用于回复和跟进此问题，不会公开展示。")
-                    FeedbackField(
-                        label: "邮箱（必填）",
-                        placeholder: "name@example.com",
-                        text: $email,
-                        keyboardType: .emailAddress,
-                        identifier: "feedback.email"
-                    )
-                    FeedbackField(
-                        label: "联系电话（必填）",
-                        placeholder: "例如：138 0000 0000",
-                        text: $phone,
-                        keyboardType: .phonePad,
-                        identifier: "feedback.phone"
-                    )
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                        panelHeader(title: "联系方式", helper: "用于回复和跟进此问题，不会公开展示。")
+                        FeedbackField(
+                            label: "邮箱（必填）",
+                            placeholder: "name@example.com",
+                            text: $email,
+                            keyboardType: .emailAddress,
+                            identifier: "feedback.email"
+                        )
+                        FeedbackField(
+                            label: "联系电话（必填）",
+                            placeholder: "例如：138 0000 0000",
+                            text: $phone,
+                            keyboardType: .phonePad,
+                            identifier: "feedback.phone"
+                        )
+                    }
                 }
             }
 
@@ -143,8 +152,8 @@ private struct FeedbackForm: View {
             ) {
                 submit()
             }
-            .disabled(!appState.isWriteAllowed)
-            .opacity(appState.isWriteAllowed ? 1 : 0.5)
+            .disabled(!appState.isWriteAllowed || appState.isSubmittingFeedback)
+            .opacity(appState.isWriteAllowed && !appState.isSubmittingFeedback ? 1 : 0.5)
         }
         .onAppear {
             // The bound address is the one support will reply to, so it is the
@@ -238,16 +247,18 @@ private struct FeedbackForm: View {
 
     private func submit() {
         dismissBNBUKeyboard()
-        guard let ticket = appState.submitFeedback(
-            category: category,
-            description: description,
-            email: email,
-            phone: phone,
-            screenshots: screenshots
-        ) else { return }
-        description = ""
-        screenshots = []
-        onSubmitted(ticket)
+        Task {
+            guard let ticket = await appState.submitFeedbackForCurrentDataSource(
+                category: category,
+                description: description,
+                email: email,
+                phone: phone,
+                screenshots: screenshots
+            ) else { return }
+            description = ""
+            screenshots = []
+            onSubmitted(ticket)
+        }
     }
 }
 
@@ -454,11 +465,12 @@ private struct FeedbackTicketList: View {
             }
 
             OutlinedActionButton(title: "刷新处理状态", systemImage: "arrow.clockwise") {
-                appState.refreshFeedbackTickets()
+                Task { await appState.refreshFeedbackTickets() }
             }
+            .disabled(appState.isLoadingFeedbackTickets)
             .accessibilityIdentifier("feedback.refresh")
         }
-        .onAppear { appState.refreshFeedbackTickets() }
+        .task { await appState.refreshFeedbackTickets() }
         .accessibilityIdentifier("feedback.tickets")
     }
 }

@@ -1,8 +1,20 @@
 import XCTest
+import ImageIO
+import UniformTypeIdentifiers
+import UIKit
 @testable import BNBUStudent
 
 @MainActor
 final class BNBUStudentModelTests: XCTestCase {
+    func testProgressGeometryRejectsInvalidLayoutProposals() {
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: -20, ratio: 0.5), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: .infinity, ratio: 0.5), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: .nan), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: -1), 0)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: 2), 200)
+        XCTAssertEqual(BNBUProgressGeometry.width(containerWidth: 200, ratio: 0.25), 50)
+    }
+
     override func setUp() {
         super.setUp()
         // Client-generated messages follow the app language; pin zh-Hans so
@@ -41,11 +53,33 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(BNBUL10n.dynamicText("春季学期"), "Spring Semester")
         XCTAssertEqual(BNBUL10n.dynamicText("开始时间"), "Start Time")
         XCTAssertEqual(BNBUL10n.dynamicText("可计学时"), "Eligible Hours")
+        XCTAssertEqual(BNBUL10n.dynamicText("课程相关运动打卡"), "Course Exercise Check-in")
+        XCTAssertEqual(BNBUL10n.dynamicText("图片"), "Image")
+        XCTAssertEqual(
+            BNBUL10n.dynamicText("图片哈希命中历史记录，本次不计入有效学时。"),
+            "This image matches a previous record, so these hours do not count."
+        )
         XCTAssertEqual(4.0.localizedHourText, "4 hr")
         XCTAssertEqual(
             BNBUL10n.formatted("还差 %@", 4.0.localizedHourText),
             "4 hr remaining"
         )
+        let record = CheckInRecord(
+            id: "localized-proof-summary",
+            courseId: nil,
+            taskTitle: "课程相关运动打卡",
+            creditType: .courseRelated,
+            hours: 2,
+            submittedAt: "2026-08-13T08:00:00Z",
+            proofSummary: "2 张图片，1 个短视频",
+            proofPhotoCount: 2,
+            proofVideoCount: 1,
+            proofFiles: [],
+            note: ""
+        )
+        XCTAssertEqual(record.localizedProofSummary, "2 photos, 1 short video")
+        XCTAssertEqual(record.localizedTaskTitle, "Course Exercise Check-in")
+        XCTAssertEqual(StudentRecordTimeDisplay.dateTime("刚刚"), "Just now")
 
         BNBUL10n.localeOverride = Locale(identifier: "zh-Hans")
         XCTAssertEqual(BNBUL10n.dynamicText("正常"), "正常")
@@ -64,9 +98,7 @@ final class BNBUStudentModelTests: XCTestCase {
             startTime: start,
             endTime: nil,
             status: .active,
-            locationStatus: .unavailable,
-            latitude: nil,
-            longitude: nil
+            locationStatus: .unavailable
         )
 
         XCTAssertEqual(session.creditedHours(at: start.addingTimeInterval(3_599)), 0)
@@ -88,9 +120,7 @@ final class BNBUStudentModelTests: XCTestCase {
             startTime: start,
             endTime: nil,
             status: .active,
-            locationStatus: .available,
-            latitude: 22.35,
-            longitude: 114.20
+            locationStatus: .available
         )
 
         XCTAssertEqual(active.reconciled(at: start.addingTimeInterval(7_199)).status, .active)
@@ -120,6 +150,47 @@ final class BNBUStudentModelTests: XCTestCase {
         let restored = AppState(repository: MockStudentRepository(), localStore: store)
         XCTAssertEqual(restored.exerciseSession?.id, stored.id)
         XCTAssertEqual(restored.exerciseSession?.resolvedSportName, "飞盘")
+    }
+
+    func testLegacyExerciseSessionCoordinatesAreScrubbedDuringRestore() throws {
+        let defaults = isolatedDefaults()
+        let repository = MockStudentRepository()
+        let session = ExerciseSession(
+            id: "legacy-location-session",
+            studentID: repository.loadWorkspace().student.id,
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: Date(timeIntervalSince1970: 1_783_516_800),
+            status: .active,
+            locationStatus: .unavailable
+        )
+        var legacyJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any]
+        )
+        legacyJSON["locationStatus"] = "available"
+        legacyJSON["latitude"] = 22.35
+        legacyJSON["longitude"] = 114.20
+        defaults.set(
+            try JSONSerialization.data(withJSONObject: legacyJSON),
+            forKey: AppLocalStore.exerciseSessionStorageKey
+        )
+
+        let restored = AppState(
+            repository: repository,
+            localStore: AppLocalStore(defaults: defaults)
+        )
+
+        XCTAssertEqual(restored.exerciseSession?.locationStatus, .unavailable)
+        let migratedData = try XCTUnwrap(defaults.data(forKey: AppLocalStore.exerciseSessionStorageKey))
+        let migratedJSON = String(decoding: migratedData, as: UTF8.self)
+        XCTAssertFalse(migratedJSON.contains("latitude"))
+        XCTAssertFalse(migratedJSON.contains("longitude"))
+        let migratedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: migratedData) as? [String: Any]
+        )
+        XCTAssertEqual(migratedObject["locationStatus"] as? String, "unavailable")
     }
 
     // MARK: - Pause model (business rule 3.2.1)
@@ -378,22 +449,405 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(materialized.type, .image)
     }
 
+    func testDiscardingSavedCompletedCheckInClearsTheWholeLocalCandidate() async throws {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        appState.enforcesCheckInTimeWindow = false
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(
+            imageData: Data([0x01, 0x02]),
+            thumbnailData: nil,
+            at: start.addingTimeInterval(10)
+        ))
+        let mediaDraft = try XCTUnwrap(appState.exerciseMediaDrafts.first)
+        let attachment = try XCTUnwrap(appState.proofAttachment(from: mediaDraft))
+        XCTAssertTrue(appState.endExerciseSession(
+            at: start.addingTimeInterval(ExerciseSession.oneHour)
+        ))
+        appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: [attachment]
+        )
+
+        XCTAssertEqual(appState.exerciseSession?.status, .completed)
+        XCTAssertNotNil(appState.draft)
+        XCTAssertEqual(appState.exerciseMediaDrafts.count, 1)
+        XCTAssertNotNil(store.readDraft().value)
+        XCTAssertNotNil(store.readExerciseSession().value)
+        XCTAssertNotNil(store.readExerciseMediaDrafts().value)
+
+        let discarded = await appState.discardCompletedCheckInDraft()
+        XCTAssertTrue(discarded)
+        XCTAssertNil(appState.exerciseSession)
+        XCTAssertNil(appState.draft)
+        XCTAssertTrue(appState.exerciseMediaDrafts.isEmpty)
+        XCTAssertNil(store.readDraft().value)
+        XCTAssertNil(store.readExerciseSession().value)
+        XCTAssertNil(store.readExerciseMediaDrafts().value)
+    }
+
+    func testDraftSaveFailureDoesNotPublishAnInMemoryDraft() {
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailWrite: { $0 == AppLocalStore.draftStorageKey }
+        )
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+
+        let saved = appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: []
+        )
+
+        XCTAssertFalse(saved)
+        XCTAssertNil(appState.draft)
+        XCTAssertNil(store.readDraft().value)
+        XCTAssertEqual(appState.storeHealth.lastWriteStatus, .failed)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    func testChangedDraftSaveFailureKeepsItsPreviousRetryJournal() throws {
+        let removalFailure = LocalRemovalFailureController(
+            failingKey: AppLocalStore.pendingMutationStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+        )
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "old-draft-fingerprint",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "draft-with-retry",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "原说明",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            sportType: ExerciseSportType.running.rawValue,
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        removalFailure.enable()
+
+        let saved = appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "新说明",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: []
+        )
+
+        XCTAssertFalse(saved)
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+        XCTAssertNotNil(appState.errorMessage)
+
+        removalFailure.disable()
+        XCTAssertTrue(appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "新说明",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: []
+        ))
+        XCTAssertEqual(appState.draft?.note, "新说明")
+        XCTAssertNil(appState.draft?.pendingRemoteMutation)
+        XCTAssertNil(store.readPendingRemoteMutations().value?[attempt.scope])
+    }
+
+    func testChangedDraftWriteFailureRestoresThePreviousRetryJournal() throws {
+        let writeFailure = LocalWriteFailureController(
+            failingKey: AppLocalStore.draftStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailWrite: { writeFailure.shouldFailWrite(forKey: $0) }
+        )
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "old-draft-fingerprint",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "draft-with-retry",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "原说明",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            sportType: ExerciseSportType.running.rawValue,
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        writeFailure.enable()
+
+        let saved = appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "新说明",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: []
+        )
+
+        XCTAssertFalse(saved)
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    func testDraftRemovalFailureKeepsMemoryAndPersistedDraftConsistent() throws {
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { $0 == AppLocalStore.draftStorageKey }
+        )
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        XCTAssertTrue(appState.saveDraft(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: []
+        ))
+
+        XCTAssertFalse(appState.clearDraft())
+
+        XCTAssertNotNil(appState.draft)
+        XCTAssertNotNil(store.readDraft().value)
+        XCTAssertEqual(appState.storeHealth.lastWriteStatus, .failed)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    func testWholeCompletedDraftDiscardRollsBackEveryMetadataRemovalFailure() async throws {
+        let failingKeys = [
+            AppLocalStore.draftStorageKey,
+            AppLocalStore.exerciseMediaDraftsStorageKey,
+            AppLocalStore.exerciseSessionStorageKey
+        ]
+
+        for failingKey in failingKeys {
+            let removalFailure = LocalRemovalFailureController(failingKey: failingKey)
+            let store = AppLocalStore(
+                defaults: isolatedDefaults(),
+                shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+            )
+            let appState = AppState(repository: MockStudentRepository(), localStore: store)
+            appState.enforcesCheckInTimeWindow = false
+            let start = Date(timeIntervalSince1970: 1_800_100_000)
+
+            XCTAssertTrue(appState.startExerciseSession(
+                category: .general,
+                sportType: .running,
+                customSportName: "",
+                at: start
+            ), failingKey)
+            XCTAssertTrue(appState.addExercisePhotoDraft(
+                imageData: Data([0x01, 0x02]),
+                thumbnailData: nil,
+                at: start.addingTimeInterval(10)
+            ), failingKey)
+            let attachment = try XCTUnwrap(
+                appState.exerciseMediaDrafts.first.flatMap { appState.proofAttachment(from: $0) },
+                failingKey
+            )
+            XCTAssertTrue(appState.endExerciseSession(
+                at: start.addingTimeInterval(ExerciseSession.oneHour)
+            ), failingKey)
+            XCTAssertTrue(appState.saveDraft(
+                creditType: .general,
+                courseId: nil,
+                hours: 1,
+                note: "操场跑步",
+                sportType: ExerciseSportType.running.rawValue,
+                proofAttachments: [attachment]
+            ), failingKey)
+
+            let sessionSnapshot = try XCTUnwrap(appState.exerciseSession)
+            let draftSnapshot = try XCTUnwrap(appState.draft)
+            let mediaSnapshot = appState.exerciseMediaDrafts
+            let persistedDraftSnapshot = try XCTUnwrap(store.readDraft().value)
+            removalFailure.enable()
+
+            let failedDiscard = await appState.discardCompletedCheckInDraft()
+            XCTAssertFalse(failedDiscard, failingKey)
+            XCTAssertEqual(appState.exerciseSession, sessionSnapshot, failingKey)
+            XCTAssertEqual(appState.draft, draftSnapshot, failingKey)
+            XCTAssertEqual(appState.exerciseMediaDrafts, mediaSnapshot, failingKey)
+            XCTAssertEqual(store.readExerciseSession().value, sessionSnapshot, failingKey)
+            XCTAssertEqual(store.readDraft().value, persistedDraftSnapshot, failingKey)
+            XCTAssertEqual(store.readExerciseMediaDrafts().value, mediaSnapshot, failingKey)
+            XCTAssertNotNil(appState.errorMessage, failingKey)
+
+            removalFailure.disable()
+            let successfulDiscard = await appState.discardCompletedCheckInDraft()
+            XCTAssertTrue(successfulDiscard, failingKey)
+            XCTAssertNil(appState.exerciseSession, failingKey)
+            XCTAssertNil(appState.draft, failingKey)
+            XCTAssertTrue(appState.exerciseMediaDrafts.isEmpty, failingKey)
+        }
+    }
+
+    func testWholeDraftDiscardKeepsCandidateWhenPendingJournalCannotBeRemoved() async throws {
+        let removalFailure = LocalRemovalFailureController(
+            failingKey: AppLocalStore.pendingMutationStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+        )
+        let setupState = AppState(repository: MockStudentRepository(), localStore: store)
+        setupState.enforcesCheckInTimeWindow = false
+        let start = Date(timeIntervalSince1970: 1_800_200_000)
+        XCTAssertTrue(setupState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(setupState.endExerciseSession(
+            at: start.addingTimeInterval(ExerciseSession.oneHour)
+        ))
+
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "whole-discard-journal",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "whole-discard-draft",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            sportType: ExerciseSportType.running.rawValue,
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        let sessionSnapshot = try XCTUnwrap(appState.exerciseSession)
+        removalFailure.enable()
+
+        let failedDiscard = await appState.discardCompletedCheckInDraft()
+        XCTAssertFalse(failedDiscard)
+        XCTAssertEqual(appState.exerciseSession, sessionSnapshot)
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readExerciseSession().value, sessionSnapshot)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+
+        removalFailure.disable()
+        let successfulDiscard = await appState.discardCompletedCheckInDraft()
+        XCTAssertTrue(successfulDiscard)
+        XCTAssertNil(appState.exerciseSession)
+        XCTAssertNil(appState.draft)
+        XCTAssertNil(store.readPendingRemoteMutations().value?[attempt.scope])
+    }
+
+    func testDraftRemovalFailureRestoresItsLegacyRetryJournal() throws {
+        let removalFailure = LocalRemovalFailureController(
+            failingKey: AppLocalStore.draftStorageKey
+        )
+        let store = AppLocalStore(
+            defaults: isolatedDefaults(),
+            shouldFailRemoval: { removalFailure.shouldFailRemoval(forKey: $0) }
+        )
+        let attempt = PendingRemoteMutationAttempt.create(
+            scope: "sport-record:create",
+            fingerprint: "clear-draft-journal",
+            serverIdentity: "https://sports.example.edu/api/v1",
+            studentID: "s1"
+        )
+        let savedDraft = CheckInDraft(
+            id: "clear-draft",
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "操场跑步",
+            proofAttachments: [],
+            updatedAt: "2026-08-17 15:00",
+            pendingRemoteMutation: attempt
+        )
+        XCTAssertTrue(store.saveDraft(savedDraft))
+        XCTAssertTrue(store.savePendingRemoteMutations([attempt.scope: attempt]))
+        let appState = AppState(repository: MockStudentRepository(), localStore: store)
+        removalFailure.enable()
+
+        XCTAssertFalse(appState.clearDraft())
+        XCTAssertEqual(appState.draft, savedDraft)
+        XCTAssertEqual(store.readDraft().value, savedDraft)
+        XCTAssertEqual(store.readPendingRemoteMutations().value?[attempt.scope], attempt)
+    }
+
     // MARK: - Daily open window (business rule 3.3)
 
     func testExerciseCanOnlyStartInsideDailyOpenWindow() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        func shanghai(_ hour: Int, _ minute: Int) throws -> Date {
+        func shanghai(_ hour: Int, _ minute: Int, _ second: Int = 0) throws -> Date {
             try XCTUnwrap(calendar.date(from: DateComponents(
-                year: 2026, month: 7, day: 21, hour: hour, minute: minute
+                year: 2026, month: 7, day: 21, hour: hour, minute: minute, second: second
             )))
         }
 
         XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(5, 59)))
         XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(6, 0)))
         XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(21, 59)))
-        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0)))
+        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0, 0)))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0, 1)))
         XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(23, 30)))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(7, 29, 59),
+            dailyStartTime: "07:30:00",
+            dailyEndTime: "21:30:00"
+        ))
+        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(21, 30, 0),
+            dailyStartTime: "07:30",
+            dailyEndTime: "21:30"
+        ))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(5, 0),
+            dailyStartTime: "00:00:00",
+            dailyEndTime: "23:59:59"
+        ))
+        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(
+            at: try shanghai(12, 0),
+            dailyStartTime: "invalid",
+            dailyEndTime: "21:30:00"
+        ))
 
         let appState = AppState(
             repository: MockStudentRepository(),
@@ -417,6 +871,35 @@ final class BNBUStudentModelTests: XCTestCase {
         ))
         XCTAssertTrue(appState.endExerciseSession(at: try shanghai(22, 30)))
         XCTAssertEqual(appState.exerciseSession?.creditedHours(), 1)
+    }
+
+    func testBeijingBusinessDateStaysFrozenWhileRecordTimesUseDeviceTimezone() throws {
+        let instant = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-10T00:30:00Z"))
+        XCTAssertEqual(CheckInTimeWindowRule.businessDateString(for: instant), "2026-08-10")
+
+        let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        XCTAssertEqual(
+            StudentRecordTimeDisplay.dateTime(
+                "2026-08-10T00:30:00Z",
+                timeZone: losAngeles,
+                locale: Locale(identifier: "en_US_POSIX")
+            ),
+            "2026-08-09 17:30"
+        )
+
+        let record = try JSONDecoder().decode(CheckInRecord.self, from: Data(
+            """
+            {"id":"record-business-date","courseId":"course-1","taskTitle":"跑步","creditType":"GENERAL","hours":1,"businessDate":"2026-08-10","submittedAt":"2026-08-09T16:30:00Z","validity":"VALID","proofSummary":"1 张图片","proofPhotoCount":1,"proofVideoCount":0,"proofFiles":[],"note":"","startedAt":"2026-08-09T15:00:00Z","endedAt":"2026-08-09T16:00:00Z"}
+            """.utf8
+        ))
+        XCTAssertEqual(record.businessDate, "2026-08-10")
+
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.workspace.records = [record]
+        XCTAssertTrue(appState.hasSubmittedCheckInToday(at: instant))
     }
 
     // MARK: - Course join application (business rule 4.2)
@@ -468,6 +951,31 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: "https://sports.bnbu.edu/"))
         XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: ""))
+    }
+
+    func testOpaqueCourseInviteTokenParsingIsLossless() {
+        let token = "AbCd-opaque_Invite.Token~1234"
+        XCTAssertNil(CourseInviteTokenRule.validationMessage(for: token))
+        XCTAssertEqual(CourseInviteTokenRule.token(fromScannedPayload: token), token)
+        let controlledURL = "https://join.verityai.example/join/\(token)"
+        XCTAssertEqual(
+            CourseInviteTokenRule.token(fromScannedPayload: controlledURL),
+            token
+        )
+        XCTAssertEqual(CourseInviteTokenRule.token(fromInput: "  \(token)  "), token)
+        XCTAssertEqual(CourseInviteTokenRule.token(fromInput: controlledURL), token)
+        XCTAssertEqual(
+            CourseInviteTokenRule.token(fromInput: "https://sports.example.com/join/\(token)"),
+            token
+        )
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "http://join.verityai.example/join/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://join.verityai.example/other/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://user@join.verityai.example/join/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://join.verityai.example:8443/join/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://join.verityai.example/join/\(token)?source=qr"))
+        XCTAssertNotEqual(CourseInviteTokenRule.token(fromScannedPayload: token), token.uppercased())
+        XCTAssertNil(CourseInviteTokenRule.token(fromScannedPayload: "too-short"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromScannedPayload: "opaque token with whitespace"))
     }
 
     func testPendingEnrollmentBlocksExerciseStartAndSubmission() throws {
@@ -743,9 +1251,7 @@ final class BNBUStudentModelTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
-    // A student joins before they have an account: the application itself is
-    // what the teacher reviews, so it must go through unauthenticated.
-    func testCourseJoinRequestIsFiledBeforeSignIn() throws {
+    func testCourseJoinRequestRequiresEmailSignIn() throws {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -754,11 +1260,21 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(state.courseJoinRequest)
 
         let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
-        XCTAssertTrue(state.submitCourseJoinRequest(
+        XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
             phone: "13800138000",
+            email: "lin@bnbu.edu.cn"
+        ))
+        XCTAssertEqual(state.errorMessage, "请先完成邮箱登录和验证，再加入课程。")
+
+        XCTAssertTrue(state.mockAccountLogin())
+        XCTAssertTrue(state.submitCourseJoinRequest(
+            invite: invite,
+            name: "林同学",
+            studentNumber: "2400987654",
+            phone: "",
             email: "lin@bnbu.edu.cn"
         ))
         XCTAssertNil(state.errorMessage)
@@ -768,8 +1284,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(filed.studentName, "林同学")
         XCTAssertEqual(filed.studentNumber, "2400987654")
         XCTAssertEqual(filed.courseCode, invite.courseCode)
-        // Nothing was written into a workspace the student does not yet own.
-        XCTAssertTrue(state.pendingEnrollmentCourses.isEmpty)
+        XCTAssertFalse(state.pendingEnrollmentCourses.isEmpty)
     }
 
     func testCourseJoinRequestRequiresANameAndStudentNumber() {
@@ -798,23 +1313,13 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400"))
     }
 
-    // A student who reinstalls signs back in with a code, so an application
-    // must not reach the teacher until both contacts are verified.
-    func testCourseJoinRequestRequiresBothContactsBound() throws {
+    func testCourseJoinRequestRequiresVerifiedEmailOnly() throws {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
+        XCTAssertTrue(state.mockAccountLogin())
         let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
-
-        XCTAssertFalse(state.submitCourseJoinRequest(
-            invite: invite,
-            name: "林同学",
-            studentNumber: "2400987654",
-            phone: "",
-            email: "lin@bnbu.edu.cn"
-        ))
-        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
 
         XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
@@ -823,17 +1328,17 @@ final class BNBUStudentModelTests: XCTestCase {
             phone: "13800138000",
             email: ""
         ))
-        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
+        XCTAssertEqual(state.errorMessage, "请先完成邮箱验证。")
         XCTAssertNil(state.courseJoinRequest)
 
         XCTAssertTrue(state.submitCourseJoinRequest(
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
-            phone: "138 0013 8000",
+            phone: "",
             email: "lin@bnbu.edu.cn"
         ))
-        XCTAssertEqual(state.courseJoinRequest?.phone, "13800138000")
+        XCTAssertEqual(state.courseJoinRequest?.phone, "")
         XCTAssertEqual(state.courseJoinRequest?.email, "lin@bnbu.edu.cn")
     }
 
@@ -1172,12 +1677,12 @@ final class BNBUStudentModelTests: XCTestCase {
         )
     }
 
-    func testFilingFeedbackPrependsTheTicketAndRefusesTooManyScreenshots() {
+    func testFilingFeedbackPrependsTheTicketAndRefusesTooManyScreenshots() async {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        state.refreshFeedbackTickets()
+        await state.refreshFeedbackTickets()
         let seeded = state.feedbackTickets.count
         XCTAssertGreaterThan(seeded, 0)
 
@@ -1225,60 +1730,147 @@ final class BNBUStudentModelTests: XCTestCase {
     }
 
     // A reinstalled app signs back in with a code, so this is the only way in.
-    func testVerificationCodeSignInOpensTheWorkspace() {
+    func testVerificationCodeSignInOpensTheWorkspace() async {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        XCTAssertFalse(state.sendLoginCode(to: "1380013800", channel: .phone))
+        var succeeded = await state.sendLoginCode(to: "1380013800", channel: .phone)
+        XCTAssertFalse(succeeded)
         XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
-        XCTAssertTrue(state.sendLoginCode(to: "13800138000", channel: .phone))
+        succeeded = await state.sendLoginCode(to: "13900139000", channel: .phone)
+        XCTAssertFalse(succeeded)
+        XCTAssertTrue(state.errorMessage?.contains("测试账号") == true)
+        succeeded = await state.sendLoginCode(to: "13800138000", channel: .phone)
+        XCTAssertTrue(succeeded)
 
-        XCTAssertFalse(state.signInWithCode("12345", contact: "13800138000", channel: .phone))
+        succeeded = await state.signInWithCode("12345", contact: "13800138000", channel: .phone)
+        XCTAssertFalse(succeeded)
         XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
         XCTAssertFalse(state.isAuthenticated)
 
-        XCTAssertTrue(state.signInWithCode("123456", contact: "13800138000", channel: .phone))
+        succeeded = await state.signInWithCode("654321", contact: "13800138000", channel: .phone)
+        XCTAssertFalse(succeeded)
+        XCTAssertFalse(state.isAuthenticated)
+
+        succeeded = await state.signInWithCode("123456", contact: "13800138000", channel: .phone)
+        XCTAssertTrue(succeeded)
         XCTAssertTrue(state.isAuthenticated)
+        XCTAssertEqual(state.workspace.student.email, "test.student@bnbu.edu.cn")
+        XCTAssertEqual(state.workspace.student.name, "测试学生")
     }
 
-    func testRecoveryRequestNeedsAnIdentityAndOneReachableContact() {
+    func testMockShortcutOpensTheUsableTestAccount() {
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+
+        XCTAssertTrue(state.mockAccountLogin())
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isFullFeatureMockMode)
+        XCTAssertEqual(state.workspace.student.id, "mock-full-feature-student-001")
+        XCTAssertEqual(state.workspace.student.name, "测试学生")
+        XCTAssertEqual(state.workspace.student.email, "test.student@bnbu.edu.cn")
+    }
+
+    func testMockHourToolAdvancesActiveSessionAndOnlyCreditsAfterSubmission() async throws {
+        let store = AppLocalStore(defaults: isolatedDefaults())
+        let state = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: store
+        )
+        XCTAssertTrue(state.mockAccountLogin())
+        state.enforcesCheckInTimeWindow = false
+        let originalCourseHours = state.workspace.progress.course
+        let originalRawCourseHours = state.workspace.progress.rawCourse
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let actionTime = start.addingTimeInterval(30)
+
+        XCTAssertFalse(state.addOneHourToMockExercise(at: actionTime))
+        XCTAssertTrue(state.startExerciseSession(
+            category: .courseRelated,
+            sportType: .running,
+            customSportName: "",
+            at: start
+        ))
+        XCTAssertTrue(state.addOneHourToMockExercise(at: actionTime))
+        XCTAssertEqual(state.exerciseSession?.elapsed(at: actionTime), ExerciseSession.oneHour + 30)
+        XCTAssertEqual(state.exerciseSession?.creditedHours(at: actionTime), 1)
+        XCTAssertFalse(state.addOneHourToMockExercise(at: actionTime))
+
+        // The shortcut changes this session only. Semester progress remains
+        // unchanged until the ordinary submit flow creates a record.
+        XCTAssertEqual(state.workspace.progress.course, originalCourseHours)
+        XCTAssertEqual(state.workspace.progress.rawCourse, originalRawCourseHours)
+        XCTAssertTrue(state.endExerciseSession(at: actionTime))
+        let completedSession = try XCTUnwrap(state.exerciseSession)
+        XCTAssertEqual(completedSession.creditedHours(), 1)
+
+        let originalRecordCount = state.workspace.records.count
+        let submitted = await state.submitCheckIn(
+            creditType: .courseRelated,
+            courseId: completedSession.courseID,
+            hours: completedSession.creditedHours(),
+            note: "Mock 一小时运动测试",
+            sportType: completedSession.sportType.rawValue,
+            proofAttachments: [
+                ProofAttachment(
+                    id: "mock-hour-proof",
+                    type: .image,
+                    fileName: "mock-hour-proof.jpg",
+                    byteCount: 400_000,
+                    source: "test"
+                )
+            ],
+            exerciseSession: completedSession
+        )
+        XCTAssertTrue(submitted)
+        state.markExerciseSessionSubmitted()
+        XCTAssertNil(state.exerciseSession)
+        XCTAssertEqual(state.workspace.records.count, originalRecordCount + 1)
+        XCTAssertEqual(state.workspace.records.first?.hours, 1)
+        XCTAssertEqual(state.workspace.progress.course, originalCourseHours + 1)
+        XCTAssertEqual(state.workspace.progress.rawCourse, originalRawCourseHours + 1)
+
+        let restored = AppState(
+            repository: UnauthenticatedStudentRepository(),
+            localStore: store
+        )
+        XCTAssertTrue(restored.mockAccountLogin())
+        XCTAssertNil(restored.exerciseSession)
+        XCTAssertEqual(restored.workspace.records.count, originalRecordCount + 1)
+        XCTAssertEqual(restored.workspace.progress.course, originalCourseHours + 1)
+        XCTAssertEqual(restored.workspace.progress.rawCourse, originalRawCourseHours + 1)
+    }
+
+    func testStudentRecoveryNeverCreatesALocalFalseSuccess() {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "", name: "林同学", description: "手机丢了", newPhone: "13800138000", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请填写学号。")
-
-        XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请至少填写一个新的手机号或邮箱，供老师换绑。")
-
-        XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "138", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
-
-        XCTAssertTrue(state.submitRecoveryRequest(
             studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: "lin@bnbu.edu.cn"
         ))
-        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(
+            state.errorMessage,
+            BNBUL10n.text(
+                "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请。若无法使用原邮箱，请联系任课教师或系统管理员核验身份。"
+            )
+        )
     }
 
     func testBoundContactsAreShownMasked() {
         XCTAssertEqual(ContactBindingRule.masked("13800138000", for: .phone), "138****8000")
         XCTAssertEqual(ContactBindingRule.masked("lin@bnbu.edu.cn", for: .email), "li***@bnbu.edu.cn")
+        XCTAssertEqual(ContactBindingRule.masked("s***@bnbu.edu.cn", for: .email), "s***@bnbu.edu.cn")
     }
 
-    // The application is filed before sign-in, so it cannot ride in the
-    // workspace cache and needs to survive a relaunch on its own.
-    func testCourseJoinRequestSurvivesRelaunchBeforeSignIn() throws {
+    func testCourseJoinRequestSurvivesRelaunchAfterSignIn() throws {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
         let state = AppState(repository: MockStudentRepository(), localStore: store)
+        XCTAssertTrue(state.mockAccountLogin())
         let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
         XCTAssertTrue(state.submitCourseJoinRequest(
             invite: invite,
@@ -1365,12 +1957,15 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(GradeTimeFormatter.compact("  "), "")
     }
 
-    // MARK: - Best-effort location (business rules 5.5/10.3)
+    // MARK: - Default-denied location fixture
 
-    func testLocationAttachesOnlyToRunningSessionWithoutFix() throws {
+    #if BNBU_FIXTURES && DEBUG
+    func testLocationFixtureIsMemoryOnlyAndRawCoordinatesNeverPersist() throws {
+        let defaults = isolatedDefaults()
+        let store = AppLocalStore(defaults: defaults)
         let appState = AppState(
             repository: MockStudentRepository(),
-            localStore: AppLocalStore(defaults: isolatedDefaults())
+            localStore: store
         )
         appState.enforcesCheckInTimeWindow = false
 
@@ -1385,22 +1980,26 @@ final class BNBUStudentModelTests: XCTestCase {
         ))
         XCTAssertEqual(appState.exerciseSession?.locationStatus, .unavailable)
 
-        // A late fix attaches to the running session and persists.
+        // A late Debug fixture fix can update only the in-memory UI state.
         appState.attachExerciseSessionLocation(latitude: 22.35, longitude: 114.20)
         XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
-        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
-        XCTAssertEqual(appState.exerciseSession?.longitude, 114.20)
 
-        // A second fix never overwrites the first.
+        // A second fix is ignored, and persistence always scrubs the status.
         appState.attachExerciseSessionLocation(latitude: 0, longitude: 0)
-        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
+        let stored = try XCTUnwrap(store.readExerciseSession().value)
+        XCTAssertEqual(stored.locationStatus, .unavailable)
+        let encodedSession = try XCTUnwrap(appState.exerciseSession)
+        let encoded = String(decoding: try JSONEncoder().encode(encodedSession), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("latitude"))
+        XCTAssertFalse(encoded.contains("longitude"))
 
         // A completed session no longer accepts fixes.
         XCTAssertTrue(appState.endExerciseSession())
-        let endedLatitude = appState.exerciseSession?.latitude
         appState.attachExerciseSessionLocation(latitude: 1, longitude: 1)
-        XCTAssertEqual(appState.exerciseSession?.latitude, endedLatitude)
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
     }
+    #endif
 
     func testDailyLimitUsesExerciseStartDateWhenSessionCrossesMidnight() async throws {
         let defaults = isolatedDefaults()
@@ -1454,10 +2053,10 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(appState.hasSubmittedCheckInToday(at: nextDay))
     }
 
-    func testDebugServerConfigDefaultsToTestAPI() {
+    func testDebugServerConfigDefaultsToLocalAPI() {
         let resolved = StudentServerConfig.resolvedBaseURL(arguments: ["BNBUStudent"], environment: [:])
 
-        XCTAssertEqual(resolved.absoluteString, "http://123.207.5.70:82/api/v1")
+        XCTAssertEqual(resolved.absoluteString, "http://127.0.0.1:3000/api/v1")
         XCTAssertEqual(StudentAPIClient().baseURL.absoluteString, resolved.absoluteString)
     }
 
@@ -1468,11 +2067,16 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         let environmentURL = StudentServerConfig.resolvedBaseURL(
             arguments: ["BNBUStudent"],
+            environment: ["BNBU_API_BASE_URL": "http://192.168.1.20:3000/api/v1"]
+        )
+        let rejectedLegacyURL = StudentServerConfig.resolvedBaseURL(
+            arguments: ["BNBUStudent"],
             environment: ["BNBU_API_BASE_URL": "http://123.207.5.70:82/api/v1"]
         )
 
         XCTAssertEqual(argumentURL.absoluteString, "http://127.0.0.1:8080/api/v1")
-        XCTAssertEqual(environmentURL.absoluteString, "http://123.207.5.70:82/api/v1")
+        XCTAssertEqual(environmentURL.absoluteString, "http://192.168.1.20:3000/api/v1")
+        XCTAssertEqual(rejectedLegacyURL.absoluteString, "http://127.0.0.1:3000/api/v1")
     }
 
     func testProofAttachmentValidationCatchesSizeAndDurationLimits() {
@@ -1494,15 +2098,91 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertEqual(staleLocalImage.validationMessage, "原始文件已不在内存中，请删除后重新选择")
 
-        let longVideo = ProofAttachment(
+        let oversizedTransportVideo = ProofAttachment(
             id: "video-too-large",
             type: .video,
             fileName: "large.mov",
-            byteCount: ProofUploadRule.maxVideoBytes + 1,
+            byteCount: ProofUploadRule.maxTransportBytes + 1,
             source: "test"
         )
-        XCTAssertEqual(longVideo.validationMessage, "视频超过 100MB")
-        XCTAssertFalse(longVideo.isValidForUpload)
+        XCTAssertEqual(oversizedTransportVideo.validationMessage, "视频超过上传安全上限")
+        XCTAssertFalse(oversizedTransportVideo.isValidForUpload)
+
+        XCTAssertNil(ExerciseVideoRule.validationMessage(durationSeconds: 15, hasAudioTrack: true))
+        XCTAssertEqual(
+            ExerciseVideoRule.validationMessage(durationSeconds: 15.01, hasAudioTrack: true),
+            "运动视频最长只能录制 15 秒。"
+        )
+        XCTAssertEqual(
+            ExerciseVideoRule.validationMessage(durationSeconds: 8, hasAudioTrack: false),
+            "运动视频必须包含声音，请开启麦克风后重新录制。"
+        )
+
+        let verifiedVideo = ProofAttachment(
+            id: "verified-video",
+            type: .video,
+            fileName: "proof.mov",
+            byteCount: 1_000,
+            durationSeconds: 8,
+            hasAudioTrack: true,
+            source: "test"
+        )
+        let restoredVideo = try? JSONDecoder().decode(
+            ProofAttachment.self,
+            from: JSONEncoder().encode(verifiedVideo)
+        )
+        XCTAssertEqual(restoredVideo?.hasAudioTrack, true)
+    }
+
+    func testImageSanitizerDropsSourceGPSAndEXIFMetadata() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let sourceData = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(
+                sourceData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            )
+        )
+        let properties: [CFString: Any] = [
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 22.3400,
+                kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 114.1800,
+                kCGImagePropertyGPSLongitudeRef: "E"
+            ],
+            kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifUserComment: "must-not-survive"
+            ]
+        ]
+        CGImageDestinationAddImage(destination, try XCTUnwrap(image.cgImage), properties as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let originalSource = try XCTUnwrap(
+            CGImageSourceCreateWithData(sourceData as Data as CFData, nil)
+        )
+        let originalProperties = try XCTUnwrap(
+            CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil) as? [CFString: Any]
+        )
+        XCTAssertNotNil(originalProperties[kCGImagePropertyGPSDictionary])
+        let originalExif = originalProperties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        XCTAssertEqual(originalExif?[kCGImagePropertyExifUserComment] as? String, "must-not-survive")
+
+        let sanitized = try XCTUnwrap(
+            ProofMediaSanitizer.sanitizedJPEGData(from: sourceData as Data)
+        )
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(sanitized as CFData, nil))
+        let sanitizedProperties = try XCTUnwrap(
+            CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        )
+        XCTAssertNil(sanitizedProperties[kCGImagePropertyGPSDictionary])
+        let exif = sanitizedProperties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        // The JPEG encoder may add non-identifying dimensions and colour-space
+        // facts, but source EXIF content must not survive the pixel redraw.
+        XCTAssertNil(exif?[kCGImagePropertyExifUserComment])
     }
 
     func testCheckInSubmissionPhaseCalculatesOverallUploadProgress() {
@@ -1654,7 +2334,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.workspace.progress.general, appState.hourRule.generalRequired)
     }
 
-    func testProofUploadRuleRejectsBatchAboveServerRequestLimit() {
+    func testProofUploadRuleDoesNotInventAggregateBusinessSizeLimit() {
         let attachments = [
             ProofAttachment(id: "video", type: .video, fileName: "proof.mov", byteCount: 100_000_000, source: "test"),
             ProofAttachment(id: "image-1", type: .image, fileName: "proof-1.jpg", byteCount: 7_000_001, source: "test"),
@@ -1663,8 +2343,8 @@ final class BNBUStudentModelTests: XCTestCase {
         ]
 
         XCTAssertEqual(ProofUploadRule.totalByteCount(in: attachments), 121_000_003)
-        XCTAssertFalse(ProofUploadRule.accepts(attachments))
-        XCTAssertEqual(ProofUploadRule.validationMessage(for: attachments), "全部凭证总大小不能超过 120MB。")
+        XCTAssertTrue(ProofUploadRule.accepts(attachments))
+        XCTAssertNil(ProofUploadRule.validationMessage(for: attachments))
     }
 
     func testExemptionProofRuleStopsAtFiveBackendReferences() {
@@ -1695,15 +2375,15 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(
             ExemptionInputRule.validationMessage(
                 reason: "受伤",
-                detail: String(repeating: "明", count: 1_996)
+                detail: String(repeating: "明", count: 996)
             )
         )
         XCTAssertEqual(
             ExemptionInputRule.validationMessage(
                 reason: "受伤",
-                detail: String(repeating: "明", count: 1_997)
+                detail: String(repeating: "明", count: 997)
             ),
-            "申请原因和情况说明合计不能超过 2000 个字符。"
+            "申请原因和情况说明合计不能超过 1000 个字符。"
         )
 
         let appState = AppState(
@@ -1783,6 +2463,10 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         let languageSettings = BNBULanguageSettings(defaults: consentDefaults)
         XCTAssertEqual(languageSettings.mode, .system)
+        XCTAssertEqual(
+            consentDefaults.string(forKey: BNBULanguage.defaultsKey),
+            BNBULanguage.system.rawValue
+        )
         languageSettings.select(rawValue: BNBULanguage.english.rawValue)
         XCTAssertEqual(languageSettings.mode, .english)
         XCTAssertEqual(
@@ -1791,6 +2475,8 @@ final class BNBUStudentModelTests: XCTestCase {
         )
         XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
         XCTAssertEqual(CheckInInputRule.validationMessage(note: "  \n"), "请填写运动说明。")
+        XCTAssertNil(CheckInInputRule.validationMessage(note: "", for: .courseRelated))
+        XCTAssertNil(CheckInInputRule.validationMessage(note: "  \n", for: .courseRelated))
         XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 200)))
         XCTAssertEqual(
             CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 201)),
@@ -1804,11 +2490,11 @@ final class BNBUStudentModelTests: XCTestCase {
             CheckInInputRule.normalizedDescription("  课程训练说明  ", for: .courseRelated),
             "课程训练说明"
         )
-        XCTAssertEqual(BNBUNotificationManager.route(from: ["route": "course"]), .courses)
-        XCTAssertEqual(BNBUNotificationManager.route(from: ["target": "sport_record"]), .checkin)
-        XCTAssertEqual(BNBUNotificationManager.route(from: ["type": "grade"]), .grades)
-        XCTAssertEqual(BNBUNotificationManager.route(from: [:]), .dashboard)
-
+        XCTAssertNil(CheckInInputRule.contractDescription("  \n", for: .courseRelated))
+        XCTAssertEqual(
+            CheckInInputRule.contractDescription("  课程训练说明  ", for: .courseRelated),
+            "课程训练说明"
+        )
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -1936,20 +2622,26 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertTrue(grades.missingItems.isEmpty)
     }
 
-    func testRecordValidityMapsLegacyReviewStatesOntoValidInvalid() throws {
+    func testRecordValidityPreservesServerReviewStatesWithoutClientDerivation() throws {
         let decoder = JSONDecoder()
         func decode(_ raw: String) throws -> RecordValidity {
             try decoder.decode(RecordValidity.self, from: Data("\"\(raw)\"".utf8))
         }
 
-        // Legacy pending/approved/supplement/offset states all read back as valid.
-        for legacy in ["待审核", "已通过", "待补充", "系统抵扣", "pending", "approved", "supplement", "offset", "有效"] {
-            XCTAssertEqual(try decode(legacy), .valid, "\(legacy) must map to valid")
+        for pending in ["待审核", "审核中", "pending", "PENDING", "待补充", "supplement"] {
+            XCTAssertEqual(try decode(pending), .pending, "\(pending) must remain unresolved")
+        }
+        for valid in ["已通过", "系统抵扣", "approved", "APPROVED", "offset", "有效", "VALID"] {
+            XCTAssertEqual(try decode(valid), .valid, "\(valid) must map to valid")
         }
         // Only explicit invalidation (including the legacy rejected state) reads back as invalid.
         for invalid in ["无效", "invalid", "INVALID", "rejected", "REJECTED", "被驳回", "已驳回"] {
             XCTAssertEqual(try decode(invalid), .invalid, "\(invalid) must map to invalid")
         }
+
+        XCTAssertEqual(RecordValidity(serverReviewResult: .pending), .pending)
+        XCTAssertEqual(RecordValidity(serverReviewResult: .valid), .valid)
+        XCTAssertEqual(RecordValidity(serverReviewResult: .invalid), .invalid)
 
         let record = try decoder.decode(CheckInRecord.self, from: Data(
             """
@@ -2055,9 +2747,17 @@ final class BNBUStudentModelTests: XCTestCase {
             XCTAssertEqual(status, .pending)
         }
         let supplementRequired = try decoder.decode(ExemptionStatus.self, from: Data("\"supplement_required\"".utf8))
+        let draft = try decoder.decode(ExemptionStatus.self, from: Data("\"DRAFT\"".utf8))
+        let rejected = try decoder.decode(ExemptionStatus.self, from: Data("\"REJECTED\"".utf8))
         let expired = try decoder.decode(ExemptionStatus.self, from: Data("\"expired\"".utf8))
         XCTAssertEqual(supplementRequired, .supplementRequired)
         XCTAssertTrue(supplementRequired.canSupplement)
+        XCTAssertEqual(draft, .draft)
+        XCTAssertTrue(draft.canSupplement)
+        XCTAssertTrue(draft.canMutateUnderContract15)
+        XCTAssertEqual(rejected, .rejected)
+        XCTAssertTrue(rejected.canSupplement)
+        XCTAssertFalse(rejected.canMutateUnderContract15)
         XCTAssertEqual(expired, .expired)
         XCTAssertFalse(expired.canSupplement)
     }
@@ -2110,40 +2810,62 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(appState.isLoadingExemptions)
         XCTAssertEqual(
             ExemptionRefreshURLProtocol.paths,
-            ["/api/v1/student/physical-test-exemptions"]
+            [
+                "/api/v1/student/physical-test-exemptions",
+                "/api/v1/student/physical-test-exemptions"
+            ],
+            "Safe GET requests use the transport's single bounded retry on HTTP 503"
         )
     }
 
-    func testAppStateExemptionSubmissionFailsClosedInDemoMode() async {
+    func testFullFeatureMockAccountSubmitsAndSupplementsExemptionsLocally() async throws {
         let defaults = isolatedDefaults()
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: defaults)
         )
-        let originalExemptions = appState.workspace.exemptions
-        let originalSyncOperations = appState.workspace.syncOperations
-        let originalNotices = appState.workspace.notices
+        let originalExemptionCount = appState.workspace.exemptions.count
+        let originalSyncCount = appState.workspace.syncOperations.count
+        let originalNoticeCount = appState.workspace.notices.count
+        let proof = ProofAttachment(
+            id: "proof",
+            type: .image,
+            fileName: "hospital-note.jpg",
+            byteCount: 4,
+            uploadData: Data([0xFF, 0xD8, 0xFF, 0xD9]),
+            source: "摄像头"
+        )
 
         let submitted = await appState.submitExemption(
             item: .run800m,
             reason: "膝关节运动损伤",
             detail: "医生建议暂缓耐力跑测试。",
-            proofAttachments: [
-                ProofAttachment(
-                    id: "proof",
-                    type: .image,
-                    fileName: "hospital-note.jpg",
-                    byteCount: 480_000,
-                    source: "摄像头"
-                )
-            ]
+            proofAttachments: [proof]
         )
 
-        XCTAssertFalse(submitted)
-        XCTAssertEqual(appState.workspace.exemptions, originalExemptions)
-        XCTAssertEqual(appState.workspace.syncOperations, originalSyncOperations)
-        XCTAssertEqual(appState.workspace.notices, originalNotices)
-        XCTAssertTrue(appState.errorMessage?.contains("演示账户") == true)
+        XCTAssertTrue(submitted)
+        XCTAssertEqual(appState.workspace.exemptions.count, originalExemptionCount + 1)
+        XCTAssertEqual(appState.workspace.syncOperations.count, originalSyncCount + 1)
+        XCTAssertEqual(appState.workspace.notices.count, originalNoticeCount + 1)
+        XCTAssertEqual(appState.workspace.exemptions.first?.status, .pending)
+        XCTAssertEqual(appState.workspace.syncOperations.first?.status, .localOnly)
+        XCTAssertNil(appState.errorMessage)
+
+        let rejected = try XCTUnwrap(appState.workspace.exemptions.first(where: { $0.id == "ex1" }))
+        let supplemented = await appState.submitExemptionSupplement(
+            for: rejected,
+            reason: "补充医院证明",
+            detail: "已补充盖章诊断材料。",
+            proofAttachments: [proof]
+        )
+
+        XCTAssertTrue(supplemented)
+        let updated = try XCTUnwrap(appState.workspace.exemptions.first(where: { $0.id == "ex1" }))
+        XCTAssertEqual(updated.status, .pending)
+        XCTAssertEqual(updated.reason, "补充医院证明")
+        XCTAssertEqual(updated.teacherFeedback, "")
+        XCTAssertEqual(appState.workspace.syncOperations.first?.type, .supplementExemption)
+        XCTAssertEqual(appState.workspace.syncOperations.first?.status, .localOnly)
     }
 
     func testAppStateRejectsInvalidExemptionProof() async {
@@ -2286,7 +3008,7 @@ final class BNBUStudentModelTests: XCTestCase {
         let record = try JSONDecoder().decode(CheckInRecord.self, from: json)
 
         XCTAssertEqual(record.hours, 0.5)
-        XCTAssertEqual(record.validity, .valid)
+        XCTAssertEqual(record.validity, .pending)
         XCTAssertEqual(record.taskTitle, "iOS联调测试：验证学生端提交打卡写入链路")
         XCTAssertEqual(record.proofFiles.count, 1)
         XCTAssertEqual(record.proofSummary, "1 张图片")
@@ -2332,7 +3054,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(result.timeSeconds, 244)
     }
 
-    func testDemoEnduranceConversionRequiresRemoteServer() async {
+    func testFullFeatureMockAccountConvertsEnduranceWithLocalPreviewCurve() async throws {
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -2340,11 +3062,13 @@ final class BNBUStudentModelTests: XCTestCase {
 
         let converted = await appState.convertEndurance(timeSeconds: 240)
 
-        XCTAssertNil(converted)
-        XCTAssertEqual(
-            appState.errorMessage,
-            BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
-        )
+        let result = try XCTUnwrap(converted)
+        XCTAssertEqual(result.score, 80)
+        XCTAssertEqual(result.tier, "good")
+        XCTAssertEqual(result.timeSeconds, 240)
+        XCTAssertEqual(result.gender, "female")
+        XCTAssertEqual(result.gradeGroup, "mock-female-sophomore")
+        XCTAssertNil(appState.errorMessage)
     }
 
     func testSelfCheckInDraftRestoresSportSelection() {
@@ -2535,21 +3259,22 @@ final class BNBUStudentModelTests: XCTestCase {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
         let remoteWorkspace = MockStudentRepository().loadWorkspace()
+        let studentID = remoteWorkspace.student.id
 
         XCTAssertTrue(
             store.saveRemoteWorkspace(
                 remoteWorkspace,
                 baseURL: StudentServerConfig.testBaseURL,
-                studentID: "demo-student-001"
+                studentID: studentID
             )
         )
         XCTAssertNil(store.readWorkspace().value)
         XCTAssertEqual(
             store.readRemoteWorkspace(
                 baseURL: StudentServerConfig.testBaseURL,
-                studentID: "demo-student-001"
+                studentID: studentID
             ).value?.student.id,
-            "demo-student-001"
+            studentID
         )
         XCTAssertNil(
             store.readRemoteWorkspace(
@@ -2560,7 +3285,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(
             store.readRemoteWorkspace(
                 baseURL: StudentServerConfig.productionBaseURL,
-                studentID: "demo-student-001"
+                studentID: studentID
             ).value
         )
     }
@@ -3789,12 +4514,12 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         XCTAssertFalse(expiredResult)
-        XCTAssertFalse(supplementResult)
+        XCTAssertTrue(supplementResult)
         XCTAssertEqual(
             appState.workspace.exemptions.first(where: { $0.id == base.id })?.status,
-            .supplementRequired
+            .pending
         )
-        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.proofFiles.count, 0)
+        XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == base.id })?.proofFiles.count, 1)
         XCTAssertEqual(appState.workspace.exemptions.first(where: { $0.id == expired.id })?.status, .expired)
     }
 
@@ -4094,11 +4819,67 @@ private final class PendingMutationRemovalFailureController: @unchecked Sendable
         lock.unlock()
     }
 
+    func disable() {
+        lock.lock()
+        isEnabled = false
+        lock.unlock()
+    }
+
     func shouldFailRemoval(forKey key: String) -> Bool {
         guard key == AppLocalStore.pendingMutationStorageKey else { return false }
         lock.lock()
         defer { lock.unlock() }
         return isEnabled
+    }
+}
+
+private final class LocalRemovalFailureController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingKey: String
+    private var isEnabled = false
+
+    init(failingKey: String) {
+        self.failingKey = failingKey
+    }
+
+    func enable() {
+        lock.lock()
+        isEnabled = true
+        lock.unlock()
+    }
+
+    func disable() {
+        lock.lock()
+        isEnabled = false
+        lock.unlock()
+    }
+
+    func shouldFailRemoval(forKey key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isEnabled && key == failingKey
+    }
+}
+
+private final class LocalWriteFailureController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingKey: String
+    private var isEnabled = false
+
+    init(failingKey: String) {
+        self.failingKey = failingKey
+    }
+
+    func enable() {
+        lock.lock()
+        isEnabled = true
+        lock.unlock()
+    }
+
+    func shouldFailWrite(forKey key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isEnabled && key == failingKey
     }
 }
 

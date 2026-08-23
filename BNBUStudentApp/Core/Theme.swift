@@ -122,9 +122,16 @@ final class BNBULanguageSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        mode = defaults.string(forKey: BNBULanguage.defaultsKey)
-            .flatMap(BNBULanguage.init(rawValue:))
-            ?? .defaultMode
+        if let storedMode = defaults.string(forKey: BNBULanguage.defaultsKey)
+            .flatMap(BNBULanguage.init(rawValue:)) {
+            mode = storedMode
+        } else {
+            // Make the first-launch choice explicit so every localization path
+            // starts from the device language until the user selects an
+            // override in Settings.
+            mode = .defaultMode
+            defaults.set(mode.rawValue, forKey: BNBULanguage.defaultsKey)
+        }
     }
 
     func select(rawValue: String) {
@@ -132,8 +139,11 @@ final class BNBULanguageSettings: ObservableObject {
               selectedMode != mode else {
             return
         }
-        mode = selectedMode
+        // Persist first. SwiftUI publishes `mode` immediately, and views that
+        // rebuild in response resolve non-View strings through `BNBUL10n`,
+        // which reads this value from UserDefaults.
         defaults.set(selectedMode.rawValue, forKey: BNBULanguage.defaultsKey)
+        mode = selectedMode
     }
 }
 

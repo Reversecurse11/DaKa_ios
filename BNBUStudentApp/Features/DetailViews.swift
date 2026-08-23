@@ -136,7 +136,10 @@ struct RecordDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(eyebrow: record.creditType.rawValue, title: record.taskTitle)
+                    SectionTitle(
+                        eyebrow: record.creditType.rawValue,
+                        title: record.localizedTaskTitle
+                    )
 
                     SwissPanel {
                         VStack(alignment: .leading, spacing: 14) {
@@ -147,13 +150,13 @@ struct RecordDetailView: View {
                                 Text(record.hours.localizedHourText)
                                     .font(BNBUFont.headlineSmall)
                             }
-                            DetailFactRow(label: "提交时间", value: record.submittedAt)
+                            DetailFactRow(label: "提交时间", value: record.studentLocalSubmittedAt)
                             if let sportType = record.sportType, !sportType.isEmpty {
                                 DetailFactRow(label: "运动项目", value: sportType.bnbuSportTypeTitle)
                             }
                             DetailFactRow(label: "图片凭证", value: "\(record.proofPhotoCount)")
                             DetailFactRow(label: "视频凭证", value: "\(record.proofVideoCount)")
-                            DetailFactRow(label: "凭证摘要", value: record.proofSummary)
+                            DetailFactRow(label: "凭证摘要", value: record.localizedProofSummary)
                         }
                     }
 
@@ -162,7 +165,7 @@ struct RecordDetailView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("记录已被判定无效")
                                     .font(BNBUFont.titleMedium)
-                                Text(record.invalidReason ?? "老师已将该记录标记为无效，本次学时不计入。")
+                                Text(verbatim: record.localizedInvalidReason)
                                     .font(BNBUFont.bodyMedium)
                                     .foregroundStyle(BNBUTheme.muted)
                                     .lineSpacing(3)
@@ -194,7 +197,7 @@ struct RecordDetailView: View {
                                                 .foregroundStyle(BNBUTheme.ink)
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
-                                            Text("\(proof.type.rawValue) · \(proof.displaySize) · \(proof.source)")
+                                            Text(verbatim: localizedProofMetadata(proof))
                                                 .font(BNBUFont.bodySmall)
                                                 .foregroundStyle(BNBUTheme.muted)
                                         }
@@ -210,7 +213,7 @@ struct RecordDetailView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("学生说明")
                                 .font(BNBUFont.titleMedium)
-                            Text(record.note)
+                            Text(verbatim: record.localizedNote)
                                 .font(BNBUFont.bodyMedium)
                                 .foregroundStyle(BNBUTheme.muted)
                                 .lineSpacing(3)
@@ -222,6 +225,15 @@ struct RecordDetailView: View {
         }
         .navigationTitle("记录详情")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("screen.recordDetail")
+    }
+
+    private func localizedProofMetadata(_ proof: ProofAttachment) -> String {
+        [
+            BNBUL10n.dynamicText(proof.type.rawValue),
+            proof.displaySize,
+            BNBUL10n.dynamicText(proof.source)
+        ].joined(separator: " · ")
     }
 }
 
@@ -289,7 +301,7 @@ struct RecordCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(record.taskTitle)
+                        Text(verbatim: record.localizedTaskTitle)
                             .font(BNBUFont.titleMedium)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(verbatim: sportAndDate)
@@ -317,12 +329,12 @@ struct RecordCard: View {
                     alignment: .leading,
                     spacing: 12
                 ) {
-                    RecordFact(systemImage: "calendar", label: "开始时间", value: record.startedAt)
-                    RecordFact(systemImage: "stopwatch", label: "结束时间", value: record.endedAt)
+                    RecordFact(systemImage: "calendar", label: "开始时间", value: record.studentLocalStartedAt)
+                    RecordFact(systemImage: "stopwatch", label: "结束时间", value: record.studentLocalEndedAt)
                     RecordFact(systemImage: "stopwatch", label: "实际运动时长", value: record.activeDuration)
                     RecordFact(
                         systemImage: "checkmark.circle",
-                        label: "计入学时",
+                        label: record.validity == .invalid ? "未计入学时" : "计入学时",
                         value: record.hours.localizedHourText
                     )
                 }
@@ -330,10 +342,14 @@ struct RecordCard: View {
                 if let linkedCourse = courseTitle ?? record.courseId, !linkedCourse.isEmpty {
                     RecordInlineFact(systemImage: "checkmark.circle", label: "关联课程", value: linkedCourse)
                 }
-                RecordInlineFact(systemImage: "paperclip", label: "运动凭证", value: record.proofSummary)
+                RecordInlineFact(
+                    systemImage: "paperclip",
+                    label: "运动凭证",
+                    value: record.localizedProofSummary
+                )
 
-                if !record.note.isEmpty && record.note != "学生未填写补充说明。" {
-                    Text("运动说明：\(record.note)")
+                if record.hasStudentNote {
+                    Text(verbatim: BNBUL10n.formatted("运动说明：%@", record.localizedNote))
                         .font(BNBUFont.bodyMedium)
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                         .fixedSize(horizontal: false, vertical: true)
@@ -344,7 +360,7 @@ struct RecordCard: View {
 
     private var sportAndDate: String {
         let sport = record.sportType?.bnbuSportTypeTitle ?? ""
-        return [sport, record.submittedAt]
+        return [sport, record.studentLocalSubmittedAt]
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }
@@ -492,7 +508,7 @@ private struct RecordProofThumbnail: View {
         VStack(spacing: 6) {
             Image(systemName: proof.type == .video ? "video" : "photo")
                 .font(BNBUFont.headlineSmall)
-            Text(proof.fileName.isEmpty ? "媒体文件" : proof.fileName)
+            Text(verbatim: proof.fileName.isEmpty ? BNBUL10n.text("媒体文件") : proof.fileName)
                 .font(BNBUFont.labelSmall)
                 .lineLimit(2)
         }
@@ -504,13 +520,13 @@ private struct RecordProofThumbnail: View {
 private extension String {
     var bnbuSportTypeTitle: String {
         switch self {
-        case "running": return "跑步"
-        case "basketball": return "篮球"
-        case "football": return "足球"
-        case "badminton": return "羽毛球"
-        case "swimming": return "游泳"
-        case "fitness": return "健身"
-        case "cycling": return "骑行"
+        case "running": return BNBUL10n.text("跑步")
+        case "basketball": return BNBUL10n.text("篮球")
+        case "football": return BNBUL10n.text("足球")
+        case "badminton": return BNBUL10n.text("羽毛球")
+        case "swimming": return BNBUL10n.text("游泳")
+        case "fitness": return BNBUL10n.text("健身")
+        case "cycling": return BNBUL10n.text("骑行")
         default: return self
         }
     }

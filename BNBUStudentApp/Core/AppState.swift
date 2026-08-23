@@ -42,6 +42,106 @@ enum RemoteMutationJournalPolicy {
     }
 }
 
+private struct PendingStudentSignInChallenge: Equatable {
+    let id: String
+    let normalizedAccount: String
+    let expiresAt: String
+}
+
+private struct PendingEmailVerificationChallenge: Equatable {
+    let id: String
+    let normalizedEmail: String
+    let requiresCurrentEmailCode: Bool
+    let expiresAt: String
+}
+
+private enum BackendStudentBootstrapError: LocalizedError {
+    case roleMismatch
+    case missingStudentProfile
+
+    var errorDescription: String? {
+        switch self {
+        case .roleMismatch:
+            return BNBUL10n.text("当前账号不是学生账号，无法进入学生端。")
+        case .missingStudentProfile:
+            return BNBUL10n.text("登录成功，但服务器未返回学生资料，请联系管理员。")
+        }
+    }
+}
+
+private enum InitialCourseJoinError: LocalizedError {
+    case unavailableInFixtureMode
+    case invalidProfile
+    case previewMismatch
+    case responseMismatch
+    case restrictedSessionMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailableInFixtureMode:
+            return BNBUL10n.text("当前是本地 Mock 模式，请使用 Staging 构建验证真实入课流程。")
+        case .invalidProfile:
+            return BNBUL10n.text("请完整填写姓名、学号、性别和四位入学年份。")
+        case .previewMismatch, .responseMismatch:
+            return BNBUL10n.text("服务器返回的课程信息与已确认内容不一致，本次入课已停止。")
+        case .restrictedSessionMissing:
+            return BNBUL10n.text("入课已返回非预期账号状态，已禁止进入学生端。")
+        }
+    }
+}
+
+private enum APIV1CheckInError: LocalizedError {
+    case sessionNotCompleted
+    case durationNotEligible
+    case proofUnavailable(String)
+    case mediaNotReady(String)
+    case recordStateInvalid
+
+    var errorDescription: String? {
+        switch self {
+        case .sessionNotCompleted:
+            return BNBUL10n.text("后端尚未确认运动结束，请刷新后重试。")
+        case .durationNotEligible:
+            return BNBUL10n.text("后端确认的有效运动时长不足 1 小时，不能提交打卡。")
+        case .proofUnavailable(let fileName):
+            return BNBUL10n.formatted("%@ 的原始文件不可用，请重新拍摄。", fileName)
+        case .mediaNotReady(let fileName):
+            return BNBUL10n.formatted("%@ 尚未通过后端媒体校验，请稍后重试。", fileName)
+        case .recordStateInvalid:
+            return BNBUL10n.text("服务器记录状态已变化，请刷新记录后重试。")
+        }
+    }
+}
+
+private enum APIV1ExemptionError: LocalizedError {
+    case enrollmentUnavailable
+    case unsupportedItem
+    case proofUnavailable(String)
+    case mediaNotReady(String)
+    case responseMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .enrollmentUnavailable:
+            return BNBUL10n.text("当前课程尚未同步到服务器，请刷新后重试。")
+        case .unsupportedItem:
+            return BNBUL10n.text("该免测类型暂不支持提交，请刷新后重试。")
+        case .proofUnavailable(let fileName):
+            return BNBUL10n.formatted("%@ 的原始文件不可用，请重新拍摄。", fileName)
+        case .mediaNotReady(let fileName):
+            return BNBUL10n.formatted("%@ 尚未通过后端媒体校验，请稍后重试。", fileName)
+        case .responseMismatch:
+            return BNBUL10n.text("服务器返回的免测申请状态不一致，请刷新后重试。")
+        }
+    }
+}
+
+private struct APIV1ExemptionClassification {
+    let applicationType: String
+    let applicationSubtype: String?
+    let organizationName: String?
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var isAuthenticated = false
@@ -53,8 +153,15 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published private(set) var isRemoteMode = false
+    @Published private(set) var isAPIV1Session = false
+    /// Authoritative verification state from Backend `/me`. The server masks
+    /// the address after a relaunch, so verification must never be inferred by
+    /// trying to validate the masked display value as a complete email.
+    @Published private(set) var isEmailVerified = false
+    @Published private(set) var contactVerificationRequiresCurrentEmailCode = false
     @Published private(set) var checkInSubmissionPhase: CheckInSubmissionPhase = .idle
     @Published private(set) var canSafelyRetryCheckIn = false
+    @Published private(set) var isDiscardingCompletedCheckInDraft = false
     @Published private(set) var isSubmittingExemption = false
     @Published private(set) var isLoadingExemptions = false
     @Published private(set) var pendingRemoteMutationSummaries: [PendingRemoteMutationSummary] = []
@@ -71,6 +178,8 @@ final class AppState: ObservableObject {
     @Published var feedbackTickets: [FeedbackTicket] = []
     /// Why the ticket list is empty, when the reason is not "no tickets yet".
     @Published var feedbackNotice: String?
+    @Published private(set) var isLoadingFeedbackTickets = false
+    @Published private(set) var isSubmittingFeedback = false
     /// Server-controlled availability policy. Read-only and maintenance modes are
     /// announced by the health endpoint and block every write.
     @Published private(set) var systemModeStatus = SystemModeStatus()
@@ -83,11 +192,30 @@ final class AppState: ObservableObject {
     @Published private(set) var isLoadingHelpArticles = false
     @Published private(set) var helpArticlesError: String?
     @Published private(set) var isShowingCachedHelpArticles = false
+    /// Cloud synchronization state for the language preference. The local
+    /// selection remains immediate and usable even when this capability is
+    /// unavailable, so a 503 never rolls the interface back mid-session.
+    @Published private(set) var preferenceSyncNotice: String?
+    @Published private(set) var isSynchronizingPreferences = false
 
-    private let repository: StudentRepository
+    private var repository: StudentRepository
     private let localStore: AppLocalStore
     private let apiClient = StudentAPIClient()
     private let remoteRepo: RemoteStudentRepository
+    private let backendServices: BackendAppServices
+    /// Public 1.5 capabilities must be available before a student signs in.
+    /// The explicit override keeps legacy repository tests on their own data
+    /// source while the production unauthenticated shell uses `/api/v1`.
+    private let usesAPIV1PublicCapabilities: Bool
+    private var pendingStudentSignInChallenge: PendingStudentSignInChallenge?
+    private var pendingEmailVerificationChallenge: PendingEmailVerificationChallenge?
+    private var backendUserVersion: Int?
+    private var activeEnrollmentIDsByClassSectionID: [String: String] = [:]
+    private var backendClassSectionsByID: [String: APIV1ClassSection] = [:]
+    private var backendExerciseSession: APIV1ExerciseSession?
+    private var backendExerciseRecord: APIV1ExerciseRecord?
+    private var backendUserPreferences: APIV1UserPreferences?
+    private var pendingPreferenceLocale: String?
     private var remoteCacheStudentID: String?
     private var sessionEpoch: UInt64 = 0
     private var isRefreshingWorkspace = false
@@ -96,6 +224,26 @@ final class AppState: ObservableObject {
     /// Hour targets follow the server (rule 4.4) and fall back to the standard
     /// 10 + 10 rule until a course publishes its own.
     var hourRule: SportHourRule { workspace.hourRule }
+    /// The full-feature local account exists only in the explicit Mock scheme.
+    /// UI can use these capabilities without treating every non-remote state as
+    /// a writable demo workspace.
+    var mockTestAccount: MockTestAccountCredentials? { repository.mockTestAccount }
+    var isFullFeatureMockMode: Bool { !isRemoteMode && mockTestAccount != nil }
+    var canSubmitExemptions: Bool {
+        isFullFeatureMockMode ||
+            (isRemoteMode && (!isAPIV1Session || !exemptionEligibleCourses.isEmpty))
+    }
+    var canUseEnduranceCalculator: Bool {
+        isFullFeatureMockMode || (isRemoteMode && !isAPIV1Session)
+    }
+#if BNBU_FIXTURES && DEBUG
+    var isMockTestAccountSession: Bool {
+        guard let account = mockTestAccount else { return false }
+        return isAuthenticated
+            && !isRemoteMode
+            && workspace.student.email.caseInsensitiveCompare(account.email) == .orderedSame
+    }
+#endif
     /// Business rule 3.3 gate on starting a session. Production keeps this
     /// on; UI tests disable it so flow tests are not wall-clock sensitive.
     var enforcesCheckInTimeWindow = true
@@ -103,11 +251,16 @@ final class AppState: ObservableObject {
     init(
         repository: StudentRepository,
         localStore: AppLocalStore = AppLocalStore(),
-        remoteRepo: RemoteStudentRepository = RemoteStudentRepository()
+        remoteRepo: RemoteStudentRepository = RemoteStudentRepository(),
+        backendServices: BackendAppServices = .runtime(),
+        usesAPIV1PublicCapabilities: Bool? = nil
     ) {
         self.repository = repository
         self.localStore = localStore
         self.remoteRepo = remoteRepo
+        self.backendServices = backendServices
+        self.usesAPIV1PublicCapabilities = usesAPIV1PublicCapabilities
+            ?? (repository is UnauthenticatedStudentRepository)
         let workspaceRead = localStore.readWorkspace()
         let draftRead = localStore.readDraft()
         let exerciseSessionRead = localStore.readExerciseSession()
@@ -131,7 +284,14 @@ final class AppState: ObservableObject {
 
         self.workspace = workspace
         self.draft = restoredDraft
-        self.exerciseSession = exerciseSessionRead.value?.reconciled()
+        let restoredExerciseSession = exerciseSessionRead.value?.reconciled()
+        self.exerciseSession = restoredExerciseSession
+        // Rewrite the decoded value once so files from older builds lose any
+        // latitude/longitude keys that the 1.1 default-deny contract forbids us
+        // from retaining.
+        if let restoredExerciseSession {
+            _ = localStore.saveExerciseSession(restoredExerciseSession)
+        }
         var restoredMutations = pendingMutationRead.value ?? [:]
         if let draftAttempt = restoredDraft?.pendingRemoteMutation {
             restoredMutations[draftAttempt.scope] = draftAttempt
@@ -190,6 +350,22 @@ final class AppState: ObservableObject {
             .first
     }
 
+    var exemptionEligibleCourses: [Course] {
+        workspace.courses
+            .filter { $0.isCurrent && $0.enrollmentStatus == .approved }
+            .filter { activeEnrollmentIDsByClassSectionID[$0.id] != nil }
+            .sorted { $0.displayTitle < $1.displayTitle }
+    }
+
+    private func apiv1ExemptionEnrollmentID(courseID: String?) -> String? {
+        if let courseID, exemptionEligibleCourses.contains(where: { $0.id == courseID }) {
+            return activeEnrollmentIDsByClassSectionID[courseID]
+        }
+        guard exemptionEligibleCourses.count == 1,
+              let onlyCourse = exemptionEligibleCourses.first else { return nil }
+        return activeEnrollmentIDsByClassSectionID[onlyCourse.id]
+    }
+
     var pendingEnrollmentCourses: [Course] {
         workspace.courses
             .filter(\.isAwaitingEnrollmentReview)
@@ -216,6 +392,11 @@ final class AppState: ObservableObject {
         }
         let code = CourseJoinCodeRule.normalized(rawCode)
 
+        guard !isAPIV1Session else {
+            errorMessage = BNBUL10n.text("扫码入班的邮箱身份合同仍待后端确认，当前不会使用本地或旧接口返回课程。")
+            return nil
+        }
+
         if let existing = workspace.courses.first(where: { matchesJoinCode($0, code: code) }) {
             switch existing.enrollmentStatus {
             case .approved:
@@ -234,6 +415,156 @@ final class AppState: ObservableObject {
         }
         errorMessage = nil
         return invite
+    }
+
+    /// Reads the public, minimum course projection before any student account
+    /// or Access Token exists. The opaque invite token is never persisted.
+    func previewInitialCourseJoin(inviteToken rawToken: String) async -> APIV1CourseInvitePreview? {
+        if let validationMessage = CourseInviteTokenRule.validationMessage(for: rawToken) {
+            errorMessage = validationMessage
+            return nil
+        }
+        guard usesAPIV1PublicCapabilities else {
+            errorMessage = InitialCourseJoinError.unavailableInFixtureMode.localizedDescription
+            return nil
+        }
+        guard !isAuthenticated, !isLoading else { return nil }
+
+        let inviteToken = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let response = try await backendServices.auth.previewCourseInvite(inviteToken: inviteToken)
+            guard response.value.enrollmentOpen,
+                  !response.value.classSectionId.isEmpty,
+                  !response.value.courseCode.isEmpty,
+                  !response.value.courseName.isEmpty else {
+                throw InitialCourseJoinError.previewMismatch
+            }
+            return response.value
+        } catch {
+            errorMessage = initialCourseJoinMessage(for: error)
+            return nil
+        }
+    }
+
+    /// Performs the Contract 2.0.10 bootstrap transaction in its required
+    /// order: profile-bound Join Capability, atomic enrolment, then installation
+    /// of the restricted PENDING_CONTACT_BINDING AuthSession. The full app shell
+    /// remains unavailable until the server confirms email binding.
+    @discardableResult
+    func joinCourseBeforeLogin(
+        inviteToken rawToken: String,
+        preview: APIV1CourseInvitePreview,
+        fullName: String,
+        studentNumber: String,
+        gender: APIV1CourseJoinGender,
+        gradeYear: Int
+    ) async -> Bool {
+        let inviteToken = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedName = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedStudentNumber = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard CourseInviteTokenRule.validationMessage(for: inviteToken) == nil,
+              !normalizedName.isEmpty, normalizedName.count <= 100,
+              !normalizedStudentNumber.isEmpty, normalizedStudentNumber.count <= 32,
+              (1000...9999).contains(gradeYear) else {
+            errorMessage = InitialCourseJoinError.invalidProfile.localizedDescription
+            return false
+        }
+        guard usesAPIV1PublicCapabilities else {
+            errorMessage = InitialCourseJoinError.unavailableInFixtureMode.localizedDescription
+            return false
+        }
+        guard !isAuthenticated, allowWrite(), !isLoading else { return false }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let capability = try await backendServices.auth.issueJoinCapability(
+                inviteToken: inviteToken,
+                profile: APIV1IssueJoinCapabilityRequest(
+                    fullName: normalizedName,
+                    studentNumber: normalizedStudentNumber,
+                    gender: gender,
+                    gradeYear: gradeYear
+                )
+            )
+            guard capability.value.classSectionId == preview.classSectionId else {
+                throw InitialCourseJoinError.previewMismatch
+            }
+
+            let response = try await backendServices.auth.joinClassSection(
+                inviteToken: inviteToken,
+                capability: capability.value.joinCapability
+            )
+            let result = response.value
+            guard result.classSection.id == preview.classSectionId,
+                  result.enrollment.classSectionId == preview.classSectionId,
+                  result.enrollment.studentId == result.studentProfile.id,
+                  result.studentProfile.userId == result.authSession.user.id,
+                  result.enrollment.status == .active,
+                  result.enrollment.source == .qrCode else {
+                throw InitialCourseJoinError.responseMismatch
+            }
+            guard result.authSession.user.role == .student,
+                  result.authSession.user.status == .pendingContactBinding,
+                  !result.authSession.user.emailVerified else {
+                throw InitialCourseJoinError.restrictedSessionMissing
+            }
+
+            let currentUser = APIV1CurrentUserData(
+                user: result.authSession.user,
+                studentProfile: result.studentProfile,
+                teacherProfile: nil,
+                adminProfile: nil
+            )
+            let initialWorkspace = try Self.backendBootstrapWorkspace(
+                currentUser,
+                verifiedEmail: ""
+            )
+            installAPIV1Session(
+                workspace: initialWorkspace,
+                emailVerified: false,
+                userVersion: result.authSession.user.version
+            )
+            return true
+        } catch {
+            if error is InitialCourseJoinError {
+                await backendServices.auth.discardLocalSession()
+            }
+            isAPIV1Session = false
+            isRemoteMode = false
+            isAuthenticated = false
+            backendUserVersion = nil
+            errorMessage = initialCourseJoinMessage(for: error)
+            return false
+        }
+    }
+
+    private func initialCourseJoinMessage(for error: Error) -> String {
+        if let joinError = error as? InitialCourseJoinError {
+            return joinError.localizedDescription
+        }
+        if let transport = error as? APITransportError,
+           case .failure(_, let envelope) = transport {
+            switch envelope.knownCode {
+            case .courseInviteInvalid, .courseInviteExpired, .courseInviteRevoked:
+                return BNBUL10n.text("邀请已失效，请向老师获取新的邀请。")
+            case .courseClassSectionNotJoinable, .courseSemesterArchived, .courseDeadlinePassed:
+                return BNBUL10n.text("该教学班当前不可加入，请联系任课老师。")
+            case .enrollmentAlreadyActive:
+                return BNBUL10n.text("该学号已加入当前教学班，请直接使用已绑定邮箱登录。")
+            case .userIdentityConflict, .userProfileInvalid:
+                return BNBUL10n.text("姓名或学号与已有资料冲突，请核对后重试。")
+            case .authRateLimited:
+                return BNBUL10n.text("操作过于频繁，请稍后再试。")
+            default:
+                break
+            }
+        }
+        return backendAuthenticationMessage(for: error)
     }
 
     /// The academic year rolls over on 1 September. The first time the app runs
@@ -260,24 +591,68 @@ final class AppState: ObservableObject {
         newSemesterWelcomeAcademicYear = nil
     }
 
-    /// Sends a sign-in code to a bound contact. Only a verified contact can be
-    /// issued a session, so an unknown address is refused by the server rather
-    /// than here; this checks the format only.
+    /// Sends a sign-in code through Contract 2.0.2. The public response remains
+    /// enumeration-safe; the client retains only the opaque challenge ID.
     @discardableResult
-    func sendLoginCode(to value: String, channel: ContactChannel) -> Bool {
+    func sendLoginCode(
+        to value: String,
+        channel: ContactChannel,
+        locale: String = "zh-CN"
+    ) async -> Bool {
         if let validationMessage = ContactBindingRule.validationMessage(value, for: channel) {
             errorMessage = validationMessage
             return false
         }
+        if let account = mockTestAccount {
+            guard account.matches(contact: value, channel: channel) else {
+                errorMessage = BNBUL10n.text("未找到该测试账号，请使用登录页显示的 Mock 邮箱或手机号。")
+                return false
+            }
+            errorMessage = nil
+            return true
+        }
+
+        guard channel == .email else {
+            errorMessage = BNBUL10n.text("学生端仅支持邮箱验证码登录。")
+            return false
+        }
+        guard !isLoading else { return false }
+        let normalizedAccount = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let contractLocale = locale.lowercased().hasPrefix("zh") ? "zh-CN" : "en"
+        isLoading = true
         errorMessage = nil
-        return true
+        defer { isLoading = false }
+        do {
+            let response = try await backendServices.auth.requestStudentSignInCode(
+                APIV1StudentSignInCodeRequest(
+                    organizationCode: BackendEnvironment.approvedOrganizationCode,
+                    account: normalizedAccount,
+                    channel: "EMAIL",
+                    locale: contractLocale
+                )
+            )
+            pendingStudentSignInChallenge = PendingStudentSignInChallenge(
+                id: response.value.challengeId,
+                normalizedAccount: normalizedAccount,
+                expiresAt: response.value.expiresAt
+            )
+            return true
+        } catch {
+            pendingStudentSignInChallenge = nil
+            errorMessage = backendAuthenticationMessage(for: error)
+            return false
+        }
     }
 
-    /// Exchanges a code for a session. Until the auth endpoints ship this signs
-    /// into the demo workspace, so the passwordless flow can be walked end to
-    /// end instead of dead-ending on a notice.
+    /// Exchanges a code for a rotating Contract 2.0.2 AuthSession. A successful
+    /// verification is not enough on its own: `/me` must also return the same
+    /// authenticated STUDENT projection before the app opens its tab shell.
     @discardableResult
-    func signInWithCode(_ code: String, contact: String, channel: ContactChannel) -> Bool {
+    func signInWithCode(
+        _ code: String,
+        contact: String,
+        channel: ContactChannel
+    ) async -> Bool {
         guard ContactBindingRule.isValidCode(code) else {
             errorMessage = BNBUL10n.text("请输入 6 位数字验证码")
             return false
@@ -287,14 +662,525 @@ final class AppState: ObservableObject {
             errorMessage = ContactBindingRule.validationMessage(contact, for: channel)
             return false
         }
+        if let account = mockTestAccount {
+            guard account.matches(contact: contact, channel: channel),
+                  code == account.verificationCode else {
+                errorMessage = BNBUL10n.text("测试账号或验证码不正确，请使用登录页显示的信息。")
+                return false
+            }
+            guard let accountWorkspace = repository.loadMockTestAccountWorkspace() else {
+                errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+                return false
+            }
+            startLocalSession(initialWorkspace: accountWorkspace)
+            return true
+        }
+
+        guard channel == .email else {
+            errorMessage = BNBUL10n.text("学生端仅支持邮箱验证码登录。")
+            return false
+        }
+        let normalizedAccount = contact.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let challenge = pendingStudentSignInChallenge,
+              challenge.normalizedAccount == normalizedAccount else {
+            errorMessage = BNBUL10n.text("请先获取验证码。")
+            return false
+        }
+        guard !isLoading else { return false }
+        isLoading = true
         errorMessage = nil
-        demoLogin()
-        return true
+        defer { isLoading = false }
+        do {
+            let deviceID = try backendServices.deviceIdentifier.identifier()
+            let session = try await backendServices.auth.verifyStudentSignInCode(
+                APIV1StudentSignInCodeVerificationRequest(
+                    challengeId: challenge.id,
+                    code: code,
+                    deviceId: deviceID
+                )
+            )
+            guard session.value.user.role == .student else {
+                throw BackendStudentBootstrapError.roleMismatch
+            }
+            let currentUser = try await backendServices.auth.currentUser()
+            let workspace = try Self.backendBootstrapWorkspace(
+                currentUser.value,
+                verifiedEmail: normalizedAccount
+            )
+            installAPIV1Session(
+                workspace: workspace,
+                emailVerified: currentUser.value.user.emailVerified,
+                userVersion: currentUser.value.user.version
+            )
+            pendingStudentSignInChallenge = nil
+            return true
+        } catch {
+            await backendServices.auth.discardLocalSession()
+            isAPIV1Session = false
+            isRemoteMode = false
+            isAuthenticated = false
+            backendUserVersion = nil
+            errorMessage = backendAuthenticationMessage(for: error)
+            return false
+        }
     }
 
-    /// Files an account-recovery request for a student who has lost access to
-    /// both bound contacts. A teacher or administrator verifies identity before
-    /// rebinding, so the client only records the request.
+    /// Restores the rotating AuthSession before the login shell is resolved.
+    /// A cached token alone never opens the app; the server must still return a
+    /// valid STUDENT `/me` projection for the same token family.
+    func restoreBackendSession() async {
+        guard mockTestAccount == nil, !isAuthenticated, !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            switch try await backendServices.auth.restore() {
+            case .signedOut:
+                isAPIV1Session = false
+                backendUserVersion = nil
+                return
+            case .authenticated(let session):
+                guard session.user.role == .student else {
+                    await backendServices.auth.discardLocalSession()
+                    throw BackendStudentBootstrapError.roleMismatch
+                }
+                let currentUser = try await backendServices.auth.currentUser()
+                let workspace = try Self.backendBootstrapWorkspace(
+                    currentUser.value,
+                    verifiedEmail: currentUser.value.user.primaryEmailMasked ?? ""
+                )
+                installAPIV1Session(
+                    workspace: workspace,
+                    emailVerified: currentUser.value.user.emailVerified,
+                    userVersion: currentUser.value.user.version
+                )
+            }
+        } catch {
+            if error is BackendStudentBootstrapError {
+                await backendServices.auth.discardLocalSession()
+            }
+            isAPIV1Session = false
+            isRemoteMode = false
+            isAuthenticated = false
+            backendUserVersion = nil
+            errorMessage = backendAuthenticationMessage(for: error)
+        }
+    }
+
+    private func installAPIV1Session(
+        workspace authenticatedWorkspace: StudentWorkspace,
+        emailVerified: Bool,
+        userVersion: Int
+    ) {
+        sessionEpoch &+= 1
+        mutationGate.removeAll()
+        isAPIV1Session = true
+        isRemoteMode = true
+        isEmailVerified = emailVerified
+        backendUserVersion = userVersion
+        backendUserPreferences = nil
+        pendingPreferenceLocale = nil
+        preferenceSyncNotice = nil
+        isSynchronizingPreferences = false
+        remoteCacheStudentID = authenticatedWorkspace.student.id
+        workspace = authenticatedWorkspace
+        restoreExerciseSession(for: authenticatedWorkspace.student.id)
+        restoreExerciseMediaDrafts(for: authenticatedWorkspace.student.id)
+        sanitizePersistedRemoteMutations(for: authenticatedWorkspace.student.id)
+        saveWorkspace(event: "已通过 Backend 2.0.2 恢复学生身份")
+        isAuthenticated = true
+    }
+
+    private static func backendBootstrapWorkspace(
+        _ currentUser: APIV1CurrentUserData,
+        verifiedEmail: String
+    ) throws -> StudentWorkspace {
+        let student = try backendStudentProfile(currentUser, verifiedEmail: verifiedEmail)
+        return StudentWorkspace(
+            student: student,
+            courses: [],
+            progress: StudentProgress(
+                id: student.id,
+                name: student.name,
+                college: student.college,
+                className: student.className,
+                course: 0,
+                general: 0,
+                rawCourse: 0,
+                rawGeneral: 0,
+                exam: 0,
+                attendance: 0,
+                physical: 0,
+                status: "",
+                source: "api-v1:/me",
+                organizationCredit: nil
+            ),
+            records: [],
+            grades: GradeRow(
+                studentId: student.id,
+                studentName: student.name,
+                checkinScore: 0,
+                exam: 0,
+                attendance: 0,
+                physical: 0,
+                total: 0,
+                sourceTrace: "api-v1:projection-pending",
+                missingItems: [],
+                state: .ruleUnpublished
+            ),
+            memberships: [],
+            notices: [],
+            exemptions: [],
+            syncOperations: []
+        )
+    }
+
+    private static func backendStudentProfile(
+        _ currentUser: APIV1CurrentUserData,
+        verifiedEmail: String
+    ) throws -> StudentProfile {
+        guard currentUser.user.role == .student else {
+            throw BackendStudentBootstrapError.roleMismatch
+        }
+        guard let profile = currentUser.studentProfile,
+              profile.userId == currentUser.user.id else {
+            throw BackendStudentBootstrapError.missingStudentProfile
+        }
+        return StudentProfile(
+            id: profile.id,
+            studentNumber: profile.studentNumber,
+            name: profile.fullName,
+            email: verifiedEmail,
+            college: profile.collegeName ?? "",
+            className: profile.administrativeClassName ?? "",
+            status: profile.status,
+            enrollmentYear: profile.gradeYear,
+            gender: profile.gender == .female ? .female : profile.gender == .male ? .male : .unknown
+        )
+    }
+
+    private func backendAuthenticationMessage(for error: Error) -> String {
+        if let integrationError = error as? BackendStudentBootstrapError {
+            return integrationError.localizedDescription
+        }
+        guard let transportError = error as? APITransportError else {
+            return error.localizedDescription
+        }
+        if case .failure(_, let envelope) = transportError {
+            switch envelope.knownCode {
+            case .authVerificationCodeInvalid, .authCredentialInvalid:
+                return BNBUL10n.text("验证失败，请检查验证码后重试")
+            case .authRateLimited:
+                return BNBUL10n.text("操作过于频繁，请稍后再试。")
+            case .authAccountDisabled:
+                return BNBUL10n.text("当前账号不可用，请联系管理员。")
+            default:
+                if envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+                    return BNBUL10n.text("验证码接口尚未发布，请等待服务端上线后重试。")
+                }
+            }
+        }
+        if case .network = transportError {
+            return BNBUL10n.text("当前网络不可用，请检查网络连接")
+        }
+        return transportError.localizedDescription
+    }
+
+    /// Loads only role-scoped Contract 2.0.2 projections. The existing legacy
+    /// workspace repository is never consulted in an API-v1 session.
+    func refreshAPIV1Workspace() async {
+        guard isAPIV1Session, isAuthenticated, !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let projection = try await backendServices.workspace.load(
+                studentID: workspace.student.id
+            )
+            let coursesByID = Dictionary(
+                uniqueKeysWithValues: projection.courses.map { ($0.id, $0) }
+            )
+            let sectionsByID = Dictionary(
+                uniqueKeysWithValues: projection.classSections.map { ($0.id, $0) }
+            )
+            let teachersByID = Dictionary(
+                uniqueKeysWithValues: projection.teachers.map { ($0.id, $0) }
+            )
+            let activeEnrollments = projection.enrollments.filter {
+                $0.studentId == workspace.student.id && $0.status == .active
+            }
+            var mappedCourses: [Course] = []
+            var enrollmentIDs: [String: String] = [:]
+            for enrollment in activeEnrollments {
+                guard let section = sectionsByID[enrollment.classSectionId],
+                      let course = coursesByID[section.courseId] else { continue }
+                enrollmentIDs[section.id] = enrollment.id
+                mappedCourses.append(Course(
+                    id: section.id,
+                    code: course.courseCode,
+                    section: section.classCode,
+                    name: course.courseName,
+                    semester: projection.semester.displayName,
+                    students: 0,
+                    pending: 0,
+                    completion: 0,
+                    missing: 0,
+                    deadline: section.submissionDeadlineAt ?? section.checkInEndDate ?? "",
+                    teacher: teachersByID[section.teacherId]?.fullName ?? "",
+                    isCurrent: projection.semester.isCurrent,
+                    enrollmentStatus: .approved
+                ))
+            }
+            activeEnrollmentIDsByClassSectionID = enrollmentIDs
+            backendClassSectionsByID = sectionsByID
+            workspace.courses = mappedCourses.sorted { $0.displayTitle < $1.displayTitle }
+            saveWorkspace(event: "已同步 Backend 2.0.2 在读课程")
+            errorMessage = nil
+        } catch {
+            await handleAPIV1Error(error)
+        }
+    }
+
+    /// Replaces the record list with the role-scoped Contract 2.0.2
+    /// projection. Status and review result always come from Backend; the
+    /// client never re-derives VALID from duration, media, or local history.
+    func refreshAPIV1ExerciseRecords() async {
+        guard isAPIV1Session, isAuthenticated, !isLoading else { return }
+        let refreshEpoch = sessionEpoch
+        isLoading = true
+        defer {
+            if refreshEpoch == sessionEpoch {
+                isLoading = false
+            }
+        }
+        do {
+            let response = try await backendServices.exerciseRecords.listOwned()
+            guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+            var mapped: [CheckInRecord] = []
+            for record in response.value
+                where record.status == .submitted || record.status == .reviewed {
+                guard record.studentId == workspace.student.id else {
+                    throw APITransportError.invalidResponse
+                }
+                let contextResponse = try? await backendServices.exerciseRecords
+                    .evidenceContext(recordID: record.id)
+                guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+                let context = contextResponse?.value
+                if let context,
+                   context.recordId != record.id || context.sessionId != record.sessionId {
+                    throw APITransportError.invalidResponse
+                }
+
+                var media: [APIV1MediaEvidence] = []
+                for mediaID in context?.mediaIds ?? [] {
+                    if let evidence = try? await backendServices.media.status(mediaID: mediaID).value {
+                        guard evidence.ownerStudentId == workspace.student.id,
+                              evidence.recordId == record.id else {
+                            throw APITransportError.invalidResponse
+                        }
+                        media.append(evidence)
+                    }
+                }
+                guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+                mapped.append(Self.checkInRecord(
+                    from: record,
+                    evidenceContext: context,
+                    media: media,
+                    courses: workspace.courses
+                ))
+            }
+            workspace.records = mapped.sorted {
+                ($0.businessDate ?? "", $0.submittedAt) >
+                    ($1.businessDate ?? "", $1.submittedAt)
+            }
+            saveWorkspace(event: "已同步 Backend 2.0.2 打卡记录")
+            errorMessage = nil
+        } catch {
+            await handleAPIV1Error(error, expectedSessionEpoch: refreshEpoch)
+        }
+    }
+
+    private static func checkInRecord(
+        from record: APIV1ExerciseRecord,
+        evidenceContext: APIV1ExerciseRecordEvidenceContext?,
+        media: [APIV1MediaEvidence],
+        courses: [Course]
+    ) -> CheckInRecord {
+        let photoCount = media.filter { $0.mediaType == .image }.count
+        let videoCount = media.filter { $0.mediaType == .video }.count
+        let expectedMediaCount = evidenceContext?.mediaIds.count ?? 0
+        let proofSummary: String
+        if expectedMediaCount == 0 {
+            proofSummary = BNBUL10n.text("未添加凭证")
+        } else if photoCount + videoCount == expectedMediaCount {
+            var parts: [String] = []
+            if photoCount > 0 { parts.append(BNBUL10n.text("\(photoCount) 张图片")) }
+            if videoCount > 0 { parts.append(BNBUL10n.text("\(videoCount) 个短视频")) }
+            proofSummary = parts.joined(separator: BNBUL10n.text("，"))
+        } else {
+            proofSummary = BNBUL10n.text("\(expectedMediaCount) 项现场凭证")
+        }
+        let course = courses.first { $0.id == record.classSectionId }
+        let title = record.creditType == .courseRelated
+            ? (course?.name ?? BNBUL10n.text("课程相关运动"))
+            : (record.sportName ?? record.sportType)
+        return CheckInRecord(
+            id: record.id,
+            courseId: record.creditType == .courseRelated ? record.classSectionId : nil,
+            taskTitle: title,
+            creditType: record.creditType == .courseRelated ? .courseRelated : .general,
+            hours: Double(record.creditedDurationSeconds) / ExerciseSession.oneHour,
+            submittedAt: record.submittedAt ?? record.businessDate,
+            validity: record.currentReview.map {
+                RecordValidity(serverReviewResult: $0.result)
+            } ?? .pending,
+            invalidReason: record.currentReview?.publicComment,
+            proofSummary: proofSummary,
+            proofPhotoCount: photoCount,
+            proofVideoCount: videoCount,
+            proofFiles: [],
+            note: record.description ?? "",
+            sportType: record.sportName ?? record.sportType,
+            businessDate: record.businessDate,
+            startedAt: evidenceContext?.startedAt,
+            endedAt: evidenceContext?.endedAt,
+            activeDuration: durationText(seconds: record.actualDurationSeconds)
+        )
+    }
+
+    func refreshAPIV1Notifications() async {
+        guard isAPIV1Session, isAuthenticated else { return }
+        let refreshEpoch = sessionEpoch
+        do {
+            let response = try await backendServices.clientCapabilities.notifications()
+            guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+            workspace.notices = response.value.map(Self.studentNotice(from:))
+            saveWorkspace(event: "已同步 Backend 2.0.2 通知")
+        } catch let error as APITransportError {
+            guard refreshEpoch == sessionEpoch else { return }
+            if case .failure(503, let envelope) = error,
+               envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+                workspace.notices = []
+                saveWorkspace(event: "通知能力尚未开放")
+                return
+            }
+            await handleAPIV1Error(error, expectedSessionEpoch: refreshEpoch)
+        } catch {
+            guard refreshEpoch == sessionEpoch else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Loads the versioned preference projection needed for later PATCHes.
+    /// It intentionally does not overwrite the device's current language:
+    /// Contract 2.0.2 does not expose whether a returned locale is persisted or
+    /// merely an organization default, nor can it represent Follow System.
+    func refreshAPIV1Preferences() async {
+        guard isAPIV1Session, isAuthenticated else { return }
+        let refreshEpoch = sessionEpoch
+        do {
+            let response = try await backendServices.clientCapabilities.currentUserPreferences()
+            guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+            guard response.value.locale == "zh-CN" || response.value.locale == "en" else {
+                throw APITransportError.invalidResponse
+            }
+            backendUserPreferences = response.value
+            preferenceSyncNotice = nil
+        } catch let error as APITransportError {
+            guard refreshEpoch == sessionEpoch else { return }
+            if case .failure(503, let envelope) = error,
+               envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+                backendUserPreferences = nil
+                preferenceSyncNotice = BNBUL10n.text(
+                    "云端偏好同步暂未开放，本机语言设置仍然有效。"
+                )
+                return
+            }
+            if error.statusCode == 401 {
+                await handleAPIV1Error(error, expectedSessionEpoch: refreshEpoch)
+            } else {
+                preferenceSyncNotice = BNBUL10n.text(
+                    "云端偏好暂未同步，本机语言设置已保留。"
+                )
+            }
+        } catch {
+            guard refreshEpoch == sessionEpoch else { return }
+            preferenceSyncNotice = BNBUL10n.text(
+                "云端偏好暂未同步，本机语言设置已保留。"
+            )
+        }
+    }
+
+    /// Coalesces rapid language changes and preserves the server's push/email
+    /// flags while updating only locale with the latest expectedVersion.
+    func synchronizeAPIV1Locale(_ locale: String) async {
+        guard locale == "zh-CN" || locale == "en",
+              isAPIV1Session,
+              isAuthenticated else { return }
+        pendingPreferenceLocale = locale
+        guard !isSynchronizingPreferences else { return }
+        isSynchronizingPreferences = true
+        defer { isSynchronizingPreferences = false }
+
+        let syncEpoch = sessionEpoch
+        var didReloadAfterConflict = false
+        while let desiredLocale = pendingPreferenceLocale,
+              syncEpoch == sessionEpoch,
+              isAPIV1Session {
+            pendingPreferenceLocale = nil
+            if backendUserPreferences == nil {
+                await refreshAPIV1Preferences()
+            }
+            guard let current = backendUserPreferences else { return }
+            if current.locale == desiredLocale { continue }
+
+            do {
+                let response = try await backendServices.clientCapabilities
+                    .updateCurrentUserPreferences(APIV1UpdateUserPreferencesRequest(
+                        locale: desiredLocale,
+                        pushEnabled: current.pushEnabled,
+                        emailEnabled: current.emailEnabled,
+                        expectedVersion: current.version
+                    ))
+                guard syncEpoch == sessionEpoch, isAPIV1Session else { return }
+                guard response.value.locale == desiredLocale else {
+                    throw APITransportError.invalidResponse
+                }
+                backendUserPreferences = response.value
+                preferenceSyncNotice = nil
+                didReloadAfterConflict = false
+            } catch let error as APITransportError {
+                guard syncEpoch == sessionEpoch else { return }
+                if error.statusCode == 409, !didReloadAfterConflict {
+                    didReloadAfterConflict = true
+                    backendUserPreferences = nil
+                    pendingPreferenceLocale = desiredLocale
+                    continue
+                }
+                if case .failure(503, let envelope) = error,
+                   envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+                    preferenceSyncNotice = BNBUL10n.text(
+                        "云端偏好同步暂未开放，本机语言设置仍然有效。"
+                    )
+                } else if error.statusCode == 401 {
+                    await handleAPIV1Error(error, expectedSessionEpoch: syncEpoch)
+                } else {
+                    preferenceSyncNotice = BNBUL10n.text(
+                        "语言已在本机生效，但云端同步失败，请稍后重试。"
+                    )
+                }
+                return
+            } catch {
+                guard syncEpoch == sessionEpoch else { return }
+                preferenceSyncNotice = BNBUL10n.text(
+                    "语言已在本机生效，但云端同步失败，请稍后重试。"
+                )
+                return
+            }
+        }
+    }
+
+    /// Contract 2.0.2 account recovery is exclusively for TEACHER/ADMIN password
+    /// accounts. Students authenticate with email OTP, so this student client
+    /// must never manufacture a locally "submitted" recovery request.
     @discardableResult
     func submitRecoveryRequest(
         studentNumber: String,
@@ -303,27 +1189,10 @@ final class AppState: ObservableObject {
         newPhone: String,
         newEmail: String
     ) -> Bool {
-        let trimmedNumber = studentNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedNumber.isEmpty { return failRecovery("请填写学号。") }
-        if trimmedName.isEmpty { return failRecovery("请填写姓名。") }
-        if trimmedDescription.isEmpty { return failRecovery("请说明当前无法接收验证码的原因。") }
-        // At least one new contact is required, otherwise there is nothing for
-        // the reviewer to rebind the account to.
-        let hasPhone = ContactBindingRule.isValid(newPhone, for: .phone)
-        let hasEmail = ContactBindingRule.isValid(newEmail, for: .email)
-        if !newPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !hasPhone {
-            return failRecovery("请输入有效的手机号")
-        }
-        if !newEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !hasEmail {
-            return failRecovery("请输入有效的邮箱")
-        }
-        guard hasPhone || hasEmail else {
-            return failRecovery("请至少填写一个新的手机号或邮箱，供老师换绑。")
-        }
-        errorMessage = nil
-        return true
+        _ = (studentNumber, name, description, newPhone, newEmail)
+        return failRecovery(
+            "学生账号使用邮箱验证码登录，不支持在 App 内提交密码恢复申请。若无法使用原邮箱，请联系任课教师或系统管理员核验身份。"
+        )
     }
 
     private func failRecovery(_ message: String.LocalizationValue) -> Bool {
@@ -338,7 +1207,40 @@ final class AppState: ObservableObject {
     /// Startup availability check. A failure or a missing field leaves the app in
     /// `normal`, so a staged backend never blocks the student.
     func refreshSystemStatus() async {
-        if isRemoteMode {
+        if isAPIV1Session || usesAPIV1PublicCapabilities {
+            do {
+                let response = try await backendServices.clientCapabilities.systemMode()
+                systemModeStatus = SystemModeStatus(
+                    mode: SystemMode.parse(response.value.mode.rawValue)
+                )
+            } catch {
+                // Availability is advisory at launch. Retain the last known
+                // state and let authenticated operations fail with their own
+                // stable status/error code.
+            }
+            if let query = IOSAppReleasePolicyQuery(
+                infoDictionary: Bundle.main.infoDictionary ?? [:]
+            ) {
+                do {
+                    let response = try await backendServices.clientCapabilities
+                        .appReleasePolicy(query: query)
+                    guard IOSAppReleaseContractPolicy.accepts(response.value),
+                          IOSAppReleaseContractPolicy.expectedEnforcement(
+                            for: response.value,
+                            currentBuildNumber: query.currentBuildNumber
+                          ) == response.value.enforcement else {
+                        throw APITransportError.invalidResponse
+                    }
+                    updateRequirement = IOSAppReleaseContractPolicy.requiredUpdate(
+                        for: response.value,
+                        currentBuildNumber: query.currentBuildNumber
+                    )
+                } catch {
+                    // Release policy is independently default-denied. Never use
+                    // legacy version data or clear a previously confirmed block.
+                }
+            }
+        } else if isRemoteMode {
             systemModeStatus = await remoteRepo.loadSystemMode()
             updateRequirement = await remoteRepo.loadUpdateRequirement()
         } else {
@@ -364,7 +1266,24 @@ final class AppState: ObservableObject {
 
         do {
             let fetched: [HelpArticle]
-            if isRemoteMode {
+            if isAPIV1Session {
+                let locale = BNBUL10n.locale.identifier.lowercased().hasPrefix("zh")
+                    ? "zh-CN"
+                    : "en"
+                let response = try await backendServices.clientCapabilities.helpArticles(locale: locale)
+                fetched = HelpArticle.displayOrdered(
+                    response.value.enumerated().map { index, article in
+                        HelpArticle(
+                            id: article.id,
+                            title: article.title,
+                            category: article.category,
+                            content: article.bodyMarkdown,
+                            sortOrder: index,
+                            updatedAt: article.publishedAt
+                        )
+                    }
+                )
+            } else if isRemoteMode {
                 fetched = try await remoteRepo.loadHelpArticles()
             } else {
                 fetched = HelpArticle.displayOrdered(try repository.loadHelpArticles())
@@ -375,7 +1294,9 @@ final class AppState: ObservableObject {
             isLoadingHelpArticles = false
             return
         } catch {
-            if isRemoteMode, isUnauthorized(error) {
+            if isAPIV1Session {
+                await handleAPIV1Error(error)
+            } else if isRemoteMode, isUnauthorized(error) {
                 await handleRemoteError(error)
             }
             let fallback = cached.isEmpty ? helpArticles : cached
@@ -403,7 +1324,30 @@ final class AppState: ObservableObject {
 
     /// Problem reports the student has filed. Loaded lazily the first time the
     /// feedback page opens its list tab.
-    func refreshFeedbackTickets() {
+    func refreshFeedbackTickets() async {
+        if isAPIV1Session {
+            guard !isLoadingFeedbackTickets else { return }
+            isLoadingFeedbackTickets = true
+            feedbackNotice = nil
+            defer { isLoadingFeedbackTickets = false }
+            do {
+                let response = try await backendServices.clientCapabilities.feedback()
+                feedbackTickets = response.value.map { Self.feedbackTicket($0) }
+            } catch {
+                if let transport = error as? APITransportError,
+                   DefaultDeniedCapabilityPolicy.unavailableState(
+                    operationID: APIV1ClientCapability.listFeedback.rawValue,
+                    from: transport
+                   ) != nil {
+                    feedbackNotice = BNBUL10n.text("反馈服务暂未开放，请稍后重试。")
+                } else {
+                    await handleAPIV1Error(error)
+                    feedbackNotice = errorMessage
+                        ?? BNBUL10n.text("反馈记录加载失败，请稍后重试。")
+                }
+            }
+            return
+        }
         guard !isRemoteMode else {
             feedbackTickets = []
             feedbackNotice = BNBUL10n.text("反馈工单接口尚未发布，暂时无法加载反馈记录。")
@@ -411,6 +1355,78 @@ final class AppState: ObservableObject {
         }
         feedbackNotice = nil
         feedbackTickets = repository.loadFeedbackTickets()
+    }
+
+    /// Contract 2.0.2 submits only the allowlisted category, content and client
+    /// context. Contacts, screenshots, logs and device identifiers are never
+    /// smuggled into the free-form content field.
+    func submitFeedbackForCurrentDataSource(
+        category: FeedbackCategory,
+        description: String,
+        email: String,
+        phone: String,
+        screenshots: [ProofAttachment]
+    ) async -> FeedbackTicket? {
+        guard isAPIV1Session else {
+            return submitFeedback(
+                category: category,
+                description: description,
+                email: email,
+                phone: phone,
+                screenshots: screenshots
+            )
+        }
+        let normalized = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            errorMessage = BNBUL10n.text("请填写问题描述。")
+            return nil
+        }
+        guard normalized.count <= FeedbackRule.maximumDescriptionLength else {
+            errorMessage = BNBUL10n.formatted(
+                "问题描述最多 %@ 字。",
+                String(FeedbackRule.maximumDescriptionLength)
+            )
+            return nil
+        }
+        guard screenshots.isEmpty else {
+            errorMessage = BNBUL10n.text("当前反馈接口不接收截图，请移除截图后提交。")
+            return nil
+        }
+        guard allowWrite(), !isSubmittingFeedback else { return nil }
+        isSubmittingFeedback = true
+        errorMessage = nil
+        defer { isSubmittingFeedback = false }
+        let appVersion = String(BNBUAppVersion.current.prefix(64))
+        let osVersion = String(ProcessInfo.processInfo.operatingSystemVersionString.prefix(64))
+        do {
+            let response = try await backendServices.clientCapabilities.createFeedback(
+                APIV1CreateFeedbackRequest(
+                    category: category.apiValue,
+                    content: normalized,
+                    clientContext: [
+                        "platform": .string(IOSPlatformContractPolicy.wireValue),
+                        "appVersion": .string(appVersion),
+                        "osVersion": .string(osVersion)
+                    ]
+                )
+            )
+            let ticket = Self.feedbackTicket(response.value, preferredCategory: category.title)
+            feedbackTickets.removeAll { $0.id == ticket.id }
+            feedbackTickets.insert(ticket, at: 0)
+            feedbackNotice = nil
+            return ticket
+        } catch {
+            if let transport = error as? APITransportError,
+               DefaultDeniedCapabilityPolicy.unavailableState(
+                operationID: APIV1ClientCapability.createFeedback.rawValue,
+                from: transport
+               ) != nil {
+                errorMessage = BNBUL10n.text("反馈服务暂未开放，请稍后重试。")
+            } else {
+                await handleAPIV1Error(error)
+            }
+            return nil
+        }
     }
 
     /// Files a problem report. Returns the accepted ticket so the caller can
@@ -455,9 +1471,22 @@ final class AppState: ObservableObject {
         return ticket
     }
 
-    /// Sends a verification code to a contact the student is binding. Both
-    /// contacts are bound during registration so a reinstall can be recovered
-    /// with a code rather than a password.
+    private static func feedbackTicket(
+        _ feedback: APIV1Feedback,
+        preferredCategory: String? = nil
+    ) -> FeedbackTicket {
+        FeedbackTicket(
+            id: feedback.id,
+            ticketNumber: feedback.id,
+            category: preferredCategory ?? FeedbackCategory.displayTitle(apiValue: feedback.category),
+            description: feedback.content,
+            status: FeedbackTicketStatus.parsed(feedback.status),
+            createdAt: StudentRecordTimeDisplay.dateTime(feedback.createdAt) ?? feedback.createdAt,
+            reply: feedback.publicReply
+        )
+    }
+
+    /// Local fixture path retained for deterministic Mock UI tests.
     @discardableResult
     func sendContactVerificationCode(to value: String, channel: ContactChannel) -> Bool {
         if let validationMessage = ContactBindingRule.validationMessage(value, for: channel) {
@@ -491,6 +1520,118 @@ final class AppState: ObservableObject {
         return true
     }
 
+    /// Starts Contract 2.0.2 first-bind or email-rebind verification. Rebinding
+    /// sends independent codes to the current and new addresses; the accepted
+    /// response tells the UI whether both proofs are required.
+    @discardableResult
+    func requestContactEmailVerification(
+        email: String,
+        locale: String = "zh-CN"
+    ) async -> Bool {
+        if !isAPIV1Session {
+            contactVerificationRequiresCurrentEmailCode = false
+            return sendContactVerificationCode(to: email, channel: .email)
+        }
+        guard let validationMessage = ContactBindingRule.validationMessage(email, for: .email) else {
+            guard allowWrite() else { return false }
+            guard let expectedVersion = backendUserVersion, expectedVersion > 0 else {
+                errorMessage = BNBUL10n.text("账号版本尚未同步，请重新登录后重试。")
+                return false
+            }
+            guard !isLoading else { return false }
+            let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let contractLocale = locale.lowercased().hasPrefix("zh") ? "zh-CN" : "en"
+            isLoading = true
+            errorMessage = nil
+            defer { isLoading = false }
+            do {
+                let response = try await backendServices.auth.requestCurrentUserEmailChallenge(
+                    APIV1EmailVerificationChallengeRequest(
+                        email: normalizedEmail,
+                        locale: contractLocale,
+                        expectedVersion: expectedVersion
+                    )
+                )
+                let requiresCurrentCode = response.value.mode.uppercased() == "REBIND"
+                pendingEmailVerificationChallenge = PendingEmailVerificationChallenge(
+                    id: response.value.challengeId,
+                    normalizedEmail: normalizedEmail,
+                    requiresCurrentEmailCode: requiresCurrentCode,
+                    expiresAt: response.value.expiresAt
+                )
+                contactVerificationRequiresCurrentEmailCode = requiresCurrentCode
+                return true
+            } catch {
+                pendingEmailVerificationChallenge = nil
+                contactVerificationRequiresCurrentEmailCode = false
+                await handleAPIV1Error(error)
+                return false
+            }
+        }
+        errorMessage = validationMessage
+        return false
+    }
+
+    /// Completes first bind with the new-address code, or rebind with both the
+    /// current-address and new-address codes. The returned `/me` projection is
+    /// authoritative for verification state and optimistic-lock version.
+    @discardableResult
+    func completeContactEmailVerification(
+        newEmailCode: String,
+        currentEmailCode: String?,
+        email: String
+    ) async -> Bool {
+        if !isAPIV1Session {
+            return verifyContactCode(newEmailCode, for: email, channel: .email)
+        }
+        guard ContactBindingRule.isValidCode(newEmailCode) else {
+            errorMessage = BNBUL10n.text("请输入 6 位数字验证码")
+            return false
+        }
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let challenge = pendingEmailVerificationChallenge,
+              challenge.normalizedEmail == normalizedEmail else {
+            errorMessage = BNBUL10n.text("请先获取验证码。")
+            return false
+        }
+        let normalizedCurrentCode = currentEmailCode?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if challenge.requiresCurrentEmailCode,
+           !ContactBindingRule.isValidCode(normalizedCurrentCode ?? "") {
+            errorMessage = BNBUL10n.text("请输入当前邮箱收到的 6 位验证码。")
+            return false
+        }
+        guard !isLoading else { return false }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let response = try await backendServices.auth.verifyCurrentUserEmailChallenge(
+                challengeID: challenge.id,
+                request: APIV1VerifyEmailChallengeRequest(
+                    currentEmailCode: challenge.requiresCurrentEmailCode ? normalizedCurrentCode : nil,
+                    newEmailCode: newEmailCode
+                )
+            )
+            guard response.value.user.role == .student,
+                  response.value.studentProfile?.userId == response.value.user.id else {
+                throw BackendStudentBootstrapError.missingStudentProfile
+            }
+            workspace.student = try Self.backendStudentProfile(
+                response.value,
+                verifiedEmail: normalizedEmail
+            )
+            backendUserVersion = response.value.user.version
+            isEmailVerified = response.value.user.emailVerified
+            pendingEmailVerificationChallenge = nil
+            contactVerificationRequiresCurrentEmailCode = false
+            saveWorkspace(event: "已通过 Backend 2.0.2 更新验证邮箱")
+            return true
+        } catch {
+            await handleAPIV1Error(error)
+            return false
+        }
+    }
+
     /// Submits a course join application (rule 4.2). The request endpoint ships
     /// with the pending OpenAPI update; until then remote mode reports that the
     /// server side is unavailable instead of faking an approval-pending course.
@@ -509,11 +1650,17 @@ final class AppState: ObservableObject {
             errorMessage = validationMessage
             return false
         }
-        // Registration is only complete once the student can be reached again,
-        // so an unbound contact must never reach the teacher's queue.
-        guard ContactBindingRule.isValid(phone, for: .phone),
-              ContactBindingRule.isValid(email, for: .email) else {
-            errorMessage = BNBUL10n.text("请先完成手机号和邮箱绑定。")
+        guard isAuthenticated else {
+            errorMessage = BNBUL10n.text("请先完成邮箱登录和验证，再加入课程。")
+            return false
+        }
+        // Email is the sole authentication channel. Phone/SMS is retired and a
+        // verified email is required before an enrollment request can proceed.
+        let hasVerifiedEmail = isAPIV1Session
+            ? isEmailVerified
+            : ContactBindingRule.isValid(email, for: .email)
+        guard hasVerifiedEmail else {
+            errorMessage = BNBUL10n.text("请先完成邮箱验证。")
             return false
         }
         guard allowWrite() else { return false }
@@ -534,7 +1681,7 @@ final class AppState: ObservableObject {
             studentName: name.trimmingCharacters(in: .whitespacesAndNewlines),
             studentNumber: studentNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-            phone: ContactBindingRule.normalizedPhone(phone),
+            phone: "",
             status: .pending,
             reviewComment: "",
             submittedAt: Self.joinRequestTimestampFormatter.string(from: Date()),
@@ -598,9 +1745,9 @@ final class AppState: ObservableObject {
         category: ExerciseCategory,
         sportType: ExerciseSportType?,
         customSportName: String,
-        at startTime: Date = Date(),
-        location: (latitude: Double, longitude: Double)? = nil
+        at startTime: Date = Date()
     ) -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard exerciseSession == nil else {
             errorMessage = BNBUL10n.text("已有进行中或待提交的运动，请先完成当前记录。")
             return false
@@ -638,9 +1785,7 @@ final class AppState: ObservableObject {
             startTime: startTime,
             endTime: nil,
             status: .active,
-            locationStatus: location == nil ? .unavailable : .available,
-            latitude: location?.latitude,
-            longitude: location?.longitude
+            locationStatus: .unavailable
         )
         guard localStore.saveExerciseSession(session) else {
             errorMessage = BNBUL10n.text("无法安全保存运动开始时间，请确认设备存储空间后重试。")
@@ -651,27 +1796,62 @@ final class AppState: ObservableObject {
         return true
     }
 
-    /// Business rule 5.5: location is fetched once, best-effort, after the
-    /// timer starts. A late fix attaches to the still-running session;
-    /// failures leave the record marked "未获取位置" and never block anything.
-    func attachExerciseSessionLocation(latitude: Double, longitude: Double) {
+    #if BNBU_FIXTURES && DEBUG
+    /// Debug-only permission-flow fixture. Production and staging builds do
+    /// not compile the location provider or this attachment path.
+    func attachExerciseSessionLocation(latitude _: Double, longitude _: Double) {
         guard var session = exerciseSession,
               session.status == .active,
               session.locationStatus == .unavailable else { return }
         session.locationStatus = .available
-        session.latitude = latitude
-        session.longitude = longitude
         guard localStore.saveExerciseSession(session) else { return }
         exerciseSession = session
     }
+
+    /// Advances only the active Mock session clock. Progress and records are
+    /// untouched until the user ends and submits this exercise normally.
+    @discardableResult
+    func addOneHourToMockExercise(at date: Date = Date()) -> Bool {
+        guard isMockTestAccountSession,
+              let session = exerciseSession,
+              session.status == .active,
+              session.elapsed(at: date) < ExerciseSession.oneHour else { return false }
+
+        let advanced = ExerciseSession(
+            id: session.id,
+            studentID: session.studentID,
+            category: session.category,
+            sportType: session.sportType,
+            customSportName: session.customSportName,
+            courseID: session.courseID,
+            startTime: session.startTime.addingTimeInterval(-ExerciseSession.oneHour),
+            endTime: session.endTime,
+            status: session.status,
+            locationStatus: session.locationStatus,
+            pauses: session.pauses
+        )
+        guard localStore.saveExerciseSession(advanced) else {
+            errorMessage = BNBUL10n.text("无法保存测试运动时长，请检查设备存储空间后重试。")
+            return false
+        }
+        exerciseSession = advanced
+        errorMessage = nil
+        return true
+    }
+    #endif
 
     func reconcileExerciseSession(at date: Date = Date()) {
         guard let session = exerciseSession else { return }
         guard session.studentID == workspace.student.id else {
             exerciseSession = nil
+            backendExerciseSession = nil
             _ = localStore.clearExerciseSession()
             return
         }
+        // A Contract 2.0.2 session is owned by Backend. Do not locally turn an
+        // in-progress server session into a completed one when the app becomes
+        // active; the authoritative restore/reconcile endpoint must decide it.
+        guard !isAPIV1Session else { return }
         let reconciled = session.reconciled(at: date)
         guard reconciled != session else { return }
         guard localStore.saveExerciseSession(reconciled) else {
@@ -717,16 +1897,277 @@ final class AppState: ObservableObject {
         return true
     }
 
+    /// Starts the authoritative Contract 2.0.2 timer. The local session is only
+    /// installed after Backend accepts the enrollment and returns its session
+    /// ID/version; a network failure never creates a fake local timer.
+    @discardableResult
+    func beginExerciseSession(
+        category: ExerciseCategory,
+        sportType: ExerciseSportType?,
+        customSportName: String,
+        at startTime: Date = Date()
+    ) async -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
+        guard isAPIV1Session else {
+            return startExerciseSession(
+                category: category,
+                sportType: sportType,
+                customSportName: customSportName,
+                at: startTime
+            )
+        }
+        guard exerciseSession == nil else {
+            errorMessage = BNBUL10n.text("已有进行中或待提交的运动，请先完成当前记录。")
+            return false
+        }
+        if let validationMessage = ExerciseSessionInputRule.validationMessage(
+            sportType: sportType,
+            customSportName: customSportName
+        ) {
+            errorMessage = validationMessage
+            return false
+        }
+        guard let currentCourse = currentExerciseCourse,
+              let enrollmentID = activeEnrollmentIDsByClassSectionID[currentCourse.id] else {
+            errorMessage = BNBUL10n.text("当前课程尚未同步到服务器，请刷新后重试。")
+            return false
+        }
+        if enforcesCheckInTimeWindow,
+           let section = backendClassSectionsByID[currentCourse.id],
+           !CheckInTimeWindowRule.canStartExercise(
+                at: startTime,
+                dailyStartTime: section.dailyStartTime,
+                dailyEndTime: section.dailyEndTime
+           ) {
+            errorMessage = CheckInTimeWindowRule.startBlockedMessage
+            return false
+        }
+        guard let sportType, !isLoading else { return false }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let response = try await backendServices.exerciseSessions.start(
+                APIV1StartSessionRequest(
+                    enrollmentId: enrollmentID,
+                    clientObservedAt: ISO8601DateFormatter().string(from: startTime)
+                )
+            )
+            guard response.value.status == .inProgress,
+                  let authoritativeStart = StudentRecordTimeDisplay.instant(
+                    from: response.value.startedAt
+                  ) else {
+                throw APITransportError.invalidResponse
+            }
+            let normalizedCustomName = customSportName.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let localSession = ExerciseSession(
+                id: response.value.id,
+                studentID: workspace.student.id,
+                category: category,
+                sportType: sportType,
+                customSportName: sportType == .other ? normalizedCustomName : nil,
+                courseID: category == .courseRelated ? currentCourse.id : nil,
+                startTime: authoritativeStart,
+                status: .active,
+                locationStatus: .unavailable
+            )
+            guard localStore.saveExerciseSession(localSession) else {
+                throw RemoteMutationJournalError.writeFailed
+            }
+            backendExerciseSession = response.value
+            backendExerciseRecord = nil
+            exerciseSession = localSession
+            return true
+        } catch {
+            if let transport = error as? APITransportError, transport.statusCode == 401 {
+                await handleAPIV1Error(error)
+            } else {
+                errorMessage = exerciseSessionMessage(for: error)
+            }
+            return false
+        }
+    }
+
+    @discardableResult
+    func pauseCurrentExerciseSession(at date: Date = Date()) async -> Bool {
+        guard isAPIV1Session else { return pauseExerciseSession(at: date) }
+        guard !isLoading else { return false }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let server = try await authoritativeSessionForMutation()
+            let response = try await backendServices.exerciseSessions.pause(
+                sessionID: server.id,
+                request: APIV1SessionControlRequest(
+                    expectedVersion: server.version,
+                    clientObservedAt: ISO8601DateFormatter().string(from: date)
+                )
+            )
+            guard response.value.status == .paused,
+                  let local = exerciseSession?.paused(at: date),
+                  localStore.saveExerciseSession(local) else {
+                throw APITransportError.invalidResponse
+            }
+            backendExerciseSession = response.value
+            exerciseSession = local
+            errorMessage = nil
+            return true
+        } catch {
+            if let transport = error as? APITransportError, transport.statusCode == 401 {
+                await handleAPIV1Error(error)
+            } else {
+                errorMessage = exerciseSessionMessage(for: error)
+            }
+            return false
+        }
+    }
+
+    @discardableResult
+    func resumeCurrentExerciseSession(at date: Date = Date()) async -> Bool {
+        guard isAPIV1Session else { return resumeExerciseSession(at: date) }
+        guard !isLoading else { return false }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let server = try await authoritativeSessionForMutation()
+            let response = try await backendServices.exerciseSessions.resume(
+                sessionID: server.id,
+                request: APIV1SessionControlRequest(
+                    expectedVersion: server.version,
+                    clientObservedAt: ISO8601DateFormatter().string(from: date)
+                )
+            )
+            guard response.value.status == .inProgress,
+                  let local = exerciseSession?.resumed(at: date),
+                  localStore.saveExerciseSession(local) else {
+                throw APITransportError.invalidResponse
+            }
+            backendExerciseSession = response.value
+            exerciseSession = local
+            errorMessage = nil
+            return true
+        } catch {
+            if let transport = error as? APITransportError, transport.statusCode == 401 {
+                await handleAPIV1Error(error)
+            } else {
+                errorMessage = exerciseSessionMessage(for: error)
+            }
+            return false
+        }
+    }
+
+    @discardableResult
+    func finishCurrentExerciseSession(at date: Date = Date()) async -> Bool {
+        guard isAPIV1Session else { return endExerciseSession(at: date) }
+        guard !isLoading else { return false }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let server = try await authoritativeSessionForMutation()
+            let response = try await backendServices.exerciseSessions.finish(
+                sessionID: server.id,
+                request: APIV1SessionControlRequest(
+                    expectedVersion: server.version,
+                    clientObservedAt: ISO8601DateFormatter().string(from: date)
+                )
+            )
+            guard response.value.status == .completed,
+                  let local = exerciseSession else {
+                throw APITransportError.invalidResponse
+            }
+            let authoritativeEnd = response.value.endedAt.flatMap {
+                StudentRecordTimeDisplay.instant(from: $0)
+            } ?? date
+            let ended = local.ended(at: authoritativeEnd)
+            guard localStore.saveExerciseSession(ended) else {
+                throw RemoteMutationJournalError.writeFailed
+            }
+            backendExerciseSession = response.value
+            exerciseSession = ended
+            errorMessage = nil
+            return true
+        } catch {
+            if let transport = error as? APITransportError, transport.statusCode == 401 {
+                await handleAPIV1Error(error)
+            } else {
+                errorMessage = exerciseSessionMessage(for: error)
+            }
+            return false
+        }
+    }
+
+    @discardableResult
+    func cancelCurrentExerciseSession() async -> Bool {
+        guard isAPIV1Session else {
+            discardExerciseSession()
+            return exerciseSession == nil
+        }
+        guard !isLoading else { return false }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let server = try await authoritativeSessionForMutation()
+            let response = try await backendServices.exerciseSessions.cancel(
+                sessionID: server.id,
+                request: APIV1VersionedReasonRequest(
+                    reason: "STUDENT_ABANDONED",
+                    expectedVersion: server.version
+                )
+            )
+            guard response.value.status == .cancelled else {
+                throw APITransportError.invalidResponse
+            }
+            backendExerciseSession = nil
+            discardExerciseSession()
+            return exerciseSession == nil
+        } catch {
+            if let transport = error as? APITransportError, transport.statusCode == 401 {
+                await handleAPIV1Error(error)
+            } else {
+                errorMessage = exerciseSessionMessage(for: error)
+            }
+            return false
+        }
+    }
+
+    private func authoritativeSessionForMutation() async throws -> APIV1ExerciseSession {
+        guard let local = exerciseSession else { throw APITransportError.invalidRequest }
+        if let backendExerciseSession, backendExerciseSession.id == local.id {
+            return backendExerciseSession
+        }
+        let enrollmentID = activeEnrollmentIDsByClassSectionID[local.courseID ?? ""]
+        let restored = try await backendServices.exerciseSessions.restoreActive(
+            enrollmentID: enrollmentID
+        )
+        guard let server = restored.value, server.id == local.id else {
+            throw APITransportError.invalidResponse
+        }
+        backendExerciseSession = server
+        return server
+    }
+
+    private func exerciseSessionMessage(for error: Error) -> String {
+        if let admission = error as? ExerciseSessionAdmissionError {
+            return admission.localizedDescription
+        }
+        return backendAuthenticationMessage(for: error)
+    }
+
     /// Business rule 5.6: an under-one-hour exercise ends without forming a
     /// record and without using the daily quota, but captured media drafts
     /// are retained for a later attempt on the same day.
     func finishUncreditedExerciseSession() {
-        guard let session = exerciseSession, session.creditedHours() == 0 else { return }
+        guard let session = exerciseSession,
+              creditedExerciseHours(for: session) == 0 else { return }
         guard localStore.clearExerciseSession() else {
             errorMessage = BNBUL10n.text("无法清理本地运动会话，请稍后重试。")
             return
         }
         exerciseSession = nil
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
         errorMessage = nil
     }
 
@@ -742,6 +2183,10 @@ final class AppState: ObservableObject {
 
     var canAddExercisePhotoDraft: Bool {
         ExerciseMediaDraftRule.canAddPhoto(to: exerciseMediaDrafts)
+    }
+
+    var canAddExerciseVideoDraft: Bool {
+        ExerciseMediaDraftRule.canAddVideo(to: exerciseMediaDrafts)
     }
 
     /// Stores a camera photo as a local draft. Capture is only offered while a
@@ -795,6 +2240,7 @@ final class AppState: ObservableObject {
         fileURL: URL,
         byteCount: Int,
         durationSeconds: Double?,
+        hasAudioTrack: Bool?,
         thumbnailData: Data?,
         at date: Date = Date()
     ) -> Bool {
@@ -802,6 +2248,18 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("请先开始运动，再拍摄打卡凭证。")
             return false
         }
+        guard canAddExerciseVideoDraft else {
+            errorMessage = BNBUL10n.text("最多保存 \(ExerciseMediaDraftRule.maximumVideoDrafts) 个视频草稿。")
+            return false
+        }
+        if let validationMessage = ExerciseVideoRule.validationMessage(
+            durationSeconds: durationSeconds,
+            hasAudioTrack: hasAudioTrack == true
+        ) {
+            errorMessage = validationMessage
+            return false
+        }
+        guard let durationSeconds else { return false }
         let draftID = UUID().uuidString
         let displayName = "exercise-video-\(String(draftID.prefix(6))).mov"
         guard localStore.exerciseMediaDirectoryURL != nil,
@@ -820,6 +2278,7 @@ final class AppState: ObservableObject {
             thumbnailData: thumbnailData,
             byteCount: byteCount,
             durationSeconds: durationSeconds,
+            hasAudioTrack: hasAudioTrack,
             capturedAt: date
         )
         return appendExerciseMediaDraft(mediaDraft)
@@ -847,6 +2306,7 @@ final class AppState: ObservableObject {
             thumbnailData: nil,
             byteCount: videoData.count,
             durationSeconds: durationSeconds,
+            hasAudioTrack: true,
             capturedAt: date
         )
         return appendExerciseMediaDraft(mediaDraft)
@@ -868,6 +2328,15 @@ final class AppState: ObservableObject {
         exerciseMediaDrafts = updated
     }
 
+    @discardableResult
+    func removeAllExerciseMediaDrafts() -> Bool {
+        let cleared = clearAllExerciseMediaDrafts()
+        if cleared {
+            errorMessage = nil
+        }
+        return cleared
+    }
+
     /// Abandoning a session clears only the drafts it produced; drafts
     /// retained from an earlier under-one-hour attempt stay usable.
     private func clearExerciseMediaDrafts(sessionID: String) {
@@ -885,10 +2354,19 @@ final class AppState: ObservableObject {
         exerciseMediaDrafts = remaining
     }
 
-    private func clearAllExerciseMediaDrafts() {
-        _ = localStore.clearExerciseMediaDraftIndex()
-        localStore.removeAllExerciseMediaFiles()
+    @discardableResult
+    private func clearAllExerciseMediaDrafts() -> Bool {
+        guard localStore.clearExerciseMediaDraftIndex() else {
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
+            return false
+        }
+        guard localStore.removeAllExerciseMediaFiles() else {
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
+            exerciseMediaDrafts = []
+            return false
+        }
         exerciseMediaDrafts = []
+        return true
     }
 
     /// Loads persisted drafts for the current student, dropping drafts that
@@ -898,12 +2376,15 @@ final class AppState: ObservableObject {
         let stored = localStore.readExerciseMediaDrafts().value ?? []
         guard !stored.isEmpty else {
             exerciseMediaDrafts = []
+            // A previous logical discard may have succeeded while the final
+            // directory sweep was temporarily blocked (for example by file
+            // protection). With no metadata references, these files are safe
+            // to remove and can never be attached to another record.
+            _ = localStore.removeAllExerciseMediaFiles()
             return
         }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         let (kept, dropped) = stored.partitioned {
-            $0.studentID == studentID && calendar.isDate($0.capturedAt, inSameDayAs: date)
+            $0.studentID == studentID && CheckInTimeWindowRule.isSameBusinessDate($0.capturedAt, date)
         }
         if !dropped.isEmpty {
             _ = localStore.saveExerciseMediaDrafts(kept)
@@ -957,6 +2438,7 @@ final class AppState: ObservableObject {
                     fileName: mediaDraft.fileName,
                     byteCount: mediaDraft.byteCount,
                     durationSeconds: mediaDraft.durationSeconds,
+                    hasAudioTrack: mediaDraft.hasAudioTrack,
                     thumbnailData: mediaDraft.thumbnailData,
                     sourceFileURL: fileURL,
                     source: "运动拍摄"
@@ -969,6 +2451,7 @@ final class AppState: ObservableObject {
                 fileName: mediaDraft.fileName,
                 byteCount: data.count,
                 durationSeconds: mediaDraft.durationSeconds,
+                hasAudioTrack: mediaDraft.hasAudioTrack,
                 thumbnailData: mediaDraft.thumbnailData,
                 uploadData: data,
                 source: "运动拍摄"
@@ -987,7 +2470,292 @@ final class AppState: ObservableObject {
             clearExerciseMediaDrafts(sessionID: sessionID)
         }
         exerciseSession = nil
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
         errorMessage = nil
+    }
+
+    /// Discards the whole local check-in candidate after an eligible exercise
+    /// has ended. A saved form draft, its retained evidence and the completed
+    /// local session are one user-facing lifecycle: clearing only the form
+    /// would immediately reveal an empty submission form for the same session.
+    ///
+    /// Backend 2.0.2 keeps the completed session as an immutable audit fact. A
+    /// normal Save Draft action is local-only, but a previous interrupted
+    /// submission may already have created a server DRAFT. That DRAFT must be
+    /// cancelled before device state is released, otherwise it will be found
+    /// again during the next submission attempt.
+    @discardableResult
+    func discardCompletedCheckInDraft() async -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
+        guard let completedSession = exerciseSession,
+              completedSession.status == .completed else { return false }
+        isDiscardingCompletedCheckInDraft = true
+        defer { isDiscardingCompletedCheckInDraft = false }
+
+        let scope = "apiv1-exercise-record:submit:\(completedSession.id)"
+        let cachedRecord = backendExerciseRecord.flatMap {
+            $0.sessionId == completedSession.id ? $0 : nil
+        }
+        // A plain Save Draft is deliberately local-only. Do not make an
+        // offline student contact the API just to throw that local candidate
+        // away. A cached record or durable APIV1 journal proves that a remote
+        // DRAFT may exist and therefore requires authoritative cancellation.
+        let requiresServerRecordReconciliation = cachedRecord != nil
+            || pendingRemoteMutations[scope] != nil
+            || draft?.pendingRemoteMutation?.scope == scope
+        if isAPIV1Session, requiresServerRecordReconciliation {
+            guard !isLoading else { return false }
+            let expectedSessionEpoch = sessionEpoch
+            isLoading = true
+            defer {
+                if expectedSessionEpoch == sessionEpoch {
+                    isLoading = false
+                }
+            }
+            do {
+                let serverSession: APIV1ExerciseSession
+                if let cached = backendExerciseSession, cached.id == completedSession.id {
+                    serverSession = cached
+                } else {
+                    serverSession = try await backendServices.exerciseSessions
+                        .get(sessionID: completedSession.id).value
+                    backendExerciseSession = serverSession
+                }
+                guard expectedSessionEpoch == sessionEpoch,
+                      exerciseSession?.id == completedSession.id,
+                      exerciseSession?.status == .completed,
+                      serverSession.studentId == workspace.student.id,
+                      serverSession.status == .completed else {
+                    throw APITransportError.invalidResponse
+                }
+
+                let record: APIV1ExerciseRecord?
+                if let cachedRecord {
+                    record = cachedRecord
+                } else {
+                    record = try await backendServices.exerciseRecords.findForSession(
+                        sessionID: serverSession.id,
+                        enrollmentID: serverSession.enrollmentId,
+                        businessDate: serverSession.businessDate
+                    ).value
+                }
+                guard expectedSessionEpoch == sessionEpoch,
+                      exerciseSession?.id == completedSession.id,
+                      exerciseSession?.status == .completed else { return false }
+                if let record {
+                    guard record.studentId == workspace.student.id,
+                          record.sessionId == serverSession.id else {
+                        throw APITransportError.invalidResponse
+                    }
+                    backendExerciseRecord = try await reconcileExerciseRecordDiscard(
+                        record,
+                        serverSession: serverSession,
+                        completedSessionID: completedSession.id,
+                        expectedSessionEpoch: expectedSessionEpoch
+                    )
+                }
+                try removePendingRemoteMutationStrict(scope: scope)
+            } catch {
+                guard expectedSessionEpoch == sessionEpoch else { return false }
+                if let transport = error as? APITransportError, transport.statusCode == 401 {
+                    await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+                } else {
+                    errorMessage = apiv1OperationMessage(for: error)
+                }
+                return false
+            }
+        }
+
+        guard exerciseSession?.id == completedSession.id,
+              exerciseSession?.status == .completed else { return false }
+        return clearCompletedCheckInLocalCandidate()
+    }
+
+    /// Cancels a server DRAFT using optimistic concurrency. A stale version is
+    /// refreshed once: an already-cancelled record can finish local cleanup,
+    /// a submitted/reviewed record stays protected, and a still-draft record is
+    /// retried with the server's current version instead of looping forever on
+    /// the same cached `expectedVersion`.
+    private func reconcileExerciseRecordDiscard(
+        _ record: APIV1ExerciseRecord,
+        serverSession: APIV1ExerciseSession,
+        completedSessionID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> APIV1ExerciseRecord {
+        switch record.status {
+        case .cancelled:
+            return record
+        case .submitted, .reviewed:
+            throw APIV1CheckInError.recordStateInvalid
+        case .draft:
+            do {
+                return try await discardExerciseRecordDraft(
+                    record,
+                    serverSession: serverSession,
+                    completedSessionID: completedSessionID,
+                    expectedSessionEpoch: expectedSessionEpoch
+                )
+            } catch {
+                guard let transport = error as? APITransportError,
+                      transport.statusCode == 409 else { throw error }
+                let refreshed = try await backendServices.exerciseRecords
+                    .get(recordID: record.id).value
+                try validateExerciseRecordForDiscard(
+                    refreshed,
+                    serverSession: serverSession,
+                    completedSessionID: completedSessionID,
+                    expectedSessionEpoch: expectedSessionEpoch
+                )
+                backendExerciseRecord = refreshed
+                switch refreshed.status {
+                case .cancelled:
+                    return refreshed
+                case .submitted, .reviewed:
+                    throw APIV1CheckInError.recordStateInvalid
+                case .draft:
+                    return try await discardExerciseRecordDraft(
+                        refreshed,
+                        serverSession: serverSession,
+                        completedSessionID: completedSessionID,
+                        expectedSessionEpoch: expectedSessionEpoch
+                    )
+                }
+            }
+        }
+    }
+
+    private func discardExerciseRecordDraft(
+        _ record: APIV1ExerciseRecord,
+        serverSession: APIV1ExerciseSession,
+        completedSessionID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> APIV1ExerciseRecord {
+        let cancelled = try await backendServices.exerciseRecords.discard(
+            recordID: record.id,
+            request: APIV1VersionedReasonRequest(
+                reason: "STUDENT_ABANDONED_DRAFT",
+                expectedVersion: record.version
+            )
+        ).value
+        try validateExerciseRecordForDiscard(
+            cancelled,
+            serverSession: serverSession,
+            completedSessionID: completedSessionID,
+            expectedSessionEpoch: expectedSessionEpoch
+        )
+        guard cancelled.status == .cancelled else {
+            throw APITransportError.invalidResponse
+        }
+        return cancelled
+    }
+
+    private func validateExerciseRecordForDiscard(
+        _ record: APIV1ExerciseRecord,
+        serverSession: APIV1ExerciseSession,
+        completedSessionID: String,
+        expectedSessionEpoch: UInt64
+    ) throws {
+        guard expectedSessionEpoch == sessionEpoch,
+              exerciseSession?.id == completedSessionID,
+              exerciseSession?.status == .completed,
+              record.studentId == workspace.student.id,
+              record.sessionId == serverSession.id else {
+            throw APITransportError.invalidResponse
+        }
+    }
+
+    /// Clears the three metadata records as one logical operation. Published
+    /// state is changed only after every protected metadata key was removed;
+    /// if a later key fails, earlier removals are rolled back from snapshots so
+    /// the draft cannot become hidden or leak its evidence into a new session.
+    private func clearCompletedCheckInLocalCandidate() -> Bool {
+        let draftSnapshot = draft
+        let mediaSnapshot = exerciseMediaDrafts
+        let legacyAttempt = pendingRemoteMutations["sport-record:create"]
+
+        do {
+            try removePendingRemoteMutationStrict(scope: "sport-record:create")
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        guard localStore.clearDraft() else {
+            reportCompletedCandidateCleanupFailure()
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+        guard localStore.clearExerciseMediaDraftIndex() else {
+            let rollbackSucceeded = restoreCompletedCandidateMetadata(
+                draft: draftSnapshot,
+                mediaDrafts: nil
+            )
+            reportCompletedCandidateCleanupFailure(rollbackSucceeded: rollbackSucceeded)
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+        guard localStore.clearExerciseSession() else {
+            let rollbackSucceeded = restoreCompletedCandidateMetadata(
+                draft: draftSnapshot,
+                mediaDrafts: mediaSnapshot
+            )
+            reportCompletedCandidateCleanupFailure(rollbackSucceeded: rollbackSucceeded)
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+
+        // Metadata is now durably absent. End the user-facing lifecycle in one
+        // synchronous actor turn; the evidence editor can never observe an
+        // eligible completed session with a missing form draft.
+        exerciseSession = nil
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
+        draft = nil
+        exerciseMediaDrafts = []
+        storeHealth.draftReadStatus = .missing
+        storeHealth.lastWriteStatus = .cleared
+        storeHealth.lastEvent = "运动打卡草稿已完整丢弃"
+
+        if !localStore.removeAllExerciseMediaFiles() {
+            // The logical references are gone, so no old evidence can attach to
+            // a future record. Startup retries this best-effort file sweep.
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
+            return true
+        }
+        errorMessage = nil
+        return true
+    }
+
+    private func restoreCompletedCandidateMetadata(
+        draft: CheckInDraft?,
+        mediaDrafts: [ExerciseMediaDraft]?
+    ) -> Bool {
+        var restored = true
+        if let draft {
+            restored = localStore.saveDraft(draft) && restored
+        }
+        if let mediaDrafts, !mediaDrafts.isEmpty {
+            restored = localStore.saveExerciseMediaDrafts(mediaDrafts) && restored
+        }
+        return restored
+    }
+
+    private func restoreLegacyCheckInAttemptIfNeeded(_ attempt: PendingRemoteMutationAttempt?) {
+        guard let attempt else { return }
+        do {
+            try storePendingRemoteMutation(attempt)
+        } catch {
+            errorMessage = combinedWarning(errorMessage, error.localizedDescription)
+        }
+    }
+
+    private func reportCompletedCandidateCleanupFailure(rollbackSucceeded: Bool = true) {
+        storeHealth.lastWriteStatus = .failed
+        storeHealth.lastEvent = rollbackSucceeded
+            ? "运动打卡草稿丢弃失败，已保留原状态"
+            : "运动打卡草稿丢弃失败，且本地状态回滚不完整"
+        errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
     }
 
     /// The credit bucket a completed session's record belongs to. Course-related
@@ -1002,6 +2770,32 @@ final class AppState: ObservableObject {
             else { return nil }
             return (.courseRelated, courseID)
         }
+    }
+
+    /// Backend owns effective duration in a formal session. Local pause
+    /// intervals remain useful for the live timer, but after completion the UI
+    /// and record request must derive eligibility from the server projection.
+    func elapsedExerciseDuration(
+        for session: ExerciseSession,
+        at date: Date = Date()
+    ) -> TimeInterval {
+        if isAPIV1Session,
+           let backendExerciseSession,
+           backendExerciseSession.id == session.id,
+           backendExerciseSession.status == .completed {
+            return TimeInterval(backendExerciseSession.actualDurationSeconds)
+        }
+        return session.elapsed(at: date)
+    }
+
+    func creditedExerciseHours(
+        for session: ExerciseSession,
+        at date: Date = Date()
+    ) -> Double {
+        let duration = elapsedExerciseDuration(for: session, at: date)
+        if duration >= ExerciseSession.maximumDuration { return 2 }
+        if duration >= ExerciseSession.oneHour { return 1 }
+        return 0
     }
 
     /// Fail-closed validation of a check-in submission under the new model:
@@ -1029,6 +2823,8 @@ final class AppState: ObservableObject {
 
     func markExerciseSessionSubmitted() {
         exerciseSession = nil
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
         _ = localStore.clearExerciseSession()
         // Business rule 6.4: a successful submission ends the check-in
         // lifecycle, so every local media draft is released.
@@ -1046,7 +2842,10 @@ final class AppState: ObservableObject {
             at: startTime
         ) else { return }
         _ = endExerciseSession(at: date)
-        installExerciseProofForUITesting(saveSelection: true, at: date)
+        // A completed-session fixture supplies eligible exercise and retained
+        // evidence only. Saving a form draft is a separate user action and is
+        // exercised explicitly by the draft UI tests.
+        installExerciseProofForUITesting(saveSelection: false, at: date)
     }
 
     func installActiveExerciseSessionForUITesting(at date: Date = Date()) {
@@ -1082,21 +2881,25 @@ final class AppState: ObservableObject {
 
     func hasSubmittedCheckInToday(at date: Date = Date()) -> Bool {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        calendar.timeZone = CheckInTimeWindowRule.businessTimeZone
+        let targetBusinessDate = CheckInTimeWindowRule.businessDateString(for: date)
         let exerciseSubmissionDates = localStore.readExerciseSubmissionDates().value ?? [:]
-        let fractionalISOFormatter = ISO8601DateFormatter()
-        fractionalISOFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let standardISOFormatter = ISO8601DateFormatter()
         return workspace.records.contains { record in
             guard record.creditType != .organizationOffset else { return false }
+            if let serverBusinessDate = record.businessDate?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !serverBusinessDate.isEmpty {
+                // `businessDate` is already the server-frozen Beijing date;
+                // never pass it through UTC or the student's display timezone.
+                return serverBusinessDate == targetBusinessDate
+            }
             if let exerciseStartDate = exerciseSubmissionDates[record.id] {
-                return calendar.isDate(exerciseStartDate, inSameDayAs: date)
+                return CheckInTimeWindowRule.isSameBusinessDate(exerciseStartDate, date)
             }
             let value = record.submittedAt.trimmingCharacters(in: .whitespacesAndNewlines)
             if RecentTimestamp.isJustNow(value) { return true }
 
-            if let parsed = fractionalISOFormatter.date(from: value) ?? standardISOFormatter.date(from: value) {
-                return calendar.isDate(parsed, inSameDayAs: date)
+            if let parsed = StudentRecordTimeDisplay.instant(from: value) {
+                return CheckInTimeWindowRule.isSameBusinessDate(parsed, date)
             }
 
             for format in ["yyyy.MM.dd HH:mm", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"] {
@@ -1105,7 +2908,8 @@ final class AppState: ObservableObject {
                 formatter.timeZone = calendar.timeZone
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.dateFormat = format
-                if let parsed = formatter.date(from: value), calendar.isDate(parsed, inSameDayAs: date) {
+                if let parsed = formatter.date(from: value),
+                   CheckInTimeWindowRule.isSameBusinessDate(parsed, date) {
                     return true
                 }
             }
@@ -1180,11 +2984,47 @@ final class AppState: ObservableObject {
     }
 
     func demoLogin() {
+        startLocalSession(initialWorkspace: repository.loadWorkspace())
+    }
+
+    /// Opens the fully populated test identity behind the visible Mock shortcut.
+    /// The same identity also remains available through verification-code login.
+    @discardableResult
+    func mockAccountLogin() -> Bool {
+        var accountWorkspace = repository.loadMockTestAccountWorkspace()
+#if BNBU_FIXTURES && DEBUG
+        // The normal Debug scheme starts in the unauthenticated repository.
+        // Tapping the visible Mock shortcut is the user's explicit opt-in to
+        // switch this session to the fixture repository.
+        if accountWorkspace == nil {
+            let mockRepository = MockStudentRepository()
+            repository = mockRepository
+            accountWorkspace = mockRepository.loadMockTestAccountWorkspace()
+        }
+#endif
+        guard let accountWorkspace else {
+            errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+            return false
+        }
+        startLocalSession(initialWorkspace: accountWorkspace)
+        return true
+    }
+
+    /// Matching local state is restored for the selected identity, while
+    /// switching identities always starts from that identity's fixture.
+    private func startLocalSession(initialWorkspace: StudentWorkspace) {
         sessionEpoch &+= 1
         mutationGate.removeAll()
         errorMessage = nil
         let journalCleared = clearAllPendingRemoteMutations()
-        let localWorkspace = localStore.readWorkspace().value ?? repository.loadWorkspace()
+        let storedWorkspace = localStore.readWorkspace().value
+        let localWorkspace: StudentWorkspace
+        if let storedWorkspace,
+           storedWorkspace.student.id == initialWorkspace.student.id {
+            localWorkspace = storedWorkspace
+        } else {
+            localWorkspace = initialWorkspace
+        }
         workspace = localWorkspace
         restoreExerciseSession(for: workspace.student.id)
         restoreExerciseMediaDrafts(for: workspace.student.id)
@@ -1195,6 +3035,20 @@ final class AppState: ObservableObject {
             draft = nil
         }
         isRemoteMode = false
+        isAPIV1Session = false
+        isEmailVerified = ContactBindingRule.isValid(
+            localWorkspace.student.email,
+            for: .email
+        )
+        backendUserVersion = nil
+        backendUserPreferences = nil
+        pendingPreferenceLocale = nil
+        preferenceSyncNotice = nil
+        isSynchronizingPreferences = false
+        activeEnrollmentIDsByClassSectionID = [:]
+        backendClassSectionsByID = [:]
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
         remoteCacheStudentID = nil
         clearPersistedRemoteAttemptFromDraft()
         if !journalCleared {
@@ -1207,9 +3061,22 @@ final class AppState: ObservableObject {
         sessionEpoch &+= 1
         let remoteStudentID = remoteCacheStudentID
         let wasRemoteMode = isRemoteMode
+        let wasAPIV1Session = isAPIV1Session
         isAuthenticated = false
         isRemoteMode = false
+        isAPIV1Session = false
+        isEmailVerified = false
+        backendUserVersion = nil
+        backendUserPreferences = nil
+        pendingPreferenceLocale = nil
+        preferenceSyncNotice = nil
+        isSynchronizingPreferences = false
+        activeEnrollmentIDsByClassSectionID = [:]
+        backendClassSectionsByID = [:]
         remoteCacheStudentID = nil
+        pendingStudentSignInChallenge = nil
+        pendingEmailVerificationChallenge = nil
+        contactVerificationRequiresCurrentEmailCode = false
         isLoading = false
         isLoadingExemptions = false
         isRefreshingWorkspace = false
@@ -1219,6 +3086,8 @@ final class AppState: ObservableObject {
         canSafelyRetryCheckIn = false
         draft = nil
         exerciseSession = nil
+        backendExerciseSession = nil
+        backendExerciseRecord = nil
         _ = localStore.clearExerciseSession()
         _ = localStore.clearExerciseSubmissionDates()
         clearAllExerciseMediaDrafts()
@@ -1233,9 +3102,25 @@ final class AppState: ObservableObject {
             localStore.clearAll()
         }
         workspace = repository.loadWorkspace()
-        let securelyCleared = await remoteRepo.logout()
-        if !securelyCleared {
-            errorMessage = BNBUL10n.text("已退出，但设备未能清理安全存储。请重启 App 后再登录。")
+        let logoutWarning: String?
+        if wasAPIV1Session {
+            do {
+                try await backendServices.auth.logout()
+                logoutWarning = nil
+            } catch {
+                // BackendAuthSessionController clears the local refresh token
+                // even when remote revocation fails, so the device is signed out.
+                logoutWarning = BNBUL10n.text(
+                    "本机已退出，但服务器会话撤销失败。如账号存在风险，请联系管理员。"
+                )
+            }
+        } else {
+            logoutWarning = await remoteRepo.logout()
+                ? nil
+                : BNBUL10n.text("已退出，但设备未能清理安全存储。请重启 App 后再登录。")
+        }
+        if let logoutWarning {
+            errorMessage = logoutWarning
         } else if !journalCleared {
             errorMessage = BNBUL10n.text("已退出，但设备未能清理待提交操作。请释放存储空间后重启 App。")
         } else {
@@ -1263,6 +3148,7 @@ final class AppState: ObservableObject {
             let authenticatedStudent = try await remoteRepo.login(account: account, password: password)
             guard loginEpoch == sessionEpoch else { return }
             isRemoteMode = true
+            isAPIV1Session = false
             remoteCacheStudentID = authenticatedStudent.id
             restoreExerciseSession(for: authenticatedStudent.id)
             restoreExerciseMediaDrafts(for: authenticatedStudent.id)
@@ -1298,12 +3184,20 @@ final class AppState: ObservableObject {
             await handleRemoteError(error, expectedSessionEpoch: loginEpoch)
             _ = await remoteRepo.clearSession()
             isRemoteMode = false
+            isAPIV1Session = false
+            isEmailVerified = false
+            backendUserVersion = nil
             remoteCacheStudentID = nil
             isAuthenticated = false
         }
     }
 
     func refreshRemoteWorkspace() async {
+        if isAPIV1Session {
+            await refreshAPIV1Workspace()
+            await refreshAPIV1Notifications()
+            return
+        }
         guard isRemoteMode, !isRefreshingWorkspace else { return }
         let refreshEpoch = sessionEpoch
         isRefreshingWorkspace = true
@@ -1328,6 +3222,44 @@ final class AppState: ObservableObject {
     /// leaves the cached list intact so the centre never turns a transport error
     /// into a misleading empty state.
     func refreshRemoteExemptions() async {
+        if isAPIV1Session {
+            guard isAuthenticated, !isLoadingExemptions else { return }
+            let refreshEpoch = sessionEpoch
+            isLoadingExemptions = true
+            errorMessage = nil
+            defer {
+                if refreshEpoch == sessionEpoch {
+                    isLoadingExemptions = false
+                }
+            }
+            do {
+                let response = try await backendServices.clientCapabilities.exemptionApplications()
+                guard refreshEpoch == sessionEpoch, isAPIV1Session else { return }
+                let allowedTypes = Set(["PHYSICAL_TEST", "EXERCISE_CHECK_IN", "SPECIAL_CIRCUMSTANCE"])
+                let allowedStatuses = Set(["DRAFT", "SUBMITTED", "SUPPLEMENT_REQUIRED", "APPROVED", "REJECTED"])
+                guard response.value.allSatisfy({ application in
+                    application.studentId == workspace.student.id &&
+                        allowedTypes.contains(application.applicationType.uppercased()) &&
+                        allowedStatuses.contains(application.status.uppercased())
+                }) else {
+                    throw APITransportError.invalidResponse
+                }
+                workspace.exemptions = response.value.map(Self.exemptionApplication(from:))
+                saveWorkspace(event: "已同步 Backend 2.0.2 免测申请")
+            } catch let error as APITransportError {
+                guard refreshEpoch == sessionEpoch else { return }
+                if case .failure(503, let envelope) = error,
+                   envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+                    errorMessage = BNBUL10n.text("免测申请服务暂未开放，当前保留最近一次同步结果。")
+                    return
+                }
+                await handleAPIV1Error(error, expectedSessionEpoch: refreshEpoch)
+            } catch {
+                guard refreshEpoch == sessionEpoch else { return }
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
         guard isRemoteMode, !isLoadingExemptions else { return }
         let refreshEpoch = sessionEpoch
         isLoadingExemptions = true
@@ -1359,6 +3291,13 @@ final class AppState: ObservableObject {
         let notice = workspace.notices[index]
         guard notice.isUnread else { return }
 
+        if isAPIV1Session {
+            let noticeEpoch = sessionEpoch
+            Task {
+                await markAPIV1NoticeRead(id: id, expectedSessionEpoch: noticeEpoch)
+            }
+            return
+        }
         if isRemoteMode {
             let noticeEpoch = sessionEpoch
             Task {
@@ -1380,6 +3319,13 @@ final class AppState: ObservableObject {
         guard unreadNoticeCount > 0 else { return }
         let unreadIDs = workspace.notices.filter(\.isUnread).map(\.id)
 
+        if isAPIV1Session {
+            let noticeEpoch = sessionEpoch
+            Task {
+                await markAllAPIV1NoticesRead(ids: unreadIDs, expectedSessionEpoch: noticeEpoch)
+            }
+            return
+        }
         if isRemoteMode {
             let noticeEpoch = sessionEpoch
             Task {
@@ -1410,13 +3356,15 @@ final class AppState: ObservableObject {
         proofAttachments: [ProofAttachment],
         exerciseSession: ExerciseSession? = nil
     ) async -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard !isSubmittingCheckIn else { return false }
         guard allowWrite() else { return false }
         canSafelyRetryCheckIn = false
         checkInSubmissionPhase = .submitting
         defer { checkInSubmissionPhase = .idle }
 
-        if let inputMessage = CheckInInputRule.validationMessage(note: note) {
+        let category: ExerciseCategory = creditType == .courseRelated ? .courseRelated : .general
+        if let inputMessage = CheckInInputRule.validationMessage(note: note, for: category) {
             errorMessage = inputMessage
             return false
         }
@@ -1426,6 +3374,16 @@ final class AppState: ObservableObject {
             return false
         }
 
+        if isAPIV1Session {
+            let submissionEpoch = sessionEpoch
+            return await submitCheckInAPIV1(
+                submission: submission,
+                note: note,
+                proofAttachments: proofAttachments,
+                exerciseSession: exerciseSession,
+                expectedSessionEpoch: submissionEpoch
+            )
+        }
         if isRemoteMode {
             let submissionEpoch = sessionEpoch
             return await submitCheckInRemote(
@@ -1457,7 +3415,7 @@ final class AppState: ObservableObject {
             proofPhotoCount: photoCount,
             proofVideoCount: videoCount,
             proofFiles: proofAttachments,
-            note: note.isEmpty ? "学生未填写补充说明。" : note,
+            note: CheckInInputRule.contractDescription(note, for: submission.creditType) ?? "",
             sportType: sportType
         )
         workspace.records.insert(record, at: 0)
@@ -1492,6 +3450,7 @@ final class AppState: ObservableObject {
         reason: String,
         detail: String,
         organization: String = "",
+        courseId: String? = nil,
         proofAttachments: [ProofAttachment]
     ) async -> Bool {
         guard !isSubmittingExemption else {
@@ -1522,13 +3481,6 @@ final class AppState: ObservableObject {
             errorMessage = BNBUL10n.text("请填写校队或社团名称")
             return false
         }
-        guard isRemoteMode else {
-            errorMessage = exemptionCopy(
-                "演示账户仅供界面预览，不能提交免测申请。",
-                "The demo account is for interface preview only and cannot submit exemption requests."
-            )
-            return false
-        }
         guard ExemptionProofRule.accepts(proofAttachments) else {
             errorMessage = liveExemptionProofError
             return false
@@ -1539,6 +3491,65 @@ final class AppState: ObservableObject {
             return false
         }
 
+        if !isRemoteMode {
+            guard isFullFeatureMockMode else {
+                errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+                return false
+            }
+            guard !hasPendingExemption(for: item) else {
+                errorMessage = BNBUL10n.text("同一类型已有待审核申请，请等待处理后再提交。")
+                return false
+            }
+
+            let timestamp = RecentTimestamp.justNow
+            let application = ExemptionApplication(
+                id: "mock-exemption-\(UUID().uuidString)",
+                studentId: workspace.student.id,
+                item: item,
+                reason: normalizedReason,
+                detail: normalizedDetail,
+                organization: normalizedOrganization,
+                submittedAt: timestamp,
+                status: .pending,
+                proofFiles: proofAttachments,
+                teacherFeedback: "",
+                reviewer: nil,
+                updatedAt: timestamp
+            )
+            upsertExemption(application)
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("免测申请已提交"),
+                    message: BNBUL10n.text("\(item.rawValue) 已进入 Mock 审核队列。"),
+                    time: timestamp,
+                    category: .review,
+                    isUnread: true
+                ),
+                at: 0
+            )
+            enqueueSyncOperation(
+                .submitExemption,
+                title: "提交免测申请",
+                detail: "\(item.rawValue) · Mock 本地完成",
+                status: .localOnly
+            )
+            saveWorkspace(event: "Mock 免测申请已保存")
+            errorMessage = nil
+            return true
+        }
+
+        if isAPIV1Session {
+            return await submitExemptionAPIV1(
+                item: item,
+                reason: normalizedReason,
+                detail: normalizedDetail,
+                organization: normalizedOrganization,
+                courseID: courseId,
+                proofAttachments: proofAttachments,
+                expectedSessionEpoch: sessionEpoch
+            )
+        }
         return await submitExemptionRemote(
             item: item,
             reason: normalizedReason,
@@ -1580,11 +3591,8 @@ final class AppState: ObservableObject {
         guard application.status.canSupplement else {
             return false
         }
-        guard isRemoteMode else {
-            errorMessage = exemptionCopy(
-                "演示账户仅供界面预览，不能补交免测材料。",
-                "The demo account is for interface preview only and cannot submit exemption supplements."
-            )
+        guard ExemptionProofRule.accepts(proofAttachments) else {
+            errorMessage = liveExemptionProofError
             return false
         }
         guard acceptsLiveExemptionProofs(proofAttachments) ||
@@ -1593,6 +3601,57 @@ final class AppState: ObservableObject {
             return false
         }
 
+        if !isRemoteMode {
+            guard isFullFeatureMockMode else {
+                errorMessage = BNBUL10n.text("当前没有可写的测试账号，请切换到 Mock 运行方案。")
+                return false
+            }
+            guard let index = workspace.exemptions.firstIndex(where: {
+                $0.id == application.id && $0.status.canSupplement
+            }) else {
+                errorMessage = BNBUL10n.text("该申请当前不能补充材料。")
+                return false
+            }
+
+            let timestamp = RecentTimestamp.justNow
+            workspace.exemptions[index].reason = normalizedReason
+            workspace.exemptions[index].detail = normalizedDetail
+            workspace.exemptions[index].proofFiles.append(contentsOf: proofAttachments)
+            workspace.exemptions[index].status = .pending
+            workspace.exemptions[index].teacherFeedback = ""
+            workspace.exemptions[index].reviewer = nil
+            workspace.exemptions[index].updatedAt = timestamp
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("免测补充材料已提交"),
+                    message: BNBUL10n.text("\(application.item.rawValue) 的材料已进入 Mock 复审队列。"),
+                    time: timestamp,
+                    category: .review,
+                    isUnread: true
+                ),
+                at: 0
+            )
+            enqueueSyncOperation(
+                .supplementExemption,
+                title: "提交免测补充材料",
+                detail: "\(application.item.rawValue) · Mock 本地完成",
+                status: .localOnly
+            )
+            saveWorkspace(event: "Mock 免测补充材料已保存")
+            errorMessage = nil
+            return true
+        }
+
+        if isAPIV1Session {
+            return await supplementExemptionAPIV1(
+                application: application,
+                reason: normalizedReason,
+                detail: normalizedDetail,
+                proofAttachments: proofAttachments,
+                expectedSessionEpoch: sessionEpoch
+            )
+        }
         return await supplementExemptionRemote(
             application: application,
             reason: normalizedReason,
@@ -1602,6 +3661,7 @@ final class AppState: ObservableObject {
         )
     }
 
+    @discardableResult
     func saveDraft(
         creditType: CreditType,
         courseId: String?,
@@ -1610,10 +3670,11 @@ final class AppState: ObservableObject {
         sportType: String? = nil,
         customSportType: String? = nil,
         proofAttachments: [ProofAttachment]
-    ) {
+    ) -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
         guard let submission = validatedSubmission(creditType: creditType, courseId: courseId, hours: hours) else {
             clearDraft()
-            return
+            return false
         }
         let resolvedSportType = sportType == "other"
             ? customSportType?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1638,10 +3699,23 @@ final class AppState: ObservableObject {
         } else {
             retainedAttempt = nil
         }
+        let replacedJournalAttempt: PendingRemoteMutationAttempt?
         if existingAttempt != nil, retainedAttempt == nil {
-            removePendingRemoteMutation(scope: "sport-record:create")
+            replacedJournalAttempt = pendingRemoteMutations["sport-record:create"]
+            do {
+                // A changed form must not report a successful save while an
+                // older request remains durably retryable with stale fields or
+                // evidence. Keep the visible draft unchanged if journal
+                // cleanup cannot be persisted.
+                try removePendingRemoteMutationStrict(scope: "sport-record:create")
+            } catch {
+                errorMessage = error.localizedDescription
+                return false
+            }
+        } else {
+            replacedJournalAttempt = nil
         }
-        let draft = CheckInDraft(
+        let updatedDraft = CheckInDraft(
             id: draft?.id ?? UUID().uuidString,
             creditType: submission.creditType,
             courseId: submission.courseId,
@@ -1653,8 +3727,17 @@ final class AppState: ObservableObject {
             customSportType: customSportType,
             pendingRemoteMutation: retainedAttempt
         )
-        self.draft = draft
-        saveDraft(draft, event: "打卡草稿已保存")
+        guard saveDraft(updatedDraft, event: "打卡草稿已保存") else {
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请检查设备存储空间。")
+            // Journal cleanup succeeded but the replacement draft did not.
+            // Restore the old retry state so the persisted old draft and its
+            // operation remain a consistent pair.
+            restoreLegacyCheckInAttemptIfNeeded(replacedJournalAttempt)
+            return false
+        }
+        self.draft = updatedDraft
+        errorMessage = nil
+        return true
     }
 
     func canResumePendingCheckIn(
@@ -1688,13 +3771,35 @@ final class AppState: ObservableObject {
         )
     }
 
-    func clearDraft() {
-        removePendingRemoteMutation(scope: "sport-record:create")
+    @discardableResult
+    func clearDraft() -> Bool {
+        guard !isDiscardingCompletedCheckInDraft else { return false }
+        let legacyAttempt = pendingRemoteMutations["sport-record:create"]
+        do {
+            // Remove the legacy retry journal before deleting the form file.
+            // If journal persistence fails, keeping the draft intact is safer
+            // than reporting a discard while a retry remains durable.
+            try removePendingRemoteMutationStrict(scope: "sport-record:create")
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+        guard localStore.clearDraft() else {
+            storeHealth.lastWriteStatus = .failed
+            storeHealth.lastEvent = "打卡草稿清理失败"
+            errorMessage = BNBUL10n.text("草稿列表无法安全更新，请稍后重试。")
+            restoreLegacyCheckInAttemptIfNeeded(legacyAttempt)
+            return false
+        }
+        // Contract 2.0.2 owns a separate session-scoped journal. A generic form
+        // clear must never orphan a server DRAFT by deleting that journal;
+        // successful submit and explicit whole-record discard clean it up only
+        // after the server state has been confirmed.
         draft = nil
-        localStore.clearDraft()
         storeHealth.draftReadStatus = .missing
         storeHealth.lastWriteStatus = .cleared
         storeHealth.lastEvent = "打卡草稿已清理"
+        return true
     }
 
     func discardExemptionCreationAttempt() {
@@ -1721,6 +3826,7 @@ final class AppState: ObservableObject {
     }
 
     func canRetryPendingRemoteMutation(scope: String) -> Bool {
+        guard !isAPIV1Session else { return false }
         guard isRemoteMode,
               let studentID = remoteCacheStudentID,
               let attempt = pendingRemoteMutations[scope],
@@ -1836,6 +3942,7 @@ final class AppState: ObservableObject {
     }
 
     func pendingExemptionFormRecovery(applicationID: String?) -> PendingExemptionFormRecovery? {
+        guard !isAPIV1Session else { return nil }
         let scope = applicationID.map { "exemption:supplement:\($0)" }
             ?? "exemption:create:physical-test"
         let existingApplication = applicationID.flatMap { id in
@@ -1929,10 +4036,6 @@ final class AppState: ObservableObject {
     }
 
     func convertEndurance(timeSeconds: Int) async -> EnduranceScoreResult? {
-        guard isRemoteMode else {
-            errorMessage = BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
-            return nil
-        }
         guard let gender = workspace.student.gender.apiValue else {
             errorMessage = BNBUL10n.text("学生性别尚未同步，暂时无法匹配耐力跑项目。")
             return nil
@@ -1940,6 +4043,25 @@ final class AppState: ObservableObject {
         guard let gradeLevel = workspace.student.gradeLevel, !gradeLevel.isEmpty else {
             errorMessage = BNBUL10n.text("学生年级尚未同步，暂时无法匹配评分组别。")
             return nil
+        }
+
+        if isAPIV1Session {
+            errorMessage = BNBUL10n.text("运动换算规则尚未开放，当前不会调用旧接口或使用本地默认值。")
+            return nil
+        }
+
+        if !isRemoteMode {
+            guard isFullFeatureMockMode,
+                  let result = repository.previewEnduranceScore(
+                    timeSeconds: timeSeconds,
+                    gender: gender,
+                    gradeLevel: gradeLevel
+                  ) else {
+                errorMessage = BNBUL10n.text("请连接校园体育服务器后使用成绩换算。")
+                return nil
+            }
+            errorMessage = nil
+            return result
         }
 
         let conversionEpoch = sessionEpoch
@@ -1960,6 +4082,511 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func submitCheckInAPIV1(
+        submission: CheckInSubmission,
+        note: String,
+        proofAttachments: [ProofAttachment],
+        exerciseSession localSession: ExerciseSession?,
+        expectedSessionEpoch: UInt64
+    ) async -> Bool {
+        guard expectedSessionEpoch == sessionEpoch,
+              isAPIV1Session,
+              let localSession,
+              localSession.id == exerciseSession?.id else { return false }
+        guard !proofAttachments.isEmpty,
+              ProofUploadRule.accepts(proofAttachments) else {
+            errorMessage = BNBUL10n.text("请至少拍摄一个符合要求的现场凭证。")
+            return false
+        }
+
+        let scope = "apiv1-exercise-record:submit:\(localSession.id)"
+        let description = CheckInInputRule.contractDescription(note, for: submission.creditType)
+        let sportType = Self.apiv1SportType(for: localSession.sportType)
+        let sportName = localSession.sportType == .other ? localSession.customSportName : nil
+        let creditType: APIV1CreditType = submission.creditType == .courseRelated
+            ? .courseRelated
+            : .general
+        let fingerprintFields = [
+            "sessionId": localSession.id,
+            "creditType": creditType.rawValue,
+            "sportType": sportType,
+            "sportName": sportName ?? "",
+            "description": description ?? ""
+        ]
+        let fingerprint = RemoteMutationFingerprint.make(
+            scope: scope,
+            fields: fingerprintFields,
+            attachments: proofAttachments
+        )
+        var requestFields = fingerprintFields
+        requestFields["clientRequestId"] = "ios-\(UUID().uuidString.lowercased())"
+        var attempt = resolvePersistentAttempt(
+            scope: scope,
+            fingerprint: fingerprint,
+            requestFields: requestFields,
+            sourceProofs: proofAttachments
+        )
+        var operationStage = BNBUL10n.text("准备打卡提交")
+        errorMessage = nil
+        do {
+            try storePendingRemoteMutation(attempt)
+            operationStage = BNBUL10n.text("读取运动会话")
+            let serverSession: APIV1ExerciseSession
+            if let cached = backendExerciseSession, cached.id == localSession.id {
+                serverSession = cached
+            } else {
+                serverSession = try await backendServices.exerciseSessions
+                    .get(sessionID: localSession.id).value
+                backendExerciseSession = serverSession
+            }
+            guard serverSession.status == .completed else {
+                throw APIV1CheckInError.sessionNotCompleted
+            }
+            guard serverSession.actualDurationSeconds >= Int(ExerciseSession.oneHour) else {
+                throw APIV1CheckInError.durationNotEligible
+            }
+            guard serverSession.studentId == workspace.student.id else {
+                throw APITransportError.invalidResponse
+            }
+
+            var record: APIV1ExerciseRecord
+            if let cached = backendExerciseRecord, cached.sessionId == serverSession.id {
+                record = cached
+            } else {
+                operationStage = BNBUL10n.text("查询已有打卡记录")
+                if let recovered = try await backendServices.exerciseRecords.findForSession(
+                    sessionID: serverSession.id,
+                    enrollmentID: serverSession.enrollmentId,
+                    businessDate: serverSession.businessDate
+                ).value {
+                    record = recovered
+                    backendExerciseRecord = recovered
+                } else {
+                    guard let clientRequestID = attempt.requestFields["clientRequestId"] else {
+                        throw APITransportError.invalidRequest
+                    }
+                    operationStage = BNBUL10n.text("创建打卡草稿")
+                    record = try await backendServices.exerciseRecords.createDraft(
+                        APIV1CreateExerciseRecordRequest(
+                            sessionId: serverSession.id,
+                            creditType: creditType,
+                            sportType: sportType,
+                            sportName: sportName,
+                            description: description,
+                            clientRequestId: clientRequestID
+                        )
+                    ).value
+                    backendExerciseRecord = record
+                }
+            }
+            guard Self.apiv1Record(
+                record,
+                matches: serverSession,
+                creditType: creditType,
+                sportType: sportType
+            ) else {
+                throw APITransportError.invalidResponse
+            }
+            if ExerciseRecordSubmissionProjectionPolicy.accepts(record) {
+                let cleanupWarning = cleanupAPIV1CheckInAttempt(scope: scope, attempt: attempt)
+                return finishAPIV1CheckInSubmission(
+                    record: record,
+                    session: serverSession,
+                    submission: submission,
+                    proofAttachments: proofAttachments,
+                    localSession: localSession,
+                    cleanupWarning: cleanupWarning
+                )
+            }
+            guard record.status == .draft else {
+                throw APIV1CheckInError.recordStateInvalid
+            }
+            guard attempt.uploadedProofs.count <= proofAttachments.count,
+                  attempt.uploadedProofs.allSatisfy({ $0.cosKey?.isEmpty == false }) else {
+                throw APIV1CheckInError.recordStateInvalid
+            }
+
+            for index in attempt.uploadedProofs.count..<proofAttachments.count {
+                let attachment = proofAttachments[index]
+                guard attachment.isValidForUpload,
+                      let uploadRequest = Self.apiv1MediaRequest(
+                        for: attachment,
+                        sessionID: serverSession.id
+                      ) else {
+                    throw APIV1CheckInError.proofUnavailable(attachment.fileName)
+                }
+                checkInSubmissionPhase = .uploading(
+                    fileName: attachment.fileName,
+                    completedFiles: index,
+                    totalFiles: proofAttachments.count,
+                    fileProgress: 0
+                )
+                let progress: @Sendable (APIUploadProgress) -> Void = { [weak self] value in
+                    Task { @MainActor [weak self] in
+                        self?.updateCheckInUploadProgress(
+                            fileName: attachment.fileName,
+                            completedFiles: index,
+                            totalFiles: proofAttachments.count,
+                            fileProgress: value.fraction
+                        )
+                    }
+                }
+                let outcome: MediaUploadOutcome
+                let mediaIdempotencySeed = "\(attempt.idempotencyKey):\(index)"
+                operationStage = BNBUL10n.formatted("上传并绑定 %@", attachment.fileName)
+                if let bytes = attachment.uploadData {
+                    outcome = try await backendServices.media.uploadAndBind(
+                        bytes: bytes,
+                        request: uploadRequest,
+                        idempotencyKeySeed: mediaIdempotencySeed,
+                        progressHandler: progress
+                    )
+                } else if let fileURL = attachment.sourceFileURL {
+                    outcome = try await backendServices.media.uploadAndBind(
+                        fileURL: fileURL,
+                        request: uploadRequest,
+                        idempotencyKeySeed: mediaIdempotencySeed,
+                        progressHandler: progress
+                    )
+                } else {
+                    throw APIV1CheckInError.proofUnavailable(attachment.fileName)
+                }
+                operationStage = BNBUL10n.formatted("等待 %@ 完成媒体校验", attachment.fileName)
+                let availableMedia = try await awaitAvailableAPIV1ExerciseMedia(
+                    outcome.media,
+                    initialRequestID: outcome.requestId,
+                    attachment: attachment,
+                    sessionID: serverSession.id,
+                    expectedSessionEpoch: expectedSessionEpoch
+                )
+                guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+                attempt.uploadedProofs.append(ProofAttachment(
+                    id: availableMedia.id,
+                    type: attachment.type,
+                    fileName: attachment.fileName,
+                    byteCount: attachment.byteCount,
+                    durationSeconds: attachment.durationSeconds,
+                    hasAudioTrack: attachment.hasAudioTrack,
+                    source: "Backend 2.0.2 media",
+                    cosKey: availableMedia.id,
+                    mimeType: availableMedia.verifiedMimeType ?? availableMedia.declaredMimeType,
+                    contentDigest: availableMedia.verifiedContentSha256 ?? attachment.contentDigest
+                ))
+                try storePendingRemoteMutation(attempt)
+            }
+
+            let mediaIDs = attempt.uploadedProofs.compactMap(\.cosKey)
+            guard mediaIDs.count == proofAttachments.count,
+                  Set(mediaIDs).count == mediaIDs.count else {
+                throw APITransportError.invalidResponse
+            }
+            attempt.markFinalMutationPrepared()
+            try storePendingRemoteMutation(attempt)
+            checkInSubmissionPhase = .submitting
+            operationStage = BNBUL10n.text("提交打卡记录")
+            record = try await backendServices.exerciseRecords.submit(
+                recordID: record.id,
+                request: APIV1SubmitExerciseRecordRequest(
+                    mediaIds: mediaIDs,
+                    expectedVersion: record.version
+                )
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+            guard ExerciseRecordSubmissionProjectionPolicy.accepts(record),
+                  Self.apiv1Record(
+                    record,
+                    matches: serverSession,
+                    creditType: creditType,
+                    sportType: sportType
+                  ) else {
+                throw APIV1CheckInError.recordStateInvalid
+            }
+            backendExerciseRecord = record
+            attempt.markServerConfirmed(resultID: record.id)
+            try storePendingRemoteMutation(attempt)
+            let cleanupWarning = cleanupAPIV1CheckInAttempt(scope: scope, attempt: attempt)
+            return finishAPIV1CheckInSubmission(
+                record: record,
+                session: serverSession,
+                submission: submission,
+                proofAttachments: proofAttachments,
+                localSession: localSession,
+                cleanupWarning: cleanupWarning
+            )
+        } catch {
+            guard expectedSessionEpoch == sessionEpoch else { return false }
+            canSafelyRetryCheckIn = pendingRemoteMutations[scope] != nil
+            if let transport = error as? APITransportError, transport.statusCode == 401 {
+                await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+            } else {
+                errorMessage = apiv1OperationMessage(for: error, stage: operationStage)
+            }
+            return false
+        }
+    }
+
+    private func awaitAvailableAPIV1ExerciseMedia(
+        _ initialMedia: APIV1MediaEvidence,
+        initialRequestID: String,
+        attachment: ProofAttachment,
+        sessionID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> APIV1MediaEvidence {
+        var media = initialMedia
+        var requestID = initialRequestID
+        // Keep parity with Backend's synthetic closure test: 500 ms polling
+        // with a 60-second upper bound while the worker advances to AVAILABLE.
+        let maximumAttempts = 120
+        for attempt in 0..<maximumAttempts {
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else {
+                throw CancellationError()
+            }
+            let expectedType: APIV1MediaType = attachment.type == .image ? .image : .video
+            guard media.ownerStudentId == workspace.student.id else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "owner_student_id",
+                    requestId: requestID
+                )
+            }
+            guard media.sessionId == sessionID else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "session_id",
+                    requestId: requestID
+                )
+            }
+            guard media.businessPurpose == .exerciseRecord else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "business_purpose",
+                    requestId: requestID
+                )
+            }
+            guard media.mediaType == expectedType else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "media_type",
+                    requestId: requestID
+                )
+            }
+            guard media.captureSource == .inAppCamera else {
+                throw MediaUploadPipelineError.statusProjectionMismatch(
+                    field: "capture_source",
+                    requestId: requestID
+                )
+            }
+            if media.uploadStatus == .available {
+                return media
+            }
+            guard media.uploadStatus == .uploaded ||
+                    media.uploadStatus == .bound ||
+                    media.uploadStatus == .processing else {
+                throw MediaUploadPipelineError.processingStopped(
+                    status: media.uploadStatus.rawValue,
+                    requestId: requestID
+                )
+            }
+            guard attempt < maximumAttempts - 1 else {
+                throw MediaUploadPipelineError.processingTimedOut(
+                    status: media.uploadStatus.rawValue,
+                    requestId: requestID
+                )
+            }
+            try await Task.sleep(nanoseconds: 500_000_000)
+            let response = try await backendServices.media.status(mediaID: media.id)
+            media = response.value
+            requestID = response.requestId
+        }
+        throw MediaUploadPipelineError.processingTimedOut(
+            status: media.uploadStatus.rawValue,
+            requestId: requestID
+        )
+    }
+
+    private func finishAPIV1CheckInSubmission(
+        record: APIV1ExerciseRecord,
+        session: APIV1ExerciseSession,
+        submission: CheckInSubmission,
+        proofAttachments: [ProofAttachment],
+        localSession: ExerciseSession,
+        cleanupWarning: String?
+    ) -> Bool {
+        guard ExerciseRecordSubmissionProjectionPolicy.accepts(record),
+              let currentReview = record.currentReview,
+              record.creditedDurationSeconds >= Int(ExerciseSession.oneHour) else {
+            errorMessage = APIV1CheckInError.recordStateInvalid.localizedDescription
+            return false
+        }
+        let alreadyPresent = workspace.records.contains { $0.id == record.id }
+        let hours = Double(record.creditedDurationSeconds) / ExerciseSession.oneHour
+        let validity = RecordValidity(serverReviewResult: currentReview.result)
+        let displayed = CheckInRecord(
+            id: record.id,
+            courseId: record.creditType == .courseRelated ? record.classSectionId : nil,
+            taskTitle: submission.title,
+            creditType: record.creditType == .courseRelated ? .courseRelated : .general,
+            hours: hours,
+            submittedAt: record.submittedAt ?? RecentTimestamp.justNow,
+            validity: validity,
+            invalidReason: currentReview.publicComment,
+            proofSummary: proofSummary(proofAttachments: proofAttachments),
+            proofPhotoCount: proofAttachments.filter { $0.type == .image }.count,
+            proofVideoCount: proofAttachments.filter { $0.type == .video }.count,
+            proofFiles: proofAttachments,
+            note: record.description ?? "",
+            sportType: record.sportName ?? record.sportType,
+            businessDate: record.businessDate,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            activeDuration: Self.durationText(seconds: record.actualDurationSeconds)
+        )
+        upsertCheckInRecord(displayed)
+        if !alreadyPresent, validity == .valid {
+            creditSubmittedExercise(hours: hours, creditType: displayed.creditType)
+        }
+        saveExerciseSubmissionDate(localSession.startTime, recordID: record.id)
+        if !alreadyPresent {
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("打卡已提交"),
+                    message: BNBUL10n.text("\(submission.title) 已成功提交，可在打卡记录中查看。"),
+                    time: RecentTimestamp.justNow,
+                    category: .system,
+                    isUnread: true
+                ),
+                at: 0
+            )
+        }
+        clearDraft()
+        proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
+        saveWorkspace(event: "打卡已通过 Backend 2.0.2 提交")
+        checkInSubmissionPhase = .syncing
+        canSafelyRetryCheckIn = false
+        errorMessage = cleanupWarning
+        return true
+    }
+
+    private func cleanupAPIV1CheckInAttempt(
+        scope: String,
+        attempt: PendingRemoteMutationAttempt
+    ) -> String? {
+        do {
+            try removePendingRemoteMutationStrict(scope: scope)
+            return nil
+        } catch {
+            retainServerConfirmedAttemptInMemory(attempt)
+            return serverConfirmedCleanupWarning
+        }
+    }
+
+    private static func apiv1MediaRequest(
+        for attachment: ProofAttachment,
+        sessionID: String
+    ) -> APIV1InitiateMediaUploadRequest? {
+        guard let byteCount = attachment.byteCount, byteCount > 0 else { return nil }
+        let mediaType: APIV1MediaType = attachment.type == .image ? .image : .video
+        let mimeType: String
+        if let declared = attachment.mimeType?.lowercased(),
+           [
+            "image/jpeg", "image/png", "video/mp4", "video/quicktime",
+            "video/3gpp", "video/webm"
+           ].contains(declared) {
+            mimeType = declared
+        } else {
+            mimeType = attachment.type == .image ? "image/jpeg" : "video/quicktime"
+        }
+        let duration: Int?
+        if attachment.type == .video,
+           let seconds = attachment.durationSeconds,
+           seconds > 0,
+           seconds <= ExerciseVideoRule.maximumDurationSeconds {
+            duration = Int(ceil(seconds))
+        } else if attachment.type == .video {
+            return nil
+        } else {
+            duration = nil
+        }
+        let digest = attachment.contentDigest.flatMap {
+            $0.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil
+                ? $0.lowercased()
+                : nil
+        }
+        return APIV1InitiateMediaUploadRequest(
+            sessionId: sessionID,
+            enrollmentId: nil,
+            businessPurpose: .exerciseRecord,
+            mediaType: mediaType,
+            mimeType: mimeType,
+            fileSizeBytes: byteCount,
+            captureSource: .inAppCamera,
+            declaredContentSha256: digest,
+            durationSeconds: duration
+        )
+    }
+
+    private static func apiv1SportType(for sport: ExerciseSportType) -> String {
+        switch sport {
+        case .tableTennis: return "TABLE_TENNIS"
+        default: return sport.rawValue.uppercased()
+        }
+    }
+
+    private static func apiv1Record(
+        _ record: APIV1ExerciseRecord,
+        matches session: APIV1ExerciseSession,
+        creditType: APIV1CreditType,
+        sportType: String
+    ) -> Bool {
+        record.studentId == session.studentId &&
+            record.enrollmentId == session.enrollmentId &&
+            record.classSectionId == session.classSectionId &&
+            record.sessionId == session.id &&
+            record.businessDate == session.businessDate &&
+            record.creditType == creditType &&
+            record.sportType == sportType
+    }
+
+    private static func durationText(seconds: Int) -> String {
+        let seconds = max(seconds, 0)
+        return String(format: "%02d:%02d:%02d", seconds / 3_600, (seconds % 3_600) / 60, seconds % 60)
+    }
+
+    private func apiv1OperationMessage(for error: Error, stage: String? = nil) -> String {
+        if let typed = error as? APIV1CheckInError {
+            return typed.localizedDescription
+        }
+        if let media = error as? MediaUploadPipelineError {
+            let requestIDSuffix = media.requestId.map { " (requestId: \($0))" } ?? ""
+            return BNBUL10n.formatted(
+                "媒体链路在“%@”阶段未通过合同校验（%@），已保留本次运动和上传进度。%@",
+                stage ?? BNBUL10n.text("上传运动凭证"),
+                media.diagnosticCode,
+                requestIDSuffix
+            )
+        }
+        if let transport = error as? APITransportError {
+            if case .network = transport {
+                return BNBUL10n.text("当前网络不可用，已保留上传进度，请联网后重试。")
+            }
+            if let stage {
+                switch transport {
+                case .invalidResponse,
+                     .malformedSuccessEnvelope(_, _),
+                     .requestIdMismatch(_, _),
+                     .undecodableFailure(_, _):
+                    let requestIDSuffix = transport.requestId.map { " (requestId: \($0))" } ?? ""
+                    return BNBUL10n.formatted(
+                        "服务器在“%@”阶段返回了不一致的数据，已保留本次运动和上传进度。%@",
+                        stage,
+                        requestIDSuffix
+                    )
+                case .invalidRequest, .failure, .network:
+                    break
+                }
+            }
+            return transport.localizedDescription
+        }
+        return error.localizedDescription
+    }
+
     private func submitCheckInRemote(
         submission: CheckInSubmission,
         note: String,
@@ -1974,7 +4601,7 @@ final class AppState: ObservableObject {
             return false
         }
         guard !proofAttachments.isEmpty, ProofUploadRule.accepts(proofAttachments) else { return false }
-        let submittedNote = note.isEmpty ? "学生未填写补充说明。" : note
+        let submittedNote = CheckInInputRule.contractDescription(note, for: submission.creditType) ?? ""
         let scope = "sport-record:create"
         let fingerprint = checkInFingerprint(
             submission: submission,
@@ -2187,6 +4814,358 @@ final class AppState: ObservableObject {
             }
             return false
         }
+    }
+
+    private func submitExemptionAPIV1(
+        item: ExemptionItem,
+        reason: String,
+        detail: String,
+        organization: String,
+        courseID: String?,
+        proofAttachments: [ProofAttachment],
+        expectedSessionEpoch: UInt64
+    ) async -> Bool {
+        guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+        guard !hasPendingExemption(for: item) else {
+            errorMessage = BNBUL10n.text("同一类型已有待审核申请，请等待处理后再提交。")
+            return false
+        }
+        guard let enrollmentID = apiv1ExemptionEnrollmentID(courseID: courseID) else {
+            errorMessage = APIV1ExemptionError.enrollmentUnavailable.localizedDescription
+            return false
+        }
+        guard let classification = Self.apiv1ExemptionClassification(
+            for: item,
+            organization: organization
+        ) else {
+            errorMessage = APIV1ExemptionError.unsupportedItem.localizedDescription
+            return false
+        }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let mediaIDs = try await uploadAPIV1ExemptionProofs(
+                proofAttachments,
+                enrollmentID: enrollmentID,
+                expectedSessionEpoch: expectedSessionEpoch
+            )
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+            let combinedReason = ExemptionInputRule.combinedReason(reason: reason, detail: detail)
+            let created = try await backendServices.exemptions.create(
+                APIV1CreateExemptionApplicationRequest(
+                    enrollmentId: enrollmentID,
+                    applicationType: classification.applicationType,
+                    applicationSubtype: classification.applicationSubtype,
+                    organizationName: classification.organizationName,
+                    reason: combinedReason,
+                    mediaIds: mediaIDs
+                )
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  created.studentId == workspace.student.id,
+                  created.enrollmentId == enrollmentID,
+                  created.applicationType == classification.applicationType,
+                  created.mediaIds == mediaIDs,
+                  created.status.uppercased() == "DRAFT" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+            let submitted = try await backendServices.exemptions.submit(
+                applicationID: created.id,
+                expectedVersion: created.version
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  submitted.id == created.id,
+                  submitted.studentId == workspace.student.id,
+                  submitted.enrollmentId == enrollmentID,
+                  submitted.status.uppercased() == "SUBMITTED" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+
+            upsertExemption(Self.exemptionApplication(
+                from: submitted,
+                classification: classification
+            ))
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("免测申请已提交"),
+                    message: BNBUL10n.text("\(item.rawValue) 已进入审核流程。"),
+                    time: RecentTimestamp.justNow,
+                    category: .review,
+                    isUnread: true
+                ),
+                at: 0
+            )
+            enqueueSyncOperation(
+                .submitExemption,
+                title: "提交免测申请",
+                detail: "\(item.rawValue) · 已同步 Backend",
+                status: .synced
+            )
+            proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
+            saveWorkspace(event: "免测申请已通过 Backend 提交")
+            errorMessage = nil
+            return true
+        } catch {
+            guard expectedSessionEpoch == sessionEpoch else { return false }
+            await handleAPIV1ExemptionError(error, expectedSessionEpoch: expectedSessionEpoch)
+            return false
+        }
+    }
+
+    private func supplementExemptionAPIV1(
+        application: ExemptionApplication,
+        reason: String,
+        detail: String,
+        proofAttachments: [ProofAttachment],
+        expectedSessionEpoch: UInt64
+    ) async -> Bool {
+        guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+        guard let classification = Self.apiv1ExemptionClassification(
+            for: application.item,
+            organization: application.organization
+        ) else {
+            errorMessage = APIV1ExemptionError.unsupportedItem.localizedDescription
+            return false
+        }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let server = try await backendServices.exemptions.get(applicationID: application.id).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  server.id == application.id,
+                  server.studentId == workspace.student.id,
+                  server.status.uppercased() == "SUPPLEMENT_REQUIRED" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+            let newMediaIDs = try await uploadAPIV1ExemptionProofs(
+                proofAttachments,
+                enrollmentID: server.enrollmentId,
+                expectedSessionEpoch: expectedSessionEpoch
+            )
+            var allMediaIDs = server.mediaIds
+            for mediaID in newMediaIDs where !allMediaIDs.contains(mediaID) {
+                allMediaIDs.append(mediaID)
+            }
+            let updated = try await backendServices.exemptions.update(
+                applicationID: server.id,
+                body: APIV1UpdateExemptionApplicationRequest(
+                    applicationSubtype: classification.applicationSubtype,
+                    organizationName: classification.organizationName,
+                    reason: ExemptionInputRule.combinedReason(reason: reason, detail: detail),
+                    mediaIds: allMediaIDs,
+                    expectedVersion: server.version
+                )
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  updated.id == server.id,
+                  updated.studentId == workspace.student.id,
+                  updated.mediaIds == allMediaIDs else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+            let submitted = try await backendServices.exemptions.submit(
+                applicationID: updated.id,
+                expectedVersion: updated.version
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  submitted.id == application.id,
+                  submitted.studentId == workspace.student.id,
+                  submitted.status.uppercased() == "SUBMITTED" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+
+            upsertExemption(Self.exemptionApplication(
+                from: submitted,
+                classification: classification
+            ))
+            enqueueSyncOperation(
+                .supplementExemption,
+                title: "提交免测补充材料",
+                detail: "\(application.item.rawValue) · 已同步 Backend",
+                status: .synced
+            )
+            proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
+            saveWorkspace(event: "免测补充材料已通过 Backend 提交")
+            errorMessage = nil
+            return true
+        } catch {
+            guard expectedSessionEpoch == sessionEpoch else { return false }
+            await handleAPIV1ExemptionError(error, expectedSessionEpoch: expectedSessionEpoch)
+            return false
+        }
+    }
+
+    private func handleAPIV1ExemptionError(
+        _ error: Error,
+        expectedSessionEpoch: UInt64
+    ) async {
+        if let transport = error as? APITransportError,
+           case .failure(503, let envelope) = transport,
+           envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+            errorMessage = BNBUL10n.text("免测申请服务暂未开放，请稍后重试。")
+            return
+        }
+        await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+    }
+
+    private func uploadAPIV1ExemptionProofs(
+        _ proofAttachments: [ProofAttachment],
+        enrollmentID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> [String] {
+        var mediaIDs: [String] = []
+        for attachment in proofAttachments {
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else {
+                throw CancellationError()
+            }
+            guard let request = Self.apiv1ExemptionMediaRequest(
+                for: attachment,
+                enrollmentID: enrollmentID
+            ) else {
+                throw APIV1ExemptionError.proofUnavailable(attachment.fileName)
+            }
+            let outcome: MediaUploadOutcome
+            if let bytes = attachment.uploadData {
+                outcome = try await backendServices.media.uploadForExemption(
+                    bytes: bytes,
+                    request: request
+                )
+            } else if let fileURL = attachment.sourceFileURL {
+                outcome = try await backendServices.media.uploadForExemption(
+                    fileURL: fileURL,
+                    request: request
+                )
+            } else {
+                throw APIV1ExemptionError.proofUnavailable(attachment.fileName)
+            }
+
+            var media = outcome.media
+            for attempt in 0..<8 {
+                guard media.ownerStudentId == workspace.student.id,
+                      media.enrollmentId == enrollmentID,
+                      media.businessPurpose == .exemptionApplication,
+                      media.mediaType == .image else {
+                    throw APIV1ExemptionError.responseMismatch
+                }
+                if media.uploadStatus == .available { break }
+                guard media.uploadStatus == .uploaded || media.uploadStatus == .processing else {
+                    throw APIV1ExemptionError.mediaNotReady(attachment.fileName)
+                }
+                guard attempt < 7 else {
+                    throw APIV1ExemptionError.mediaNotReady(attachment.fileName)
+                }
+                try await Task.sleep(nanoseconds: 400_000_000)
+                media = try await backendServices.media.status(mediaID: media.id).value
+            }
+            guard media.uploadStatus == .available else {
+                throw APIV1ExemptionError.mediaNotReady(attachment.fileName)
+            }
+            mediaIDs.append(media.id)
+        }
+        guard Set(mediaIDs).count == proofAttachments.count else {
+            throw APIV1ExemptionError.responseMismatch
+        }
+        return mediaIDs
+    }
+
+    private static func apiv1ExemptionMediaRequest(
+        for attachment: ProofAttachment,
+        enrollmentID: String
+    ) -> APIV1InitiateMediaUploadRequest? {
+        guard attachment.type == .image,
+              let byteCount = attachment.byteCount,
+              byteCount > 0 else { return nil }
+        let mimeType: String
+        if let declared = attachment.mimeType?.lowercased(),
+           declared == "image/jpeg" || declared == "image/png" {
+            mimeType = declared
+        } else {
+            mimeType = "image/jpeg"
+        }
+        let digest = attachment.contentDigest.flatMap {
+            $0.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil
+                ? $0.lowercased()
+                : nil
+        }
+        return APIV1InitiateMediaUploadRequest(
+            sessionId: nil,
+            enrollmentId: enrollmentID,
+            businessPurpose: .exemptionApplication,
+            mediaType: .image,
+            mimeType: mimeType,
+            fileSizeBytes: byteCount,
+            captureSource: .inAppCamera,
+            declaredContentSha256: digest,
+            durationSeconds: nil
+        )
+    }
+
+    private static func apiv1ExemptionClassification(
+        for item: ExemptionItem,
+        organization: String
+    ) -> APIV1ExemptionClassification? {
+        switch item {
+        case .run800m, .enduranceRun:
+            return APIV1ExemptionClassification(
+                applicationType: "PHYSICAL_TEST",
+                applicationSubtype: "RUN_800M",
+                organizationName: nil
+            )
+        case .run1000m:
+            return APIV1ExemptionClassification(
+                applicationType: "PHYSICAL_TEST",
+                applicationSubtype: "RUN_1000M",
+                organizationName: nil
+            )
+        case .team:
+            guard !organization.isEmpty else { return nil }
+            return APIV1ExemptionClassification(
+                applicationType: "EXERCISE_CHECK_IN",
+                applicationSubtype: "SCHOOL_TEAM",
+                organizationName: organization
+            )
+        case .club:
+            guard !organization.isEmpty else { return nil }
+            return APIV1ExemptionClassification(
+                applicationType: "EXERCISE_CHECK_IN",
+                applicationSubtype: "STUDENT_CLUB",
+                organizationName: organization
+            )
+        case .specialCircumstance:
+            return APIV1ExemptionClassification(
+                applicationType: "SPECIAL_CIRCUMSTANCE",
+                applicationSubtype: "SPECIAL_CIRCUMSTANCE",
+                organizationName: nil
+            )
+        case .physicalTest, .singlePhysicalItem, .checkIn:
+            return nil
+        }
+    }
+
+    private static func exemptionApplication(
+        from application: APIV1ExemptionApplication,
+        classification: APIV1ExemptionClassification
+    ) -> ExemptionApplication {
+        exemptionApplication(from: APIV1StructuredExemptionApplication(
+            id: application.id,
+            studentId: application.studentId,
+            enrollmentId: application.enrollmentId,
+            classSectionId: application.classSectionId,
+            applicationType: application.applicationType,
+            applicationSubtype: classification.applicationSubtype,
+            organizationName: classification.organizationName,
+            reason: application.reason,
+            mediaIds: application.mediaIds,
+            status: application.status,
+            publicComment: application.publicComment,
+            submittedAt: application.submittedAt,
+            decidedAt: application.decidedAt,
+            version: application.version
+        ))
     }
 
     private func submitExemptionRemote(
@@ -2532,6 +5511,7 @@ final class AppState: ObservableObject {
             localStore.clearDraft()
             isAuthenticated = false
             isRemoteMode = false
+            isAPIV1Session = false
             remoteCacheStudentID = nil
             isLoading = false
             isLoadingExemptions = false
@@ -2548,6 +5528,139 @@ final class AppState: ObservableObject {
                 errorMessage = BNBUL10n.text("登录已过期，且设备未能清理待提交操作。请释放存储空间后重启 App。")
             }
         }
+    }
+
+    private func handleAPIV1Error(_ error: Error, expectedSessionEpoch: UInt64? = nil) async {
+        if let expectedSessionEpoch, expectedSessionEpoch != sessionEpoch { return }
+        let message = backendAuthenticationMessage(for: error)
+        if let transport = error as? APITransportError, transport.statusCode == 401 {
+            await logout()
+        }
+        errorMessage = message
+    }
+
+    private func markAPIV1NoticeRead(id: String, expectedSessionEpoch: UInt64) async {
+        let mutationKey = "apiv1-notice:\(id)"
+        guard expectedSessionEpoch == sessionEpoch, beginMutation(mutationKey) else { return }
+        defer { endMutation(mutationKey) }
+        do {
+            let response = try await backendServices.clientCapabilities.markNotificationRead(id: id)
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  response.value.id == id else { return }
+            guard let index = workspace.notices.firstIndex(where: { $0.id == id }) else { return }
+            workspace.notices[index] = Self.studentNotice(from: response.value)
+            saveWorkspace(event: "通知已读状态已同步 Backend 2.0.2")
+            errorMessage = nil
+        } catch {
+            await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+        }
+    }
+
+    private func markAllAPIV1NoticesRead(ids: [String], expectedSessionEpoch: UInt64) async {
+        let mutationKey = "apiv1-notice:all"
+        guard expectedSessionEpoch == sessionEpoch, beginMutation(mutationKey) else { return }
+        defer { endMutation(mutationKey) }
+        do {
+            for id in ids {
+                let response = try await backendServices.clientCapabilities.markNotificationRead(id: id)
+                guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                      response.value.id == id else { return }
+                if let index = workspace.notices.firstIndex(where: { $0.id == id }) {
+                    workspace.notices[index] = Self.studentNotice(from: response.value)
+                }
+            }
+            saveWorkspace(event: "批量通知已读已同步 Backend 2.0.2")
+            errorMessage = nil
+        } catch {
+            await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+        }
+    }
+
+    private static func studentNotice(from notification: APIV1Notification) -> StudentNotice {
+        let normalizedType = notification.notificationType.uppercased()
+        let category: NoticeCategory
+        if normalizedType.contains("DEADLINE") {
+            category = .deadline
+        } else if normalizedType.contains("REVIEW") || normalizedType.contains("EXEMPTION") {
+            category = .review
+        } else if normalizedType.contains("ORGANIZATION") || normalizedType.contains("COURSE") {
+            category = .organization
+        } else {
+            category = .system
+        }
+        return StudentNotice(
+            id: notification.id,
+            title: notification.title,
+            message: notification.body,
+            time: StudentRecordTimeDisplay.dateTime(notification.createdAt) ?? notification.createdAt,
+            category: category,
+            isUnread: notification.readAt == nil
+        )
+    }
+
+    private static func exemptionApplication(
+        from application: APIV1StructuredExemptionApplication
+    ) -> ExemptionApplication {
+        let item: ExemptionItem
+        switch application.applicationSubtype?.uppercased() {
+        case "RUN_800M":
+            item = .run800m
+        case "RUN_1000M":
+            item = .run1000m
+        case "SCHOOL_TEAM":
+            item = .team
+        case "STUDENT_CLUB":
+            item = .club
+        case "SPECIAL_CIRCUMSTANCE":
+            item = .specialCircumstance
+        default:
+            switch application.applicationType.uppercased() {
+            case "PHYSICAL_TEST":
+                item = .physicalTest
+            case "EXERCISE_CHECK_IN":
+                item = .checkIn
+            case "SPECIAL_CIRCUMSTANCE":
+                item = .specialCircumstance
+            default:
+                item = .specialCircumstance
+            }
+        }
+
+        let status: ExemptionStatus
+        switch application.status.uppercased() {
+        case "DRAFT": status = .draft
+        case "SUBMITTED": status = .pending
+        case "SUPPLEMENT_REQUIRED": status = .supplementRequired
+        case "APPROVED": status = .approved
+        case "REJECTED": status = .rejected
+        default: status = .pending
+        }
+
+        let timestamp = application.submittedAt ?? application.decidedAt ?? ""
+        let proofs = application.mediaIds.map { mediaID in
+            ProofAttachment(
+                id: mediaID,
+                type: .image,
+                fileName: BNBUL10n.text("服务端证明材料"),
+                byteCount: nil,
+                source: "Backend 2.0.2 media",
+                cosKey: mediaID
+            )
+        }
+        return ExemptionApplication(
+            id: application.id,
+            studentId: application.studentId,
+            item: item,
+            reason: application.reason,
+            detail: "",
+            organization: application.organizationName ?? "",
+            submittedAt: timestamp,
+            status: status,
+            proofFiles: proofs,
+            teacherFeedback: application.publicComment ?? "",
+            reviewer: nil,
+            updatedAt: timestamp
+        )
     }
 
     private func markNoticeReadRemote(id: String, expectedSessionEpoch: UInt64) async {
@@ -2615,19 +5728,20 @@ final class AppState: ObservableObject {
     private func restoreExerciseSession(for studentID: String) {
         guard let storedSession = localStore.readExerciseSession().value else {
             exerciseSession = nil
+            backendExerciseSession = nil
             return
         }
         guard storedSession.studentID == studentID else {
             exerciseSession = nil
+            backendExerciseSession = nil
             _ = localStore.clearExerciseSession()
             return
         }
 
         let reconciledSession = storedSession.reconciled()
         exerciseSession = reconciledSession
-        if reconciledSession != storedSession {
-            _ = localStore.saveExerciseSession(reconciledSession)
-        }
+        // Always rewrite to scrub raw coordinates left by a pre-1.1 build.
+        _ = localStore.saveExerciseSession(reconciledSession)
     }
 
     private func upsertExemption(_ application: ExemptionApplication) {
@@ -2650,6 +5764,7 @@ final class AppState: ObservableObject {
         guard hours > 0 else { return }
         switch creditType {
         case .courseRelated:
+            workspace.progress.rawCourse += hours
             workspace.progress.course = min(workspace.progress.course + hours, hourRule.courseRequired)
         case .general:
             workspace.progress.rawGeneral += hours
@@ -2781,7 +5896,9 @@ final class AppState: ObservableObject {
     }
 
     private var remoteMutationServerIdentity: String {
-        remoteRepo.serverIdentity
+        isAPIV1Session
+            ? backendServices.environment.baseURL.absoluteString
+            : remoteRepo.serverIdentity
     }
 
     private func checkInFingerprint(
@@ -2809,7 +5926,7 @@ final class AppState: ObservableObject {
             "courseId": submission.courseId ?? "",
             "creditType": submission.creditType.apiValue,
             "hours": String(format: "%.1f", submission.hours),
-            "description": note.isEmpty ? "学生未填写补充说明。" : note,
+            "description": CheckInInputRule.contractDescription(note, for: submission.creditType) ?? "",
             "sportType": sportType ?? ""
         ]
     }

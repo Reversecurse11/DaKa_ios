@@ -53,6 +53,7 @@ enum AppShellStage: Equatable {
     case restoring
     case privacyConsent
     case preLoginGuide
+    case initialCourseJoin
     case login
     case authenticated
 
@@ -84,32 +85,55 @@ struct AppShellView: View {
     let isUITesting: Bool
     @Binding var stage: AppShellStage
 
-    @State private var presentsCourseJoin = false
+    @State private var showsStartupArtwork: Bool
+
+    private let keepsStartupArtworkVisibleForUITesting: Bool
+
+    init(isUITesting: Bool, stage: Binding<AppShellStage>) {
+        self.isUITesting = isUITesting
+        _stage = stage
+        let keepsArtworkVisible = ProcessInfo.processInfo.arguments
+            .contains("-ui-testing-loading-page")
+        keepsStartupArtworkVisibleForUITesting = keepsArtworkVisible
+        _showsStartupArtwork = State(
+            initialValue: !isUITesting || keepsArtworkVisible
+        )
+    }
 
     private var showsStartupGatesInUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains("-ui-testing-startup-gates")
     }
 
     var body: some View {
-        Group {
-            switch appState.systemMode {
-            case .maintenance:
-                MaintenancePageView(status: appState.systemModeStatus)
-            case .normal, .readOnly:
-                VStack(spacing: 0) {
-                    if appState.systemMode == .readOnly {
-                        SystemModeBanner(kind: .readOnly, message: appState.systemModeStatus.message)
-                    } else if let plannedAt = appState.systemModeStatus.plannedMaintenanceAt {
-                        SystemModeBanner(
-                            kind: .plannedMaintenance(plannedAt),
-                            message: appState.systemModeStatus.message
-                        )
+        ZStack {
+            Group {
+                switch appState.systemMode {
+                case .maintenance:
+                    MaintenancePageView(status: appState.systemModeStatus)
+                case .normal, .readOnly:
+                    VStack(spacing: 0) {
+                        if appState.systemMode == .readOnly {
+                            SystemModeBanner(kind: .readOnly, message: appState.systemModeStatus.message)
+                        } else if let plannedAt = appState.systemModeStatus.plannedMaintenanceAt {
+                            SystemModeBanner(
+                                kind: .plannedMaintenance(plannedAt),
+                                message: appState.systemModeStatus.message
+                            )
+                        }
+                        stagedContent
                     }
-                    stagedContent
                 }
             }
+
+            if showsStartupArtwork {
+                StartupSplashView()
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
         }
+        .task { await restoreSessionAndResolveStage() }
         .task { await appState.refreshSystemStatus() }
+        .task { await dismissStartupArtworkWhenReady() }
         .overlay {
             if let requirement = appState.updateRequirement {
                 UpdateRequiredOverlay(requirement: requirement)
@@ -135,29 +159,25 @@ struct AppShellView: View {
                 PreLoginCourseGuideView(
                     onStartJoin: {
                         BNBUPreLoginGuide.markSeen()
-                        stage = .login
-                        presentsCourseJoin = true
+                        stage = .initialCourseJoin
                     },
                     onSkipToLogin: {
                         BNBUPreLoginGuide.markSeen()
                         stage = .login
                     }
                 )
+            case .initialCourseJoin:
+                PreLoginCourseJoinView(onBackToLogin: { stage = .login })
             case .login:
-                LoginView()
-                    // Android reaches `ScanJoinScreen` from the pre-login guide,
-                    // so scanning works before sign-in; submitting still requires
-                    // an account.
-                    .sheet(isPresented: $presentsCourseJoin) {
-                        CourseJoinSheet()
-                            .environmentObject(appState)
-                    }
+                LoginView(onInitialCourseJoin: { stage = .initialCourseJoin })
             case .authenticated:
                 AuthenticatedShellView(isUITesting: isUITesting)
             }
         }
         .animation(.easeInOut(duration: BNBUMotion.standard), value: stage)
-        .onAppear(perform: resolveInitialStage)
+        .onAppear {
+            if isUITesting { resolveInitialStage() }
+        }
         .onChange(of: appState.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {
                 stage = .authenticated
@@ -176,14 +196,33 @@ struct AppShellView: View {
         )
     }
 
+    private func restoreSessionAndResolveStage() async {
+        if !isUITesting {
+            await appState.restoreBackendSession()
+        }
+        resolveInitialStage()
+    }
+
     private func advanceFromConsent() {
         stage = BNBUPreLoginGuide.hasSeen() ? .login : .preLoginGuide
     }
+
+    private func dismissStartupArtworkWhenReady() async {
+        guard showsStartupArtwork else { return }
+        let duration: UInt64 = keepsStartupArtworkVisibleForUITesting
+            ? 10_000_000_000
+            : 1_000_000_000
+        try? await Task.sleep(nanoseconds: duration)
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: BNBUMotion.standard)) {
+            showsStartupArtwork = false
+        }
+    }
 }
 
-/// The authenticated shell keeps the onboarding cover and notification
-/// permission prompt attached to the tab shell, matching Android's
-/// `AuthenticatedAppContent`.
+/// The authenticated shell keeps the onboarding cover attached to the tab
+/// shell. System-notification permission is intentionally not requested until
+/// a disclosed local-notification or APNs flow actually exists.
 private struct AuthenticatedShellView: View {
     @EnvironmentObject private var appState: AppState
 
@@ -191,15 +230,33 @@ private struct AuthenticatedShellView: View {
     @State private var showOnboarding = false
 
     var body: some View {
+        Group {
+            if appState.isAPIV1Session && !appState.isEmailVerified {
+                PendingContactBindingShellView()
+            } else {
+                authenticatedContent
+            }
+        }
+    }
+
+    private var authenticatedContent: some View {
         AppRootView()
+            .task {
+                let exercisesRealBackend = ProcessInfo.processInfo.arguments
+                    .contains("-ui-testing-real-backend")
+                guard !isUITesting || exercisesRealBackend else { return }
+                await appState.refreshSystemStatus()
+                await appState.refreshAPIV1Workspace()
+                await appState.refreshAPIV1ExerciseRecords()
+                await appState.refreshAPIV1Preferences()
+                await appState.refreshAPIV1Notifications()
+            }
             .onAppear {
                 guard !isUITesting else { return }
                 if BNBUOnboarding.completedVersion(
                     studentID: appState.workspace.student.id
                 ) < BNBUOnboarding.currentVersion {
                     showOnboarding = true
-                } else {
-                    BNBUNotificationManager.requestAuthorization()
                 }
             }
             .fullScreenCover(isPresented: $showOnboarding) {
@@ -208,9 +265,35 @@ private struct AuthenticatedShellView: View {
                         studentID: appState.workspace.student.id
                     )
                     showOnboarding = false
-                    BNBUNotificationManager.requestAuthorization()
                 }
             }
+    }
+}
+
+/// A Join Capability creates a deliberately restricted AuthSession. Until the
+/// server confirms the first email binding, no course, record, media, profile,
+/// or settings screen is reachable from this shell.
+private struct PendingContactBindingShellView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                BNBUPageBackground()
+                ContactBindingView(onBound: { _ in })
+            }
+            .navigationTitle("完成账号绑定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("退出") {
+                        Task { await appState.logout() }
+                    }
+                    .accessibilityIdentifier("contactBinding.logout")
+                }
+            }
+        }
+        .accessibilityIdentifier("screen.pendingContactBinding")
     }
 }
 
@@ -387,23 +470,22 @@ private struct UpdateRequiredOverlay: View {
 
 // MARK: - Startup
 
-/// Android's `StartupSplashScreen`: brand lockup, spinner, and a single status
-/// line while the stored session is restored.
+/// Full-screen launch artwork shown while the app restores its local session
+/// and resolves the first destination underneath it.
 struct StartupSplashView: View {
     var body: some View {
-        ZStack {
-            BNBUPageBackground()
-            VStack(spacing: 28) {
-                BNBUBrandLockup()
-                VStack(spacing: BNBUSpacing.space12) {
-                    ProgressView()
-                        .controlSize(.regular)
-                    Text("正在恢复登录状态…")
-                        .font(BNBUFont.bodyMedium)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                }
+        GeometryReader { proxy in
+            ZStack {
+                Color(red: 0.965, green: 0.976, blue: 0.996)
+                Image("sport_loading")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .accessibilityLabel("BNBU SPORT")
+                    .accessibilityIdentifier("startup.sportArtwork")
             }
         }
+        .ignoresSafeArea()
         .accessibilityIdentifier("screen.startup")
     }
 }
@@ -510,9 +592,10 @@ struct PrivacyConsentView: View {
                 // Deliberately not a copy of Android's wording: it promises no
                 // audio recording and names an Android-only push service. This
                 // build declares NSMicrophoneUsageDescription for in-app video and
-                // has no remote push registration yet, so the disclosure has to
+                // has no system-notification delivery or remote push registration
+                // yet, so the disclosure has to
                 // describe what iOS actually does.
-                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频，并在前台单次获取位置。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
+                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频；当前正式版本不申请定位权限，也不采集原始坐标。录制现场视频会同时使用麦克风记录声音。业务消息目前仅在 App 内通知中心展示，不申请系统通知权限，也不上传推送标识。上述信息不用于广告或个性化推荐。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(BNBUFont.LineSpacing.bodyMedium)
@@ -536,19 +619,18 @@ struct PrivacyConsentView: View {
 
 // MARK: - Pre-login course guide
 
-/// Android's `PreLoginCourseGuideScreen`: a two-step pager explaining that a
-/// course QR code or invitation code is needed before signing in.
+/// First-launch guide for Contract 2.0.10's enrolment-first bootstrap order.
 struct PreLoginCourseGuideView: View {
     let onStartJoin: () -> Void
     let onSkipToLogin: () -> Void
 
     var body: some View {
         BNBUGuideFlow(
-            headerTitle: "加入课程",
+            headerTitle: "开始使用",
             steps: Self.steps,
             skipLabel: "直接登录",
             skipDescription: "跳过加入课程指引并进入登录页",
-            finalActionLabel: "开始加入课程",
+            finalActionLabel: "扫码或输入邀请",
             onSkip: onSkipToLogin,
             onFinish: onStartJoin,
             screenIdentifier: "screen.guide.pre-login"
@@ -557,15 +639,15 @@ struct PreLoginCourseGuideView: View {
 
     static let steps: [BNBUGuideStep] = [
         BNBUGuideStep(
-            eyebrow: "准备课程二维码或邀请码",
-            title: "先加入课程",
-            detail: "老师会提供课程二维码或邀请码。扫码或手动输入后，即可找到对应课程。",
+            eyebrow: "课程二维码或邀请",
+            title: "先确认课程",
+            detail: "首次使用不需要先登录。扫描老师提供的二维码，或手动输入邀请。",
             artwork: .courseJoin
         ),
         BNBUGuideStep(
-            eyebrow: "核对信息后再加入",
-            title: "确认并提交申请",
-            detail: "核对课程和个人资料后提交加入申请；如需补正或等待审核，按页面提示处理。",
+            eyebrow: "入课后绑定邮箱",
+            title: "再完成账号绑定",
+            detail: "核对姓名、学号、性别和入学年份并加入教学班后，只能先绑定学校邮箱；验证通过后才进入 App。",
             artwork: .joinRequest
         )
     ]
