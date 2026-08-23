@@ -245,7 +245,8 @@ requireText(models, "enum RecordValidity", "Records preserve the server review p
 requireText(models, "case pending = \"待审核\"", "Legacy or reopened PENDING remains distinct");
 requireText(models, "init(serverReviewResult: APIV1ReviewResult)", "API-v1 review status maps directly from the generated enum");
 requireText(appState, "let validity = RecordValidity(serverReviewResult: currentReview.result)", "Check-in completion uses the Backend review result");
-requireText(appState, "record.status == .reviewed", "Contract 2.0.10 submission expects the reviewed record state");
+requireText(backendPolicies, "enum ExerciseRecordSubmissionProjectionPolicy", "Record submission accepts only coherent Backend status/review pairs");
+requireText(backendFoundationTests, "testExerciseRecordSubmissionProjectionPreservesAuthoritativeReviewState", "XCTest covers both pending and decided record submissions");
 requireText(backendGateways, 'operationID: "getExerciseRecordEvidenceContext"', "Record evidence context uses the additive 2.0.10 route");
 requireText(backendGateways, "func listOwned(limit: Int = 100)", "Student records use a role-scoped canonical list gateway");
 rejectText(backendGateways, 'URLQueryItem(name: "studentId", value: studentID)', "Student enrollment reads rely on token-owned role scope instead of a forbidden explicit studentId filter");
@@ -278,7 +279,12 @@ requireText(components, "picker.videoMaximumDuration = ExerciseVideoRule.maximum
 requireText(models, "var hasAudioTrack: Bool? = nil", "Audio-track verification survives draft persistence");
 requireText(models, "enum ExemptionProofRule", "Physical exemptions have a dedicated proof rule");
 requireText(models, "static let maxAttachmentCount = 5", "Physical exemptions enforce the five-proof API limit");
-requireText(models, "static let maximumCombinedReasonLength = 2_000", "Physical exemption reason enforces the 2000-character API limit");
+requireText(models, "static let maximumCombinedReasonLength = 1_000", "Physical exemption reason enforces the 1000-character API limit");
+requireText(backendGateways, "actor AuthoritativeExemptionApplicationGateway", "API-v1 exemptions use the authoritative application lifecycle");
+requireText(appState, "private func submitExemptionAPIV1(", "AppState routes API-v1 exemption writes through the authoritative backend");
+requireText(appState, "var exemptionEligibleCourses: [Course]", "Exemption applications resolve an eligible enrollment explicitly");
+requireText(gradesView, '.accessibilityIdentifier("exemption.course.picker")', "Multiple eligible courses require an explicit exemption-course choice");
+requireText(backendFoundationTests, "testExemptionGatewayCreatesDraftThenSubmitsWithAuthoritativeVersion", "XCTest covers exemption draft creation and versioned submission");
 requireText(models, "static let maximumDescriptionLength = 200", "Check-in note enforces the 200-character business rule (stricter than the 2000-character API limit)");
 requireText(models, "struct ExercisePause", "Exercise sessions record every pause/resume instant");
 requireText(models, "static let maximumPauseBeforeAutoEnd: TimeInterval = 6 * oneHour", "A pause over six hours auto-ends the session");
@@ -369,9 +375,12 @@ requireText(models, "var allowsCheckIn: Bool { enrollmentStatus == .approved }",
 requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side rule");
 requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
 requireText(models, "enum CourseInviteTokenRule", "Contract 2.0.10 opaque invite tokens have a lossless validation rule");
-requireText(models, "fromScannedPayload payload: String,", "Course QR payloads preserve the opaque invite token bytes");
-requireText(models, "approvedHTTPSHosts: Set<String> = []", "Course invite URL transports require an explicit host allowlist");
+requireText(models, "static func token(fromScannedPayload payload: String)", "Course QR payloads preserve the opaque invite token bytes");
+rejectText(models, "approvedHTTPSHosts", "Course invite parsing does not hard-code a platform-specific portal host");
 requireText(models, 'components.scheme?.lowercased() == "https"', "Course invite URL transports require HTTPS");
+requireText(models, "components.user == nil", "Course invite URLs reject user information");
+requireText(models, "components.query == nil", "Course invite URLs reject query data");
+requireText(models, "components.host?.isEmpty == false", "Course invite URLs require a syntactically valid host");
 requireText(models, 'path.count == 2, path[0].lowercased() == "join"', "Course invite URLs use the exact /join/{token} shape");
 requireText(appState, "func lookupCourseInvite(rawCode: String)", "An invite code resolves to a course before the student applies");
 requireText(appState, "func submitCourseJoinRequest(", "Students can submit a course join application");

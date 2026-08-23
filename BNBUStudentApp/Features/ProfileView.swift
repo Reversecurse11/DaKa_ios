@@ -493,8 +493,8 @@ private struct ExemptionCenterSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     } else if appState.isAPIV1Session {
                         Text(verbatim: exemptionCenterText(
-                            "当前已接入 Backend 2.0.2 的申请列表；新建和补交仍需先补齐课程选择及免测类型映射，暂不开放提交。",
-                            "The Backend 2.0.2 application list is connected. Creating or supplementing an application remains unavailable until course selection and exemption-type mapping are complete."
+                            "当前已接入 Backend 免测申请；提交前会上传并校验证明材料，最终结果以后端返回为准。",
+                            "Backend exemption applications are connected. Proof is uploaded and validated before submission, and the server response remains authoritative."
                         ))
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)

@@ -959,26 +959,20 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(CourseInviteTokenRule.token(fromScannedPayload: token), token)
         let controlledURL = "https://join.verityai.example/join/\(token)"
         XCTAssertEqual(
-            CourseInviteTokenRule.token(
-                fromScannedPayload: controlledURL,
-                approvedHTTPSHosts: ["join.verityai.example"]
-            ),
+            CourseInviteTokenRule.token(fromScannedPayload: controlledURL),
             token
         )
         XCTAssertEqual(CourseInviteTokenRule.token(fromInput: "  \(token)  "), token)
-        XCTAssertNil(CourseInviteTokenRule.token(fromInput: controlledURL))
-        XCTAssertNil(CourseInviteTokenRule.token(
-            fromInput: "http://join.verityai.example/join/\(token)",
-            approvedHTTPSHosts: ["join.verityai.example"]
-        ))
-        XCTAssertNil(CourseInviteTokenRule.token(
-            fromInput: "https://sports.example.com/join/\(token)",
-            approvedHTTPSHosts: ["join.verityai.example"]
-        ))
-        XCTAssertNil(CourseInviteTokenRule.token(
-            fromInput: "https://join.verityai.example/other/\(token)",
-            approvedHTTPSHosts: ["join.verityai.example"]
-        ))
+        XCTAssertEqual(CourseInviteTokenRule.token(fromInput: controlledURL), token)
+        XCTAssertEqual(
+            CourseInviteTokenRule.token(fromInput: "https://sports.example.com/join/\(token)"),
+            token
+        )
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "http://join.verityai.example/join/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://join.verityai.example/other/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://user@join.verityai.example/join/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://join.verityai.example:8443/join/\(token)"))
+        XCTAssertNil(CourseInviteTokenRule.token(fromInput: "https://join.verityai.example/join/\(token)?source=qr"))
         XCTAssertNotEqual(CourseInviteTokenRule.token(fromScannedPayload: token), token.uppercased())
         XCTAssertNil(CourseInviteTokenRule.token(fromScannedPayload: "too-short"))
         XCTAssertNil(CourseInviteTokenRule.token(fromScannedPayload: "opaque token with whitespace"))
@@ -2381,15 +2375,15 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(
             ExemptionInputRule.validationMessage(
                 reason: "受伤",
-                detail: String(repeating: "明", count: 1_996)
+                detail: String(repeating: "明", count: 996)
             )
         )
         XCTAssertEqual(
             ExemptionInputRule.validationMessage(
                 reason: "受伤",
-                detail: String(repeating: "明", count: 1_997)
+                detail: String(repeating: "明", count: 997)
             ),
-            "申请原因和情况说明合计不能超过 2000 个字符。"
+            "申请原因和情况说明合计不能超过 1000 个字符。"
         )
 
         let appState = AppState(

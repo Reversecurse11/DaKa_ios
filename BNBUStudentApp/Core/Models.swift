@@ -1304,14 +1304,11 @@ enum CourseInviteTokenRule {
         return nil
     }
 
-    /// Accepts the opaque token itself. URL transports are fail-closed unless
-    /// the caller supplies an explicitly approved HTTPS origin; the current
-    /// teacher portal QR payload is Android-specific and must not silently
-    /// become an iOS contract.
-    static func token(
-        fromInput input: String,
-        approvedHTTPSHosts: Set<String> = []
-    ) -> String? {
+    /// Accepts the opaque token itself or the teacher portal's strict HTTPS
+    /// `/join/{token}` transport. The QR origin is never contacted by the app:
+    /// only the token is extracted and sent to the configured Backend, which
+    /// remains the authority for preview and enrollment.
+    static func token(fromInput input: String) -> String? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -1322,8 +1319,7 @@ enum CourseInviteTokenRule {
                   components.query == nil,
                   components.fragment == nil,
                   components.port == nil || components.port == 443,
-                  let host = components.host?.lowercased(),
-                  approvedHTTPSHosts.map({ $0.lowercased() }).contains(host) else { return nil }
+                  components.host?.isEmpty == false else { return nil }
             let path = components.path.split(separator: "/").map(String.init)
             guard path.count == 2, path[0].lowercased() == "join",
                   validationMessage(for: path[1]) == nil else { return nil }
@@ -1333,11 +1329,8 @@ enum CourseInviteTokenRule {
         return validationMessage(for: trimmed) == nil ? trimmed : nil
     }
 
-    static func token(
-        fromScannedPayload payload: String,
-        approvedHTTPSHosts: Set<String> = []
-    ) -> String? {
-        token(fromInput: payload, approvedHTTPSHosts: approvedHTTPSHosts)
+    static func token(fromScannedPayload payload: String) -> String? {
+        token(fromInput: payload)
     }
 }
 
@@ -2790,7 +2783,7 @@ enum ExemptionItem: String, CaseIterable, Identifiable, Hashable, Codable {
 
 enum ExemptionInputRule {
     static let minimumReasonLength = 2
-    static let maximumCombinedReasonLength = 2_000
+    static let maximumCombinedReasonLength = 1_000
 
     static func combinedReason(reason: String, detail: String) -> String {
         [reason, detail]
@@ -2809,7 +2802,7 @@ enum ExemptionInputRule {
             return "请填写情况说明。"
         }
         if combinedReason(reason: normalizedReason, detail: normalizedDetail).count > maximumCombinedReasonLength {
-            return "申请原因和情况说明合计不能超过 2000 个字符。"
+            return "申请原因和情况说明合计不能超过 1000 个字符。"
         }
         return nil
     }

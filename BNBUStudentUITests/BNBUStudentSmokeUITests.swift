@@ -1213,7 +1213,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         let inviteField = app.secureTextFields["initialJoin.invite.field"]
         XCTAssertTrue(inviteField.exists)
         inviteField.tap()
-        inviteField.typeText("https://sports.example.com/join/AbCd-opaque_Invite.Token~1234")
+        inviteField.typeText("http://sports.example.com/join/AbCd-opaque_Invite.Token~1234")
         XCTAssertTrue(app.buttons["initialJoin.preview"].isEnabled)
         app.buttons["initialJoin.preview"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["initialJoin.error"].waitForExistence(timeout: 3))

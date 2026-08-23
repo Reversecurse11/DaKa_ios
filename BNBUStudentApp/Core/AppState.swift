@@ -113,6 +113,35 @@ private enum APIV1CheckInError: LocalizedError {
     }
 }
 
+private enum APIV1ExemptionError: LocalizedError {
+    case enrollmentUnavailable
+    case unsupportedItem
+    case proofUnavailable(String)
+    case mediaNotReady(String)
+    case responseMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .enrollmentUnavailable:
+            return BNBUL10n.text("当前课程尚未同步到服务器，请刷新后重试。")
+        case .unsupportedItem:
+            return BNBUL10n.text("该免测类型暂不支持提交，请刷新后重试。")
+        case .proofUnavailable(let fileName):
+            return BNBUL10n.formatted("%@ 的原始文件不可用，请重新拍摄。", fileName)
+        case .mediaNotReady(let fileName):
+            return BNBUL10n.formatted("%@ 尚未通过后端媒体校验，请稍后重试。", fileName)
+        case .responseMismatch:
+            return BNBUL10n.text("服务器返回的免测申请状态不一致，请刷新后重试。")
+        }
+    }
+}
+
+private struct APIV1ExemptionClassification {
+    let applicationType: String
+    let applicationSubtype: String?
+    let organizationName: String?
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var isAuthenticated = false
@@ -200,10 +229,9 @@ final class AppState: ObservableObject {
     /// a writable demo workspace.
     var mockTestAccount: MockTestAccountCredentials? { repository.mockTestAccount }
     var isFullFeatureMockMode: Bool { !isRemoteMode && mockTestAccount != nil }
-    /// Contract 2.0.2's list projection is safe to display, but its create form
-    /// still needs an explicit Enrollment and a lossless subtype mapping.
     var canSubmitExemptions: Bool {
-        isFullFeatureMockMode || (isRemoteMode && !isAPIV1Session)
+        isFullFeatureMockMode ||
+            (isRemoteMode && (!isAPIV1Session || !exemptionEligibleCourses.isEmpty))
     }
     var canUseEnduranceCalculator: Bool {
         isFullFeatureMockMode || (isRemoteMode && !isAPIV1Session)
@@ -320,6 +348,22 @@ final class AppState: ObservableObject {
             .filter { $0.isCurrent && $0.allowsCheckIn }
             .sorted { $0.displayTitle < $1.displayTitle }
             .first
+    }
+
+    var exemptionEligibleCourses: [Course] {
+        workspace.courses
+            .filter { $0.isCurrent && $0.enrollmentStatus == .approved }
+            .filter { activeEnrollmentIDsByClassSectionID[$0.id] != nil }
+            .sorted { $0.displayTitle < $1.displayTitle }
+    }
+
+    private func apiv1ExemptionEnrollmentID(courseID: String?) -> String? {
+        if let courseID, exemptionEligibleCourses.contains(where: { $0.id == courseID }) {
+            return activeEnrollmentIDsByClassSectionID[courseID]
+        }
+        guard exemptionEligibleCourses.count == 1,
+              let onlyCourse = exemptionEligibleCourses.first else { return nil }
+        return activeEnrollmentIDsByClassSectionID[onlyCourse.id]
     }
 
     var pendingEnrollmentCourses: [Course] {
@@ -3406,6 +3450,7 @@ final class AppState: ObservableObject {
         reason: String,
         detail: String,
         organization: String = "",
+        courseId: String? = nil,
         proofAttachments: [ProofAttachment]
     ) async -> Bool {
         guard !isSubmittingExemption else {
@@ -3494,9 +3539,16 @@ final class AppState: ObservableObject {
             return true
         }
 
-        guard !isAPIV1Session else {
-            errorMessage = BNBUL10n.text("免测申请尚未完成 Backend 2.0.2 整体迁移，当前不会回退旧接口。")
-            return false
+        if isAPIV1Session {
+            return await submitExemptionAPIV1(
+                item: item,
+                reason: normalizedReason,
+                detail: normalizedDetail,
+                organization: normalizedOrganization,
+                courseID: courseId,
+                proofAttachments: proofAttachments,
+                expectedSessionEpoch: sessionEpoch
+            )
         }
         return await submitExemptionRemote(
             item: item,
@@ -3591,9 +3643,14 @@ final class AppState: ObservableObject {
             return true
         }
 
-        guard !isAPIV1Session else {
-            errorMessage = BNBUL10n.text("免测补充材料尚未完成 Backend 2.0.2 整体迁移，当前不会回退旧接口。")
-            return false
+        if isAPIV1Session {
+            return await supplementExemptionAPIV1(
+                application: application,
+                reason: normalizedReason,
+                detail: normalizedDetail,
+                proofAttachments: proofAttachments,
+                expectedSessionEpoch: sessionEpoch
+            )
         }
         return await supplementExemptionRemote(
             application: application,
@@ -4124,7 +4181,7 @@ final class AppState: ObservableObject {
             ) else {
                 throw APITransportError.invalidResponse
             }
-            if record.status == .reviewed {
+            if ExerciseRecordSubmissionProjectionPolicy.accepts(record) {
                 let cleanupWarning = cleanupAPIV1CheckInAttempt(scope: scope, attempt: attempt)
                 return finishAPIV1CheckInSubmission(
                     record: record,
@@ -4222,8 +4279,7 @@ final class AppState: ObservableObject {
                 )
             ).value
             guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
-            guard record.status == .reviewed,
-                  record.currentReview != nil,
+            guard ExerciseRecordSubmissionProjectionPolicy.accepts(record),
                   Self.apiv1Record(
                     record,
                     matches: serverSession,
@@ -4264,7 +4320,7 @@ final class AppState: ObservableObject {
         localSession: ExerciseSession,
         cleanupWarning: String?
     ) -> Bool {
-        guard record.status == .reviewed,
+        guard ExerciseRecordSubmissionProjectionPolicy.accepts(record),
               let currentReview = record.currentReview,
               record.creditedDurationSeconds >= Int(ExerciseSession.oneHour) else {
             errorMessage = APIV1CheckInError.recordStateInvalid.localizedDescription
@@ -4645,6 +4701,358 @@ final class AppState: ObservableObject {
             }
             return false
         }
+    }
+
+    private func submitExemptionAPIV1(
+        item: ExemptionItem,
+        reason: String,
+        detail: String,
+        organization: String,
+        courseID: String?,
+        proofAttachments: [ProofAttachment],
+        expectedSessionEpoch: UInt64
+    ) async -> Bool {
+        guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+        guard !hasPendingExemption(for: item) else {
+            errorMessage = BNBUL10n.text("同一类型已有待审核申请，请等待处理后再提交。")
+            return false
+        }
+        guard let enrollmentID = apiv1ExemptionEnrollmentID(courseID: courseID) else {
+            errorMessage = APIV1ExemptionError.enrollmentUnavailable.localizedDescription
+            return false
+        }
+        guard let classification = Self.apiv1ExemptionClassification(
+            for: item,
+            organization: organization
+        ) else {
+            errorMessage = APIV1ExemptionError.unsupportedItem.localizedDescription
+            return false
+        }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let mediaIDs = try await uploadAPIV1ExemptionProofs(
+                proofAttachments,
+                enrollmentID: enrollmentID,
+                expectedSessionEpoch: expectedSessionEpoch
+            )
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+            let combinedReason = ExemptionInputRule.combinedReason(reason: reason, detail: detail)
+            let created = try await backendServices.exemptions.create(
+                APIV1CreateExemptionApplicationRequest(
+                    enrollmentId: enrollmentID,
+                    applicationType: classification.applicationType,
+                    applicationSubtype: classification.applicationSubtype,
+                    organizationName: classification.organizationName,
+                    reason: combinedReason,
+                    mediaIds: mediaIDs
+                )
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  created.studentId == workspace.student.id,
+                  created.enrollmentId == enrollmentID,
+                  created.applicationType == classification.applicationType,
+                  created.mediaIds == mediaIDs,
+                  created.status.uppercased() == "DRAFT" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+            let submitted = try await backendServices.exemptions.submit(
+                applicationID: created.id,
+                expectedVersion: created.version
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  submitted.id == created.id,
+                  submitted.studentId == workspace.student.id,
+                  submitted.enrollmentId == enrollmentID,
+                  submitted.status.uppercased() == "SUBMITTED" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+
+            upsertExemption(Self.exemptionApplication(
+                from: submitted,
+                classification: classification
+            ))
+            workspace.notices.insert(
+                StudentNotice(
+                    id: UUID().uuidString,
+                    title: BNBUL10n.text("免测申请已提交"),
+                    message: BNBUL10n.text("\(item.rawValue) 已进入审核流程。"),
+                    time: RecentTimestamp.justNow,
+                    category: .review,
+                    isUnread: true
+                ),
+                at: 0
+            )
+            enqueueSyncOperation(
+                .submitExemption,
+                title: "提交免测申请",
+                detail: "\(item.rawValue) · 已同步 Backend",
+                status: .synced
+            )
+            proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
+            saveWorkspace(event: "免测申请已通过 Backend 提交")
+            errorMessage = nil
+            return true
+        } catch {
+            guard expectedSessionEpoch == sessionEpoch else { return false }
+            await handleAPIV1ExemptionError(error, expectedSessionEpoch: expectedSessionEpoch)
+            return false
+        }
+    }
+
+    private func supplementExemptionAPIV1(
+        application: ExemptionApplication,
+        reason: String,
+        detail: String,
+        proofAttachments: [ProofAttachment],
+        expectedSessionEpoch: UInt64
+    ) async -> Bool {
+        guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else { return false }
+        guard let classification = Self.apiv1ExemptionClassification(
+            for: application.item,
+            organization: application.organization
+        ) else {
+            errorMessage = APIV1ExemptionError.unsupportedItem.localizedDescription
+            return false
+        }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let server = try await backendServices.exemptions.get(applicationID: application.id).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  server.id == application.id,
+                  server.studentId == workspace.student.id,
+                  server.status.uppercased() == "SUPPLEMENT_REQUIRED" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+            let newMediaIDs = try await uploadAPIV1ExemptionProofs(
+                proofAttachments,
+                enrollmentID: server.enrollmentId,
+                expectedSessionEpoch: expectedSessionEpoch
+            )
+            var allMediaIDs = server.mediaIds
+            for mediaID in newMediaIDs where !allMediaIDs.contains(mediaID) {
+                allMediaIDs.append(mediaID)
+            }
+            let updated = try await backendServices.exemptions.update(
+                applicationID: server.id,
+                body: APIV1UpdateExemptionApplicationRequest(
+                    applicationSubtype: classification.applicationSubtype,
+                    organizationName: classification.organizationName,
+                    reason: ExemptionInputRule.combinedReason(reason: reason, detail: detail),
+                    mediaIds: allMediaIDs,
+                    expectedVersion: server.version
+                )
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  updated.id == server.id,
+                  updated.studentId == workspace.student.id,
+                  updated.mediaIds == allMediaIDs else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+            let submitted = try await backendServices.exemptions.submit(
+                applicationID: updated.id,
+                expectedVersion: updated.version
+            ).value
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session,
+                  submitted.id == application.id,
+                  submitted.studentId == workspace.student.id,
+                  submitted.status.uppercased() == "SUBMITTED" else {
+                throw APIV1ExemptionError.responseMismatch
+            }
+
+            upsertExemption(Self.exemptionApplication(
+                from: submitted,
+                classification: classification
+            ))
+            enqueueSyncOperation(
+                .supplementExemption,
+                title: "提交免测补充材料",
+                detail: "\(application.item.rawValue) · 已同步 Backend",
+                status: .synced
+            )
+            proofAttachments.forEach { ProofTransientFileStore.removeManagedCopy(at: $0.sourceFileURL) }
+            saveWorkspace(event: "免测补充材料已通过 Backend 提交")
+            errorMessage = nil
+            return true
+        } catch {
+            guard expectedSessionEpoch == sessionEpoch else { return false }
+            await handleAPIV1ExemptionError(error, expectedSessionEpoch: expectedSessionEpoch)
+            return false
+        }
+    }
+
+    private func handleAPIV1ExemptionError(
+        _ error: Error,
+        expectedSessionEpoch: UInt64
+    ) async {
+        if let transport = error as? APITransportError,
+           case .failure(503, let envelope) = transport,
+           envelope.code == "SYSTEM_MODE_UNSUPPORTED" {
+            errorMessage = BNBUL10n.text("免测申请服务暂未开放，请稍后重试。")
+            return
+        }
+        await handleAPIV1Error(error, expectedSessionEpoch: expectedSessionEpoch)
+    }
+
+    private func uploadAPIV1ExemptionProofs(
+        _ proofAttachments: [ProofAttachment],
+        enrollmentID: String,
+        expectedSessionEpoch: UInt64
+    ) async throws -> [String] {
+        var mediaIDs: [String] = []
+        for attachment in proofAttachments {
+            guard expectedSessionEpoch == sessionEpoch, isAPIV1Session else {
+                throw CancellationError()
+            }
+            guard let request = Self.apiv1ExemptionMediaRequest(
+                for: attachment,
+                enrollmentID: enrollmentID
+            ) else {
+                throw APIV1ExemptionError.proofUnavailable(attachment.fileName)
+            }
+            let outcome: MediaUploadOutcome
+            if let bytes = attachment.uploadData {
+                outcome = try await backendServices.media.uploadForExemption(
+                    bytes: bytes,
+                    request: request
+                )
+            } else if let fileURL = attachment.sourceFileURL {
+                outcome = try await backendServices.media.uploadForExemption(
+                    fileURL: fileURL,
+                    request: request
+                )
+            } else {
+                throw APIV1ExemptionError.proofUnavailable(attachment.fileName)
+            }
+
+            var media = outcome.media
+            for attempt in 0..<8 {
+                guard media.ownerStudentId == workspace.student.id,
+                      media.enrollmentId == enrollmentID,
+                      media.businessPurpose == .exemptionApplication,
+                      media.mediaType == .image else {
+                    throw APIV1ExemptionError.responseMismatch
+                }
+                if media.uploadStatus == .available { break }
+                guard media.uploadStatus == .uploaded || media.uploadStatus == .processing else {
+                    throw APIV1ExemptionError.mediaNotReady(attachment.fileName)
+                }
+                guard attempt < 7 else {
+                    throw APIV1ExemptionError.mediaNotReady(attachment.fileName)
+                }
+                try await Task.sleep(nanoseconds: 400_000_000)
+                media = try await backendServices.media.status(mediaID: media.id).value
+            }
+            guard media.uploadStatus == .available else {
+                throw APIV1ExemptionError.mediaNotReady(attachment.fileName)
+            }
+            mediaIDs.append(media.id)
+        }
+        guard Set(mediaIDs).count == proofAttachments.count else {
+            throw APIV1ExemptionError.responseMismatch
+        }
+        return mediaIDs
+    }
+
+    private static func apiv1ExemptionMediaRequest(
+        for attachment: ProofAttachment,
+        enrollmentID: String
+    ) -> APIV1InitiateMediaUploadRequest? {
+        guard attachment.type == .image,
+              let byteCount = attachment.byteCount,
+              byteCount > 0 else { return nil }
+        let mimeType: String
+        if let declared = attachment.mimeType?.lowercased(),
+           declared == "image/jpeg" || declared == "image/png" {
+            mimeType = declared
+        } else {
+            mimeType = "image/jpeg"
+        }
+        let digest = attachment.contentDigest.flatMap {
+            $0.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil
+                ? $0.lowercased()
+                : nil
+        }
+        return APIV1InitiateMediaUploadRequest(
+            sessionId: nil,
+            enrollmentId: enrollmentID,
+            businessPurpose: .exemptionApplication,
+            mediaType: .image,
+            mimeType: mimeType,
+            fileSizeBytes: byteCount,
+            captureSource: .inAppCamera,
+            declaredContentSha256: digest,
+            durationSeconds: nil
+        )
+    }
+
+    private static func apiv1ExemptionClassification(
+        for item: ExemptionItem,
+        organization: String
+    ) -> APIV1ExemptionClassification? {
+        switch item {
+        case .run800m, .enduranceRun:
+            return APIV1ExemptionClassification(
+                applicationType: "PHYSICAL_TEST",
+                applicationSubtype: "RUN_800M",
+                organizationName: nil
+            )
+        case .run1000m:
+            return APIV1ExemptionClassification(
+                applicationType: "PHYSICAL_TEST",
+                applicationSubtype: "RUN_1000M",
+                organizationName: nil
+            )
+        case .team:
+            guard !organization.isEmpty else { return nil }
+            return APIV1ExemptionClassification(
+                applicationType: "EXERCISE_CHECK_IN",
+                applicationSubtype: "SCHOOL_TEAM",
+                organizationName: organization
+            )
+        case .club:
+            guard !organization.isEmpty else { return nil }
+            return APIV1ExemptionClassification(
+                applicationType: "EXERCISE_CHECK_IN",
+                applicationSubtype: "STUDENT_CLUB",
+                organizationName: organization
+            )
+        case .specialCircumstance:
+            return APIV1ExemptionClassification(
+                applicationType: "SPECIAL_CIRCUMSTANCE",
+                applicationSubtype: "SPECIAL_CIRCUMSTANCE",
+                organizationName: nil
+            )
+        case .physicalTest, .singlePhysicalItem, .checkIn:
+            return nil
+        }
+    }
+
+    private static func exemptionApplication(
+        from application: APIV1ExemptionApplication,
+        classification: APIV1ExemptionClassification
+    ) -> ExemptionApplication {
+        exemptionApplication(from: APIV1StructuredExemptionApplication(
+            id: application.id,
+            studentId: application.studentId,
+            enrollmentId: application.enrollmentId,
+            classSectionId: application.classSectionId,
+            applicationType: application.applicationType,
+            applicationSubtype: classification.applicationSubtype,
+            organizationName: classification.organizationName,
+            reason: application.reason,
+            mediaIds: application.mediaIds,
+            status: application.status,
+            publicComment: application.publicComment,
+            submittedAt: application.submittedAt,
+            decidedAt: application.decidedAt,
+            version: application.version
+        ))
     }
 
     private func submitExemptionRemote(

@@ -780,7 +780,7 @@ actor RemoteStudentRepository {
         let normalizedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalizedReason.count >= ExemptionInputRule.minimumReasonLength,
               normalizedReason.count <= ExemptionInputRule.maximumCombinedReasonLength else {
-            throw RepositoryError.apiError("补充说明需要 2 到 2000 个字符。")
+            throw RepositoryError.apiError("补充说明需要 2 到 1000 个字符。")
         }
         let body: [String: Any] = [
             "reason": normalizedReason,

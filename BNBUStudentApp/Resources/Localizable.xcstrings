@@ -6364,18 +6364,18 @@
         }
       }
     },
-    "必填，与申请原因合计最多 2000 个字符" : {
+    "必填，与申请原因合计最多 1000 个字符" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Required; together with the reason, up to 2,000 characters"
+            "value" : "Required; together with the reason, up to 1,000 characters"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "必填，与申请原因合计最多 2000 个字符"
+            "value" : "必填，与申请原因合计最多 1000 个字符"
           }
         }
       }
@@ -12220,18 +12220,18 @@
         }
       }
     },
-    "至少 2 个字符，与情况说明合计最多 2000 个字符" : {
+    "至少 2 个字符，与情况说明合计最多 1000 个字符" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "At least 2 characters; together with details, up to 2,000 characters"
+            "value" : "At least 2 characters; together with details, up to 1,000 characters"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "至少 2 个字符，与情况说明合计最多 2000 个字符"
+            "value" : "至少 2 个字符，与情况说明合计最多 1000 个字符"
           }
         }
       }

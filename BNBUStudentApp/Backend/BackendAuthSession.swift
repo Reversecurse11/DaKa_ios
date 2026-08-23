@@ -443,6 +443,7 @@ struct BackendAppServices: Sendable {
     let clientCapabilities: BackendClientCapabilityGateway
     let workspace: AuthoritativeStudentWorkspaceGateway
     let media: MediaUploadCoordinator
+    let exemptions: AuthoritativeExemptionApplicationGateway
     let exerciseSessions: AuthoritativeExerciseSessionGateway
     let exerciseRecords: AuthoritativeExerciseRecordGateway
     let deviceIdentifier: any AuthDeviceIdentifying
@@ -459,6 +460,7 @@ struct BackendAppServices: Sendable {
         clientCapabilities = BackendClientCapabilityGateway(client: client, auth: auth)
         workspace = AuthoritativeStudentWorkspaceGateway(auth: auth)
         media = MediaUploadCoordinator(client: client, auth: auth)
+        exemptions = AuthoritativeExemptionApplicationGateway(auth: auth)
         exerciseSessions = AuthoritativeExerciseSessionGateway(auth: auth)
         exerciseRecords = AuthoritativeExerciseRecordGateway(auth: auth)
         self.deviceIdentifier = deviceIdentifier

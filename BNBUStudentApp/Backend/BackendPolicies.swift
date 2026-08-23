@@ -250,6 +250,24 @@ enum ExerciseRecordContractPolicy {
     }
 }
 
+/// A successful record submission may be returned either while the review is
+/// still pending or after the backend has already made its default decision.
+/// The client must preserve that authoritative pair instead of inventing a
+/// second review result or rejecting a valid response.
+enum ExerciseRecordSubmissionProjectionPolicy {
+    static func accepts(_ record: APIV1ExerciseRecord) -> Bool {
+        guard let review = record.currentReview else { return false }
+        switch (record.status, review.result) {
+        case (.submitted, .pending),
+             (.reviewed, .valid),
+             (.reviewed, .invalid):
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 /// Stable Contract 2.0.2 media failures need actionable client copy. In
 /// particular, location metadata is not permission-related: the student must
 /// capture a fresh sanitized item rather than grant location access.

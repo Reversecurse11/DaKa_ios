@@ -86,6 +86,60 @@ final class BackendFoundationTests: XCTestCase {
         }
     }
 
+    func testExerciseRecordSubmissionProjectionPreservesAuthoritativeReviewState() {
+        func record(
+            status: APIV1ExerciseRecordStatus,
+            review: APIV1ReviewResult?
+        ) -> APIV1ExerciseRecord {
+            APIV1ExerciseRecord(
+                id: "record-1",
+                organizationId: "org-1",
+                semesterId: "semester-1",
+                studentId: "student-1",
+                enrollmentId: "enrollment-1",
+                classSectionId: "section-1",
+                courseId: "course-1",
+                teacherId: "teacher-1",
+                sessionId: "session-1",
+                businessDate: "2026-08-22",
+                creditType: .courseRelated,
+                sportType: "RUNNING",
+                sportName: nil,
+                description: nil,
+                actualDurationSeconds: 3_600,
+                pausedDurationSeconds: 0,
+                creditedDurationSeconds: 3_600,
+                status: status,
+                submittedAt: "2026-08-22T10:00:00Z",
+                cancelledAt: nil,
+                clientRequestId: "ios-record-1",
+                currentReview: review.map {
+                    APIV1StudentCurrentReview(result: $0, reasonCode: nil, publicComment: nil)
+                },
+                version: 2
+            )
+        }
+
+        XCTAssertTrue(ExerciseRecordSubmissionProjectionPolicy.accepts(
+            record(status: .submitted, review: .pending)
+        ))
+        XCTAssertTrue(ExerciseRecordSubmissionProjectionPolicy.accepts(
+            record(status: .reviewed, review: .valid)
+        ))
+        XCTAssertTrue(ExerciseRecordSubmissionProjectionPolicy.accepts(
+            record(status: .reviewed, review: .invalid)
+        ))
+        XCTAssertFalse(ExerciseRecordSubmissionProjectionPolicy.accepts(
+            record(status: .draft, review: nil)
+        ))
+        XCTAssertFalse(ExerciseRecordSubmissionProjectionPolicy.accepts(
+            record(status: .submitted, review: .valid)
+        ))
+        XCTAssertFalse(ExerciseRecordSubmissionProjectionPolicy.accepts(
+            record(status: .reviewed, review: .pending)
+        ))
+    }
+
     func testTransportDecodesTypedEnvelopeAndUsesServerRequestID() async throws {
         let logger = CapturingAPIEventLogger()
         let session = makeSession { request in
@@ -2959,6 +3013,8 @@ final class BackendFoundationTests: XCTestCase {
 
         await state.restoreBackendSession()
         await state.refreshRemoteWorkspace()
+        XCTAssertTrue(state.canSubmitExemptions)
+        XCTAssertEqual(state.exemptionEligibleCourses.map(\.id), ["section-1"])
         let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:00:00Z"))
         let pause = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:10:00Z"))
         let resume = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-14T00:20:00Z"))
@@ -3081,6 +3137,82 @@ final class BackendFoundationTests: XCTestCase {
             "POST /api/v1/media-uploads",
             "PUT /private/exemption",
             "POST /api/v1/media-uploads/exemption-upload-1/confirm"
+        ])
+    }
+
+    func testExemptionGatewayCreatesDraftThenSubmitsWithAuthoritativeVersion() async throws {
+        let store = MemoryAuthSessionStore(
+            session: Self.authSession(access: "exemption-write-access", refresh: "exemption-write-refresh")
+        )
+        let lock = NSLock()
+        var operations: [String] = []
+        let session = makeSession { request in
+            let path = request.url?.path ?? ""
+            lock.lock()
+            operations.append("\(request.httpMethod ?? "") \(path)")
+            lock.unlock()
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer exemption-write-access")
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+            let body = (try? JSONSerialization.jsonObject(
+                with: Self.bodyData(from: request)
+            )) as? [String: Any]
+            switch path {
+            case "/api/v1/exemption-applications":
+                XCTAssertEqual(body?["enrollmentId"] as? String, "enrollment-1")
+                XCTAssertEqual(body?["applicationType"] as? String, "PHYSICAL_TEST")
+                XCTAssertEqual(body?["applicationSubtype"] as? String, "RUN_800M")
+                XCTAssertEqual(body?["mediaIds"] as? [String], ["media-1"])
+                return .json(
+                    status: 201,
+                    headers: ["X-Request-ID": "req-exemption-create"],
+                    body: Self.exemptionApplicationEnvelopeJSON(
+                        status: "DRAFT",
+                        version: 1,
+                        requestID: "req-exemption-create"
+                    )
+                )
+            case "/api/v1/exemption-applications/exemption-1/submit":
+                XCTAssertEqual(body?["expectedVersion"] as? Int, 1)
+                return .json(
+                    status: 200,
+                    headers: ["X-Request-ID": "req-exemption-submit"],
+                    body: Self.exemptionApplicationEnvelopeJSON(
+                        status: "SUBMITTED",
+                        version: 2,
+                        requestID: "req-exemption-submit"
+                    )
+                )
+            default:
+                return .json(
+                    status: 404,
+                    headers: ["X-Request-ID": "req-unexpected"],
+                    body: Self.errorJSON(code: "NOT_FOUND", requestID: "req-unexpected")
+                )
+            }
+        }
+        let client = StudentAPIClient(baseURL: BackendEnvironment.local.baseURL, urlSession: session)
+        let auth = BackendAuthSessionController(client: client, store: store)
+        _ = try await auth.restore()
+        let gateway = AuthoritativeExemptionApplicationGateway(auth: auth)
+
+        let created = try await gateway.create(APIV1CreateExemptionApplicationRequest(
+            enrollmentId: "enrollment-1",
+            applicationType: "PHYSICAL_TEST",
+            applicationSubtype: "RUN_800M",
+            organizationName: nil,
+            reason: "Medical documentation",
+            mediaIds: ["media-1"]
+        )).value
+        let submitted = try await gateway.submit(
+            applicationID: created.id,
+            expectedVersion: created.version
+        ).value
+
+        XCTAssertEqual(created.status, "DRAFT")
+        XCTAssertEqual(submitted.status, "SUBMITTED")
+        XCTAssertEqual(operations, [
+            "POST /api/v1/exemption-applications",
+            "POST /api/v1/exemption-applications/exemption-1/submit"
         ])
     }
 
@@ -3379,6 +3511,19 @@ final class BackendFoundationTests: XCTestCase {
     private static func exemptionMediaEnvelopeJSON(requestID: String) -> String {
         """
         {"data":{"id":"exemption-media-1","organizationId":"org-1","ownerStudentId":"student-1","sessionId":null,"enrollmentId":"enrollment-1","recordId":null,"businessPurpose":"EXEMPTION_APPLICATION","mediaType":"IMAGE","declaredMimeType":"image/jpeg","verifiedMimeType":"image/jpeg","declaredFileSizeBytes":4,"verifiedFileSizeBytes":4,"captureSource":"FILE_PICKER","uploadStatus":"UPLOADED","uploadedAt":"2026-08-07T00:00:00Z","boundAt":null,"declaredContentSha256":null,"verifiedContentSha256":null,"declaredDurationSeconds":null,"verifiedDurationSeconds":null,"version":1},"meta":{"requestId":"\(requestID)"}}
+        """
+    }
+
+    private static func exemptionApplicationEnvelopeJSON(
+        status: String,
+        version: Int,
+        requestID: String
+    ) -> String {
+        let submittedAtJSON = status == "SUBMITTED"
+            ? "\"2026-08-22T10:00:00Z\""
+            : "null"
+        return """
+        {"data":{"id":"exemption-1","studentId":"student-1","enrollmentId":"enrollment-1","classSectionId":"section-1","applicationType":"PHYSICAL_TEST","reason":"Medical documentation","mediaIds":["media-1"],"status":"\(status)","publicComment":null,"submittedAt":\(submittedAtJSON),"decidedAt":null,"version":\(version)},"meta":{"requestId":"\(requestID)"}}
         """
     }
 

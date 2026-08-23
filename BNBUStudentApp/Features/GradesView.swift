@@ -464,6 +464,7 @@ struct ExemptionApplicationSheet: View {
     @State private var reason: String
     @State private var detail: String
     @State private var organization: String
+    @State private var selectedCourseID: String
     @State private var proofAttachments: [ProofAttachment]
     @State private var recoveryNotice: String?
     private let livePhotoPolicy = ExemptionLivePhotoPolicy(
@@ -476,6 +477,7 @@ struct ExemptionApplicationSheet: View {
         _reason = State(initialValue: "")
         _detail = State(initialValue: "")
         _organization = State(initialValue: mode.application?.organization ?? "")
+        _selectedCourseID = State(initialValue: "")
         _proofAttachments = State(initialValue: [])
         _recoveryNotice = State(initialValue: nil)
     }
@@ -553,9 +555,13 @@ struct ExemptionApplicationSheet: View {
         .onAppear {
             restorePendingAttemptIfAvailable()
             normalizeSelectedItemForStudent()
+            selectDefaultCourseIfNeeded()
         }
         .onChange(of: appState.workspace.student.gender) { _, _ in
             normalizeSelectedItemForStudent()
+        }
+        .onChange(of: appState.exemptionEligibleCourses.map(\.id)) { _, _ in
+            selectDefaultCourseIfNeeded()
         }
     }
 
@@ -579,6 +585,26 @@ struct ExemptionApplicationSheet: View {
                         // the grid into one element and hides the type buttons.
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("exemption.item.picker")
+
+                        if appState.isAPIV1Session {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(verbatim: exemptionText("申请课程", "Course"))
+                                    .font(BNBUFont.labelMedium)
+                                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                Picker(
+                                    exemptionText("申请课程", "Course"),
+                                    selection: $selectedCourseID
+                                ) {
+                                    ForEach(appState.exemptionEligibleCourses) { course in
+                                        Text(verbatim: course.displayTitle).tag(course.id)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .disabled(appState.isSubmittingExemption)
+                                .accessibilityIdentifier("exemption.course.picker")
+                            }
+                            .padding(.top, 4)
+                        }
                     } else {
                         Text("申请项目")
                             .font(BNBUFont.titleSmall)
@@ -645,7 +671,7 @@ struct ExemptionApplicationSheet: View {
                     TextField("例如：膝关节运动损伤", text: $reason)
                         .bnbuInputText()
                         .accessibilityLabel("申请原因")
-                        .accessibilityHint("至少 2 个字符，与情况说明合计最多 2000 个字符")
+                        .accessibilityHint("至少 2 个字符，与情况说明合计最多 1000 个字符")
                         .textInputAutocapitalization(.never)
                         .padding(12)
                         .background(BNBUTheme.surface)
@@ -665,7 +691,7 @@ struct ExemptionApplicationSheet: View {
                     TextEditor(text: $detail)
                         .bnbuInputText()
                         .accessibilityLabel("情况说明")
-                        .accessibilityHint("必填，与申请原因合计最多 2000 个字符")
+                        .accessibilityHint("必填，与申请原因合计最多 1000 个字符")
                         .frame(minHeight: 118)
                         .padding(8)
                         .scrollContentBackground(.hidden)
@@ -776,6 +802,7 @@ struct ExemptionApplicationSheet: View {
             && proofAttachments.allSatisfy(\.isValidForUpload)
         return appState.canSubmitExemptions
             && appState.isWriteAllowed
+            && (!appState.isAPIV1Session || mode.application != nil || !selectedCourseID.isEmpty)
             && !hasPendingSameType
             && !needsOrganization
             && ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) == nil
@@ -793,6 +820,9 @@ struct ExemptionApplicationSheet: View {
                 "当前账号不能提交免测申请或补充材料。请使用 Mock 运行方案或已连接服务器的账号。",
                 "This account cannot submit exemption requests or supplements. Use the Mock scheme or a server-connected account."
             )
+        }
+        if appState.isAPIV1Session, mode.application == nil, selectedCourseID.isEmpty {
+            return exemptionText("请选择免测申请对应的课程。", "Select the course for this exemption request.")
         }
         if let recoveryNotice {
             return recoveryNotice
@@ -864,6 +894,7 @@ struct ExemptionApplicationSheet: View {
             reason: trimmedReason,
             detail: trimmedDetail,
             organization: trimmedOrganization,
+            courseId: selectedCourseID.isEmpty ? nil : selectedCourseID,
             proofAttachments: proofAttachments
         )
     }
@@ -888,6 +919,14 @@ struct ExemptionApplicationSheet: View {
 
     private func isLiveCameraPhoto(_ attachment: ProofAttachment) -> Bool {
         attachment.type == .image && attachment.source == "摄像头"
+    }
+
+    private func selectDefaultCourseIfNeeded() {
+        guard mode.application == nil else { return }
+        let courses = appState.exemptionEligibleCourses
+        if !courses.contains(where: { $0.id == selectedCourseID }) {
+            selectedCourseID = courses.first?.id ?? ""
+        }
     }
 
     private func remove(_ attachment: ProofAttachment) {

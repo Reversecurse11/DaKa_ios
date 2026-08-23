@@ -176,6 +176,84 @@ actor BackendClientCapabilityGateway {
     }
 }
 
+/// Student-owned exemption mutations. Keeping create/update/submit in one
+/// authenticated gateway preserves idempotency across the multi-step flow and
+/// prevents the API-v1 app from falling back to the historical repository.
+actor AuthoritativeExemptionApplicationGateway {
+    private let auth: BackendAuthSessionController
+    private let intents: IdempotencyIntentRegistry
+
+    init(
+        auth: BackendAuthSessionController,
+        intents: IdempotencyIntentRegistry = IdempotencyIntentRegistry()
+    ) {
+        self.auth = auth
+        self.intents = intents
+    }
+
+    func create(
+        _ body: APIV1CreateExemptionApplicationRequest
+    ) async throws -> APIResponse<APIV1ExemptionApplication> {
+        let scope = "exemption:create"
+        let fingerprint = try IntentFingerprint.make(body)
+        let response: APIResponse<APIV1ExemptionApplication> = try await auth.sendAuthorized(APIRequest(
+            operationID: "createExemptionApplication",
+            method: .post,
+            path: "exemption-applications",
+            body: try APIRequest.jsonBody(body),
+            idempotencyKey: await intents.key(scope: scope, fingerprint: fingerprint)
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func get(applicationID: String) async throws -> APIResponse<APIV1ExemptionApplication> {
+        let applicationID = try APIPath.component(applicationID)
+        return try await auth.sendAuthorized(APIRequest(
+            operationID: "getExemptionApplication",
+            method: .get,
+            path: "exemption-applications/\(applicationID)"
+        ))
+    }
+
+    func update(
+        applicationID: String,
+        body: APIV1UpdateExemptionApplicationRequest
+    ) async throws -> APIResponse<APIV1ExemptionApplication> {
+        let applicationID = try APIPath.component(applicationID)
+        let scope = "exemption:update:\(applicationID)"
+        let fingerprint = try IntentFingerprint.make(body)
+        let response: APIResponse<APIV1ExemptionApplication> = try await auth.sendAuthorized(APIRequest(
+            operationID: "updateExemptionApplication",
+            method: .patch,
+            path: "exemption-applications/\(applicationID)",
+            body: try APIRequest.jsonBody(body),
+            idempotencyKey: await intents.key(scope: scope, fingerprint: fingerprint)
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+
+    func submit(
+        applicationID: String,
+        expectedVersion: Int
+    ) async throws -> APIResponse<APIV1ExemptionApplication> {
+        let applicationID = try APIPath.component(applicationID)
+        let body = APIV1VersionedRequest(expectedVersion: expectedVersion)
+        let scope = "exemption:submit:\(applicationID)"
+        let fingerprint = try IntentFingerprint.make(body)
+        let response: APIResponse<APIV1ExemptionApplication> = try await auth.sendAuthorized(APIRequest(
+            operationID: "submitExemptionApplication",
+            method: .post,
+            path: "exemption-applications/\(applicationID)/submit",
+            body: try APIRequest.jsonBody(body),
+            idempotencyKey: await intents.key(scope: scope, fingerprint: fingerprint)
+        ))
+        await intents.clear(scope: scope)
+        return response
+    }
+}
+
 /// Reads the minimum authoritative course graph needed by the iOS student
 /// shell. Every collection is role-scoped by Backend; pagination truncation
 /// fails closed so the app never silently picks the wrong enrollment.
@@ -361,6 +439,30 @@ actor MediaUploadCoordinator {
 
         let confirmedUpload = try await uploadAndConfirm(
             payload: .data(bytes),
+            request: request,
+            idempotencyKeySeed: nil,
+            progressHandler: progressHandler
+        )
+        await intents.clear(scope: confirmedUpload.initiateScope)
+        await intents.clear(scope: confirmedUpload.confirmScope)
+        return MediaUploadOutcome(
+            media: confirmedUpload.response.value,
+            requestId: confirmedUpload.response.requestId
+        )
+    }
+
+    func uploadForExemption(
+        fileURL: URL,
+        request: APIV1InitiateMediaUploadRequest,
+        progressHandler: @escaping @Sendable (APIUploadProgress) -> Void = { _ in }
+    ) async throws -> MediaUploadOutcome {
+        guard MediaUploadContractPolicy.accepts(request),
+              request.businessPurpose == .exemptionApplication else {
+            throw APITransportError.invalidRequest
+        }
+
+        let confirmedUpload = try await uploadAndConfirm(
+            payload: .file(fileURL),
             request: request,
             idempotencyKeySeed: nil,
             progressHandler: progressHandler
