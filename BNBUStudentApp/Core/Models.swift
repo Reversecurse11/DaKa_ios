@@ -40,6 +40,16 @@ enum StudentGender: String, Hashable, Codable {
         case .unknown: return nil
         }
     }
+
+    /// The QR-join contract intentionally accepts only the two values below.
+    /// Keep this separate from the older lowercase profile transport.
+    var courseJoinAPIValue: String? {
+        switch self {
+        case .female: return "FEMALE"
+        case .male: return "MALE"
+        case .unknown: return nil
+        }
+    }
 }
 
 struct EnduranceScoreResult: Hashable, Codable {
@@ -79,10 +89,12 @@ struct StudentProfile: Identifiable, Hashable, Codable {
     let gradeCalculatedAt: String
 
     var displayStudentNumber: String {
-        if let studentNumber, !studentNumber.isEmpty {
+        if let studentNumber = studentNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !studentNumber.isEmpty {
             return studentNumber
         }
-        return id
+        // Internal IDs may be opaque UUIDs and are never a student number.
+        return BNBUL10n.text("待同步")
     }
 
     init(
@@ -373,6 +385,14 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
     var latitude: Double?
     var longitude: Double?
     var pauses: [ExercisePause]
+    /// Optimistic-lock version from the last authoritative Session projection.
+    /// Old local snapshots decode it as nil and cannot invoke internal tools.
+    var serverVersion: Int?
+    /// Last duration fact returned by Backend. A local/test time-advance tool
+    /// never edits `startTime`; the normal clock projects forward only from
+    /// this authoritative snapshot.
+    var authoritativeDurationSeconds: Int?
+    var authoritativeDurationObservedAt: Date?
 
     init(
         id: String,
@@ -387,7 +407,10 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         locationStatus: ExerciseLocationStatus,
         latitude: Double? = nil,
         longitude: Double? = nil,
-        pauses: [ExercisePause] = []
+        pauses: [ExercisePause] = [],
+        serverVersion: Int? = nil,
+        authoritativeDurationSeconds: Int? = nil,
+        authoritativeDurationObservedAt: Date? = nil
     ) {
         self.id = id
         self.studentID = studentID
@@ -402,6 +425,9 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         self.latitude = latitude
         self.longitude = longitude
         self.pauses = pauses
+        self.serverVersion = serverVersion
+        self.authoritativeDurationSeconds = authoritativeDurationSeconds
+        self.authoritativeDurationObservedAt = authoritativeDurationObservedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -420,6 +446,15 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
         // Sessions persisted before the pause feature carry no pauses key.
         pauses = try container.decodeIfPresent([ExercisePause].self, forKey: .pauses) ?? []
+        serverVersion = try container.decodeIfPresent(Int.self, forKey: .serverVersion)
+        authoritativeDurationSeconds = try container.decodeIfPresent(
+            Int.self,
+            forKey: .authoritativeDurationSeconds
+        )
+        authoritativeDurationObservedAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .authoritativeDurationObservedAt
+        )
     }
 
     var resolvedSportName: String {
@@ -445,7 +480,38 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
         let effectiveEnd = max(endTime ?? date, startTime)
         let wallClock = effectiveEnd.timeIntervalSince(startTime)
         let paused = pauses.reduce(0) { $0 + $1.overlap(from: startTime, to: effectiveEnd) }
-        return min(max(wallClock - paused, 0), Self.maximumDuration)
+        let localDuration = max(wallClock - paused, 0)
+        let authoritativeProjection: TimeInterval
+        if let authoritativeDurationSeconds,
+           let authoritativeDurationObservedAt {
+            let normalClockAdvance = status == .active && !isPaused
+                ? max(date.timeIntervalSince(authoritativeDurationObservedAt), 0)
+                : 0
+            authoritativeProjection = TimeInterval(authoritativeDurationSeconds) + normalClockAdvance
+        } else {
+            authoritativeProjection = 0
+        }
+        return min(max(localDuration, authoritativeProjection), Self.maximumDuration)
+    }
+
+    func applyingAuthoritativeDuration(
+        seconds: Int,
+        observedAt: Date,
+        remoteStatus: String,
+        remoteEndedAt: Date?,
+        serverVersion: Int? = nil
+    ) -> ExerciseSession {
+        var updated = self
+        updated.authoritativeDurationSeconds = min(max(seconds, 0), Int(Self.maximumDuration))
+        updated.authoritativeDurationObservedAt = observedAt
+        if let serverVersion, serverVersion > 0 {
+            updated.serverVersion = serverVersion
+        }
+        if remoteStatus == "COMPLETED" {
+            updated.status = .completed
+            updated.endTime = remoteEndedAt ?? observedAt
+        }
+        return updated
     }
 
     /// Total paused time so far, for UI display.
@@ -539,6 +605,18 @@ struct ExerciseSession: Identifiable, Hashable, Codable {
     }
 }
 
+/// Safe, read-only metadata for an Active Session that belongs to the account
+/// but was not created/restored with this device's local business context.
+/// It is deliberately not an `ExerciseSession`, so control actions cannot be
+/// enabled accidentally.
+struct ExistingRemoteExerciseSession: Identifiable, Equatable {
+    var id: String { sessionID }
+    let sessionID: String
+    let startedAt: Date
+    let status: String
+    let requestId: String?
+}
+
 enum ExerciseSessionInputRule {
     static let maximumCustomSportNameLength = 32
 
@@ -552,33 +630,98 @@ enum ExerciseSessionInputRule {
     }
 }
 
-/// Business rule 3.3: students may only *start* a session inside the daily
-/// open window. A session started in the window may end and submit after it
-/// closes. The window is admin-configured server-side; until the backend
-/// exposes it, the documented default (06:00–22:00 Asia/Shanghai) applies.
-enum CheckInTimeWindowRule {
-    static let dailyStartHour = 6
-    static let dailyEndHour = 22
+/// The authoritative ClassSection check-in policy configured by its teacher.
+/// No client-side default window is allowed: an absent or malformed policy
+/// fails closed until the section projection is refreshed.
+struct CheckInTimeWindowPolicy: Hashable, Codable {
+    let mode: String
+    let startDate: String?
+    let endDate: String?
+    let dailyStartTime: String?
+    let dailyEndTime: String?
+    let excludedDates: [String]
+    let submissionDeadlineAt: String?
 
-    static var displayText: String {
-        String(format: "%02d:00–%02d:00", dailyStartHour, dailyEndHour)
+    static let unavailable = CheckInTimeWindowPolicy(
+        mode: "UNAVAILABLE",
+        startDate: nil,
+        endDate: nil,
+        dailyStartTime: nil,
+        dailyEndTime: nil,
+        excludedDates: [],
+        submissionDeadlineAt: nil
+    )
+
+    var displayText: String {
+        guard let start = normalizedTime(dailyStartTime),
+              let end = normalizedTime(dailyEndTime) else {
+            return BNBUL10n.text("等待教师端打卡时间配置")
+        }
+        return "\(start)–\(end)"
     }
 
-    static func canStartExercise(at date: Date) -> Bool {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        let hour = calendar.component(.hour, from: date)
-        return hour >= dailyStartHour && hour < dailyEndHour
+    func blockingMessage(at date: Date) -> String? {
+        guard mode == "AVAILABLE" else {
+            return BNBUL10n.text("本教学班当前未开放打卡。")
+        }
+        guard let start = normalizedTime(dailyStartTime),
+              let end = normalizedTime(dailyEndTime),
+              start < end else {
+            return BNBUL10n.text("教学班打卡时间配置无效，请联系任课教师。")
+        }
+        let day = Self.dayFormatter.string(from: date)
+        let time = Self.timeFormatter.string(from: date)
+        if let startDate, day < startDate {
+            return BNBUL10n.text("尚未到本教学班的打卡开放日期。")
+        }
+        if let endDate, day > endDate {
+            return BNBUL10n.text("已超过本教学班的打卡开放日期。")
+        }
+        if excludedDates.contains(day) {
+            return BNBUL10n.text("今天是本教学班设置的排除日期，不能开始运动。")
+        }
+        if let submissionDeadlineAt,
+           let deadline = ISO8601DateFormatter().date(from: submissionDeadlineAt),
+           date > deadline {
+            return BNBUL10n.text("已超过本教学班的打卡截止时间。")
+        }
+        guard time >= start && time <= end else {
+            return BNBUL10n.text("当前不在本教学班打卡时段（\(displayText)）。")
+        }
+        return nil
     }
 
-    static var startBlockedMessage: String {
-        BNBUL10n.text("当前不在每日打卡开放时段（\(displayText)），暂时不能开始运动。")
+    private func normalizedTime(_ value: String?) -> String? {
+        guard let value, value.count >= 5 else { return nil }
+        let result = String(value.prefix(5))
+        return result.range(of: #"^(?:[01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) == nil
+            ? nil
+            : result
     }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 }
 
 /// A camera capture taken during or right after an exercise session. Media
 /// bytes live in a protected on-device file (or inline for small test
-/// payloads); drafts never upload until the student selects them as proof.
+/// payloads); drafts never upload until Record submission. A draft only enters
+/// this retained collection after explicit capture confirmation.
 struct ExerciseMediaDraft: Identifiable, Hashable, Codable {
     let id: String
     let studentID: String
@@ -604,6 +747,8 @@ enum ExerciseMediaDraftRule {
     /// Matches the single video a submission can carry, so the counter the
     /// student sees while recording cannot promise more than they can attach.
     static let maximumVideoDrafts = ProofUploadRule.maxVideoCount
+    /// ADR-099: an exercise-record video must stop at 15 elapsed recording seconds.
+    static let maximumVideoDurationSeconds: TimeInterval = 15
 
     static func canAddPhoto(to drafts: [ExerciseMediaDraft]) -> Bool {
         drafts.filter { $0.type == .image }.count < maximumPhotoDrafts
@@ -626,7 +771,8 @@ struct StudentWorkspace: Codable {
     var notices: [StudentNotice]
     var exemptions: [ExemptionApplication]
     var syncOperations: [SyncOperation]
-    /// Teacher-customizable hour targets (rule 4.4).
+    /// Local/demo hour-target compatibility. Remote student workspaces use
+    /// `.unavailable` because ScoreRule targets are not student-readable.
     var hourRule: SportHourRule
     /// Nil when the student has no invitation-based course join request.
     var courseJoinRequest: CourseJoinRequest?
@@ -730,9 +876,8 @@ struct SyncOperation: Identifiable, Hashable, Codable {
     var status: SyncOperationStatus
 }
 
-/// One invitation-based course join application. The status page needs the
-/// teacher's note and the submission time, which the course relationship itself
-/// does not carry.
+/// Legacy cache shape retained only so older local data can be decoded and
+/// ignored safely. OpenAPI 2.0.13 joins atomically into an ACTIVE Enrollment.
 struct CourseJoinRequest: Identifiable, Hashable, Codable {
     let id: String
     let inviteCode: String
@@ -757,20 +902,45 @@ struct CourseJoinRequest: Identifiable, Hashable, Codable {
 /// application itself (`GET /course-invites/{code}`).
 struct CourseInvite: Identifiable, Hashable, Codable {
     let code: String
+    /// Authoritative target returned by the public preview operation.
+    let classSectionID: String?
     let courseName: String
     let courseCode: String
     let section: String
     let teacherName: String
     let semester: String
+    let enrollmentOpen: Bool
+    let expiresAt: String?
+
+    init(
+        code: String,
+        classSectionID: String? = nil,
+        courseName: String,
+        courseCode: String,
+        section: String,
+        teacherName: String,
+        semester: String,
+        enrollmentOpen: Bool = true,
+        expiresAt: String? = nil
+    ) {
+        self.code = code
+        self.classSectionID = classSectionID
+        self.courseName = courseName
+        self.courseCode = courseCode
+        self.section = section
+        self.teacherName = teacherName
+        self.semester = semester
+        self.enrollmentOpen = enrollmentOpen
+        self.expiresAt = expiresAt
+    }
 
     var id: String { code }
 
     var displayTitle: String { "\(courseCode) / Section \(section)" }
 }
 
-/// A contact a student binds to their account. Both are verified during
-/// registration so that reinstalling the app, or moving to a new phone, can be
-/// recovered with a code instead of a password.
+/// Legacy contact channel used by compatibility decoding and support forms.
+/// Current authentication and first binding are EMAIL-only.
 enum ContactChannel: String, CaseIterable, Identifiable, Hashable, Codable {
     case phone
     case email
@@ -833,6 +1003,10 @@ enum ContactBindingRule {
         code.count == codeLength && code.allSatisfy(\.isNumber)
     }
 
+    static func isValidStudentSignInCode(_ code: String) -> Bool {
+        (4...10).contains(code.count) && code.allSatisfy(\.isNumber)
+    }
+
     /// Contacts are shown back to the student masked, the way the server
     /// returns them, so a shoulder-surfer cannot read the full value.
     static func masked(_ value: String, for channel: ContactChannel) -> String {
@@ -856,7 +1030,7 @@ enum ContactBindingRule {
 /// happens before sign-in, so this is the only place the student types their
 /// own name and number; limits match the Android baseline.
 enum CourseJoinRequestRule {
-    static let maximumNameLength = 64
+    static let maximumNameLength = 100
     static let maximumStudentNumberLength = 32
 
     /// The email is bound and verified in the step that follows, so the form
@@ -912,9 +1086,8 @@ enum JoinRequestStatus: String, Codable, Hashable, CaseIterable {
     }
 }
 
-/// Business rule 4.2: a student joins a course by QR code or invite code and
-/// only gains a real course relationship once the teacher approves, so a
-/// pending enrolment must not produce check-ins or credited hours.
+/// Legacy enrollment-state decoder. Current QR join only installs an ACTIVE
+/// Enrollment; pending/rejected values from old caches remain fail-closed.
 enum CourseEnrollmentStatus: String, Codable, Hashable, CaseIterable {
     case approved
     case pending
@@ -963,6 +1136,7 @@ struct Course: Identifiable, Hashable, Codable {
     /// The sport this section is taught as. A course-related check-in must use
     /// it rather than letting the student pick from the full grid.
     var sportType: ExerciseSportType?
+    var checkInTimeWindow: CheckInTimeWindowPolicy
 
     /// Only an approved enrolment can back a check-in (rule 4.2).
     var allowsCheckIn: Bool { enrollmentStatus == .approved }
@@ -983,7 +1157,8 @@ struct Course: Identifiable, Hashable, Codable {
         teacher: String,
         isCurrent: Bool = true,
         enrollmentStatus: CourseEnrollmentStatus = .approved,
-        sportType: ExerciseSportType? = nil
+        sportType: ExerciseSportType? = nil,
+        checkInTimeWindow: CheckInTimeWindowPolicy = .unavailable
     ) {
         self.id = id
         self.code = code
@@ -999,6 +1174,7 @@ struct Course: Identifiable, Hashable, Codable {
         self.isCurrent = isCurrent
         self.enrollmentStatus = enrollmentStatus
         self.sportType = sportType ?? ExerciseSportType.inferred(fromCourseName: name)
+        self.checkInTimeWindow = checkInTimeWindow
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1027,6 +1203,7 @@ struct Course: Identifiable, Hashable, Codable {
         case join_status
         case sportType
         case sport
+        case checkInTimeWindow
     }
 
     init(from decoder: Decoder) throws {
@@ -1073,6 +1250,8 @@ struct Course: Identifiable, Hashable, Codable {
         let decodedSport = try container.decodeIfPresent(ExerciseSportType.self, forKey: .sportType)
             ?? container.decodeIfPresent(ExerciseSportType.self, forKey: .sport)
         sportType = decodedSport ?? ExerciseSportType.inferred(fromCourseName: name)
+        checkInTimeWindow = try container.decodeIfPresent(CheckInTimeWindowPolicy.self, forKey: .checkInTimeWindow)
+            ?? .unavailable
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1091,6 +1270,7 @@ struct Course: Identifiable, Hashable, Codable {
         try container.encode(isCurrent, forKey: .isCurrent)
         try container.encode(enrollmentStatus.rawValue, forKey: .enrollmentStatus)
         try container.encodeIfPresent(sportType, forKey: .sportType)
+        try container.encode(checkInTimeWindow, forKey: .checkInTimeWindow)
     }
 
     var displayTitle: String {
@@ -1102,16 +1282,13 @@ struct Course: Identifiable, Hashable, Codable {
 /// format arrives with the OpenAPI document, so validation stays deliberately
 /// permissive: it only rejects input the server could never accept.
 enum CourseJoinCodeRule {
-    static let minimumLength = 4
-    static let maximumLength = 32
+    static let minimumLength = 16
+    static let maximumLength = 512
 
-    /// Codes are printed on posters and read aloud, so casing and separators
-    /// are cosmetic.
+    /// Invite tokens are opaque secrets. Casing and separators are significant;
+    /// only surrounding whitespace from copy/paste is removed.
     static func normalized(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .uppercased()
     }
 
     static func validationMessage(for raw: String) -> String? {
@@ -1122,18 +1299,29 @@ enum CourseJoinCodeRule {
         if code.count < minimumLength || code.count > maximumLength {
             return BNBUL10n.formatted("邀请码长度应为 %lld–%lld 位。", minimumLength, maximumLength)
         }
-        guard code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
-            return BNBUL10n.text("邀请码只能包含字母和数字。")
+        guard code.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
+            return BNBUL10n.text("邀请码包含无效控制字符。")
         }
         return nil
     }
 
-    /// Course QR codes may encode a bare code or a deep link that carries it.
-    static func code(fromScannedPayload payload: String) -> String? {
+    /// A bare opaque token is always accepted. URL payloads are accepted only
+    /// for a host explicitly configured by the local environment; this client
+    /// never guesses a production invite host.
+    static func code(
+        fromScannedPayload payload: String,
+        allowedURLHosts: Set<String> = CourseInviteURLPolicy.resolvedAllowedHosts()
+    ) -> String? {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if let components = URLComponents(string: trimmed), components.scheme != nil {
+            guard let host = components.host?.lowercased(),
+                  allowedURLHosts.contains(host),
+                  let scheme = components.scheme?.lowercased(),
+                  scheme == "https" || scheme == "http" else {
+                return nil
+            }
             let keys = ["code", "invitecode", "invite_code", "joincode", "join_code"]
             if let queried = components.queryItems?.first(where: {
                 keys.contains($0.name.lowercased())
@@ -1148,6 +1336,35 @@ enum CourseJoinCodeRule {
         }
 
         return validationMessage(for: trimmed) == nil ? normalized(trimmed) : nil
+    }
+}
+
+enum CourseInviteURLPolicy {
+    static func resolvedAllowedHosts(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleValue: Any? = Bundle.main.object(forInfoDictionaryKey: "BNBUInviteURLHosts")
+    ) -> Set<String> {
+        let argumentValue: String? = {
+            guard let index = arguments.firstIndex(of: "-invite-url-hosts"),
+                  arguments.indices.contains(index + 1) else { return nil }
+            return arguments[index + 1]
+        }()
+        let bundleValues: [String]
+        if let values = bundleValue as? [String] {
+            bundleValues = values
+        } else if let value = bundleValue as? String {
+            bundleValues = [value]
+        } else {
+            bundleValues = []
+        }
+        let values = [argumentValue, environment["BNBU_INVITE_URL_HOSTS"]]
+            .compactMap { $0 }
+            + bundleValues
+        return Set(values
+            .flatMap { $0.split(separator: ",") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && !$0.contains("/") && !$0.contains(":") })
     }
 }
 
@@ -1167,6 +1384,12 @@ struct StudentProgress: Identifiable, Hashable, Codable {
     var status: String
     let source: String
     var organizationCredit: Membership?
+    /// Total hours summed from current-Enrollment ExerciseRecords whose latest
+    /// authoritative review is VALID. This does not depend on StudentScore.
+    var authoritativeTotalHours: Double?
+    /// Backend-owned qualification state (for example QUALIFIED or
+    /// NOT_QUALIFIED). Nil means the server has not adjudicated it yet.
+    var authoritativeQualificationStatus: String?
 
     init(
         id: String,
@@ -1182,7 +1405,9 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         physical: Int,
         status: String,
         source: String,
-        organizationCredit: Membership?
+        organizationCredit: Membership?,
+        authoritativeTotalHours: Double? = nil,
+        authoritativeQualificationStatus: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -1198,6 +1423,8 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         self.status = status
         self.source = source
         self.organizationCredit = organizationCredit
+        self.authoritativeTotalHours = authoritativeTotalHours
+        self.authoritativeQualificationStatus = authoritativeQualificationStatus
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1226,6 +1453,8 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         case status
         case source
         case organizationCredit
+        case authoritativeTotalHours
+        case authoritativeQualificationStatus
     }
 
     init(from decoder: Decoder) throws {
@@ -1264,6 +1493,11 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "暂无风险"
         source = try container.decodeIfPresent(String.self, forKey: .source) ?? "server"
         organizationCredit = try container.decodeIfPresent(Membership.self, forKey: .organizationCredit)
+        authoritativeTotalHours = try container.decodeIfPresent(Double.self, forKey: .authoritativeTotalHours)
+        authoritativeQualificationStatus = try container.decodeIfPresent(
+            String.self,
+            forKey: .authoritativeQualificationStatus
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1282,6 +1516,11 @@ struct StudentProgress: Identifiable, Hashable, Codable {
         try container.encode(status, forKey: .status)
         try container.encode(source, forKey: .source)
         try container.encodeIfPresent(organizationCredit, forKey: .organizationCredit)
+        try container.encodeIfPresent(authoritativeTotalHours, forKey: .authoritativeTotalHours)
+        try container.encodeIfPresent(
+            authoritativeQualificationStatus,
+            forKey: .authoritativeQualificationStatus
+        )
     }
 }
 
@@ -1346,13 +1585,22 @@ enum RecordValidity: String, CaseIterable, Identifiable, Hashable, Codable {
         switch value {
         case "invalid", "INVALID", "无效", "rejected", "REJECTED", "被驳回", "已驳回":
             self = .invalid
-        default:
-            // Legacy pending/approved/supplement/offset states and any unknown
-            // value all map to valid; only an explicit server invalidation
-            // downgrades a record.
+        case "valid", "VALID", "有效":
             self = .valid
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Review result must be VALID or INVALID."
+            )
         }
     }
+}
+
+struct ExerciseRecordAttemptContext: Hashable, Codable {
+    let recordId: String
+    let previousAttemptId: String?
+    let rootAttemptId: String
+    let attemptNumber: Int
 }
 
 struct CheckInRecord: Identifiable, Hashable, Codable {
@@ -1375,6 +1623,8 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
     var startedAt: String?
     var endedAt: String?
     var activeDuration: String?
+    var attemptContext: ExerciseRecordAttemptContext?
+    var serverVersion: Int?
 
     var representsCompleteServerRecord: Bool {
         hours == 1 || hours == 2
@@ -1397,7 +1647,9 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         sportType: String? = nil,
         startedAt: String? = nil,
         endedAt: String? = nil,
-        activeDuration: String? = nil
+        activeDuration: String? = nil,
+        attemptContext: ExerciseRecordAttemptContext? = nil,
+        serverVersion: Int? = nil
     ) {
         self.id = id
         self.courseId = courseId
@@ -1416,6 +1668,8 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.activeDuration = activeDuration
+        self.attemptContext = attemptContext
+        self.serverVersion = serverVersion
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1451,6 +1705,8 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         case endTime
         case activeDuration
         case actualDuration
+        case attemptContext
+        case serverVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -1472,8 +1728,7 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent(String.self, forKey: .createdAt)
             ?? container.decodeIfPresent(String.self, forKey: .updatedAt)
             ?? ""
-        // Legacy caches / older servers may still send review states under
-        // `status`; RecordValidity's decoder maps them onto valid/invalid.
+        // Only the authoritative two-state review values are accepted.
         validity = try container.decodeIfPresent(RecordValidity.self, forKey: .validity)
             ?? container.decodeIfPresent(RecordValidity.self, forKey: .status)
             ?? container.decodeIfPresent(RecordValidity.self, forKey: .reviewStatus)
@@ -1507,6 +1762,11 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
             ?? container.decodeIfPresent(String.self, forKey: .endTime)
         activeDuration = try container.decodeIfPresent(String.self, forKey: .activeDuration)
             ?? container.decodeIfPresent(String.self, forKey: .actualDuration)
+        attemptContext = try container.decodeIfPresent(
+            ExerciseRecordAttemptContext.self,
+            forKey: .attemptContext
+        )
+        serverVersion = try container.decodeIfPresent(Int.self, forKey: .serverVersion)
         invalidReason = decodedInvalidReason?.isEmpty == false ? decodedInvalidReason : nil
     }
 
@@ -1529,6 +1789,8 @@ struct CheckInRecord: Identifiable, Hashable, Codable {
         try container.encodeIfPresent(startedAt, forKey: .startedAt)
         try container.encodeIfPresent(endedAt, forKey: .endedAt)
         try container.encodeIfPresent(activeDuration, forKey: .activeDuration)
+        try container.encodeIfPresent(attemptContext, forKey: .attemptContext)
+        try container.encodeIfPresent(serverVersion, forKey: .serverVersion)
     }
 
     private static func proofSummary(for proofFiles: [ProofAttachment]) -> String {
@@ -1584,16 +1846,13 @@ enum ProofUploadRule {
     static let maxVideoCount = 1
     static let maxAttachmentCount = maxImageCount + maxVideoCount
     static let maxImageBytes = 8_000_000
-    static let maxVideoBytes = 100_000_000
-    static let maxRequestBytes = 120_000_000
 
     static var summaryText: String {
-        "最多 \(maxImageCount) 张照片 + \(maxVideoCount) 个视频；图片不超过 8MB，视频不超过 100MB。"
+        "最多 \(maxImageCount) 张照片 + \(maxVideoCount) 个视频；每张图片不超过 8MB，视频最长 15 秒且不设文件大小上限。"
     }
 
     static func accepts(_ attachments: [ProofAttachment]) -> Bool {
-        acceptsAttachmentCounts(attachments) &&
-            totalByteCount(in: attachments) <= maxRequestBytes
+        acceptsAttachmentCounts(attachments)
     }
 
     static func acceptsAttachmentCounts(_ attachments: [ProofAttachment]) -> Bool {
@@ -1611,9 +1870,6 @@ enum ProofUploadRule {
         }
         if attachments.count > maxAttachmentCount {
             return BNBUL10n.text("最多只能添加 \(maxAttachmentCount) 个凭证。")
-        }
-        if totalByteCount(in: attachments) > maxRequestBytes {
-            return BNBUL10n.text("全部凭证总大小不能超过 120MB。")
         }
         return nil
     }
@@ -1634,10 +1890,10 @@ enum ProofUploadRule {
 }
 
 enum ExemptionProofRule {
-    static let maxAttachmentCount = 5
+    static let maxAttachmentCount = ProofUploadRule.maxAttachmentCount
 
     static var summaryText: String {
-        "免测证明最多 \(maxAttachmentCount) 个；图片不超过 8MB，视频不超过 100MB。"
+        "免测证明最多 6 张照片 + 1 个视频；每张图片不超过 8MB，视频最长 15 秒且不设文件大小上限。"
     }
 
     static func accepts(_ attachments: [ProofAttachment]) -> Bool {
@@ -1655,19 +1911,34 @@ enum ExemptionProofRule {
 }
 
 enum CheckInInputRule {
-    /// Q&A 7/23 (Q5): the sport note is required for both course-related and
-    /// general exercise. The 200-character cap stays until the final field
-    /// spec is published with the OpenAPI document.
+    /// ADR-103: GENERAL exercise requires a description; COURSE_RELATED may
+    /// omit it. Both branches keep the 200-character contract cap.
     static let maximumDescriptionLength = 200
+
+    static func isDescriptionRequired(for category: ExerciseCategory) -> Bool {
+        category == .general
+    }
+
+    static func isDescriptionRequired(for creditType: CreditType) -> Bool {
+        creditType == .general
+    }
 
     static func normalizedDescription(_ note: String, for category: ExerciseCategory) -> String {
         _ = category
         return note.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func validationMessage(note: String) -> String? {
+    static func validationMessage(note: String, for category: ExerciseCategory) -> String? {
+        validationMessage(note: note, required: isDescriptionRequired(for: category))
+    }
+
+    static func validationMessage(note: String, for creditType: CreditType) -> String? {
+        validationMessage(note: note, required: isDescriptionRequired(for: creditType))
+    }
+
+    private static func validationMessage(note: String, required: Bool) -> String? {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
+        if required && trimmed.isEmpty {
             return BNBUL10n.text("请填写运动说明。")
         }
         if trimmed.count > maximumDescriptionLength {
@@ -1941,8 +2212,6 @@ struct ProofAttachment: Identifiable, Hashable, Codable {
             switch type {
             case .image where byteCount > ProofUploadRule.maxImageBytes:
                 return BNBUL10n.text("图片超过 8MB")
-            case .video where byteCount > ProofUploadRule.maxVideoBytes:
-                return BNBUL10n.text("视频超过 100MB")
             default:
                 break
             }
@@ -2032,6 +2301,10 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
     let idempotencyKey: String
     let serverIdentity: String
     let studentID: String
+    /// Server-authoritative record target. Check-in retries must never borrow a
+    /// newer local ExerciseSession after the app restarts.
+    let authoritativeSessionID: String?
+    let authoritativeEnrollmentID: String?
     /// Canonical values used to build the mutation body. Keeping these beside
     /// the key makes a restart recovery self-describing instead of depending on
     /// transient SwiftUI form state.
@@ -2042,6 +2315,14 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
     var uploadedProofs: [ProofAttachment]
     var phase: PendingRemoteMutationPhase
     var serverResultID: String?
+    /// Exact optimistic-lock input and canonical media target prepared before
+    /// a multi-step mutation. They let a retry replay byte-for-byte instead of
+    /// rebuilding a request from a newer server projection.
+    var preparedExpectedVersion: Int?
+    var preparedMediaIDs: [String]?
+    /// Server-created mutable target (for example an exemption DRAFT) that
+    /// must survive restart before its scoped uploads finish.
+    var targetResourceID: String?
 
     init(
         scope: String,
@@ -2049,22 +2330,32 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         idempotencyKey: String,
         serverIdentity: String,
         studentID: String,
+        authoritativeSessionID: String? = nil,
+        authoritativeEnrollmentID: String? = nil,
         requestFields: [String: String] = [:],
         sourceProofs: [ProofAttachment] = [],
         uploadedProofs: [ProofAttachment],
         phase: PendingRemoteMutationPhase = .uploading,
-        serverResultID: String? = nil
+        serverResultID: String? = nil,
+        preparedExpectedVersion: Int? = nil,
+        preparedMediaIDs: [String]? = nil,
+        targetResourceID: String? = nil
     ) {
         self.scope = scope
         self.fingerprint = fingerprint
         self.idempotencyKey = idempotencyKey
         self.serverIdentity = serverIdentity
         self.studentID = studentID
+        self.authoritativeSessionID = authoritativeSessionID
+        self.authoritativeEnrollmentID = authoritativeEnrollmentID
         self.requestFields = requestFields
         self.sourceProofs = sourceProofs
         self.uploadedProofs = uploadedProofs
         self.phase = phase
         self.serverResultID = serverResultID
+        self.preparedExpectedVersion = preparedExpectedVersion
+        self.preparedMediaIDs = preparedMediaIDs
+        self.targetResourceID = targetResourceID
     }
 
     static func create(
@@ -2072,6 +2363,8 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         fingerprint: String,
         serverIdentity: String,
         studentID: String,
+        authoritativeSessionID: String? = nil,
+        authoritativeEnrollmentID: String? = nil,
         requestFields: [String: String] = [:],
         sourceProofs: [ProofAttachment] = []
     ) -> PendingRemoteMutationAttempt {
@@ -2081,6 +2374,8 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
             idempotencyKey: IdempotencyKeyPolicy.make(),
             serverIdentity: serverIdentity,
             studentID: studentID,
+            authoritativeSessionID: authoritativeSessionID,
+            authoritativeEnrollmentID: authoritativeEnrollmentID,
             requestFields: requestFields,
             sourceProofs: sourceProofs,
             uploadedProofs: [],
@@ -2089,15 +2384,25 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         )
     }
 
-    mutating func markFinalMutationPrepared() {
+    mutating func markFinalMutationPrepared(
+        expectedVersion: Int? = nil,
+        mediaIDs: [String]? = nil
+    ) {
         phase = .finalMutationPrepared
         serverResultID = nil
+        preparedExpectedVersion = expectedVersion
+        preparedMediaIDs = mediaIDs
     }
 
     mutating func markServerConfirmed(resultID: String?) {
         phase = .serverConfirmed
         let normalized = resultID?.trimmingCharacters(in: .whitespacesAndNewlines)
         serverResultID = normalized?.isEmpty == false ? normalized : nil
+    }
+
+    mutating func bindTargetResource(id: String, expectedVersion: Int) {
+        targetResourceID = id
+        preparedExpectedVersion = expectedVersion
     }
 
     var isServerConfirmed: Bool {
@@ -2123,11 +2428,16 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         case idempotencyKey
         case serverIdentity
         case studentID
+        case authoritativeSessionID
+        case authoritativeEnrollmentID
         case requestFields
         case sourceProofs
         case uploadedProofs
         case phase
         case serverResultID
+        case preparedExpectedVersion
+        case preparedMediaIDs
+        case targetResourceID
     }
 
     private struct PersistedSourceProof: Hashable, Codable {
@@ -2226,6 +2536,14 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         idempotencyKey = try container.decode(String.self, forKey: .idempotencyKey)
         serverIdentity = try container.decode(String.self, forKey: .serverIdentity)
         studentID = try container.decode(String.self, forKey: .studentID)
+        authoritativeSessionID = try container.decodeIfPresent(
+            String.self,
+            forKey: .authoritativeSessionID
+        )
+        authoritativeEnrollmentID = try container.decodeIfPresent(
+            String.self,
+            forKey: .authoritativeEnrollmentID
+        )
         requestFields = try container.decodeIfPresent(
             [String: String].self,
             forKey: .requestFields
@@ -2244,6 +2562,15 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         }
         phase = try container.decodeIfPresent(PendingRemoteMutationPhase.self, forKey: .phase) ?? .uploading
         serverResultID = try container.decodeIfPresent(String.self, forKey: .serverResultID)
+        preparedExpectedVersion = try container.decodeIfPresent(
+            Int.self,
+            forKey: .preparedExpectedVersion
+        )
+        preparedMediaIDs = try container.decodeIfPresent(
+            [String].self,
+            forKey: .preparedMediaIDs
+        )
+        targetResourceID = try container.decodeIfPresent(String.self, forKey: .targetResourceID)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2253,11 +2580,16 @@ struct PendingRemoteMutationAttempt: Hashable, Codable {
         try container.encode(idempotencyKey, forKey: .idempotencyKey)
         try container.encode(serverIdentity, forKey: .serverIdentity)
         try container.encode(studentID, forKey: .studentID)
+        try container.encodeIfPresent(authoritativeSessionID, forKey: .authoritativeSessionID)
+        try container.encodeIfPresent(authoritativeEnrollmentID, forKey: .authoritativeEnrollmentID)
         try container.encode(requestFields, forKey: .requestFields)
         try container.encode(sourceProofs.map(PersistedSourceProof.init), forKey: .sourceProofs)
         try container.encode(uploadedProofs.map(PersistedUploadedProof.init), forKey: .uploadedProofs)
         try container.encode(phase, forKey: .phase)
         try container.encodeIfPresent(serverResultID, forKey: .serverResultID)
+        try container.encodeIfPresent(preparedExpectedVersion, forKey: .preparedExpectedVersion)
+        try container.encodeIfPresent(preparedMediaIDs, forKey: .preparedMediaIDs)
+        try container.encodeIfPresent(targetResourceID, forKey: .targetResourceID)
     }
 }
 
@@ -2277,7 +2609,7 @@ struct PendingRemoteMutationSummary: Identifiable, Hashable {
         if attempt.scope == "sport-record:create" {
             title = attempt.isServerConfirmed ? "打卡记录已提交，待本地清理" : "打卡记录待重试"
             target = attempt.requestFields["taskTitle"]
-        } else if attempt.scope == "exemption:create:physical-test" {
+        } else if attempt.scope.hasPrefix("exemption:create:") {
             title = attempt.isServerConfirmed ? "免测申请已提交，待本地清理" : "免测申请待重试"
             target = attempt.requestFields["type"]
         } else if attempt.scope.hasPrefix("exemption:supplement:") {
@@ -2295,6 +2627,7 @@ struct PendingExemptionFormRecovery: Hashable {
     let item: ExemptionItem
     let reason: String
     let detail: String
+    let organization: String
     let sourceProofs: [ProofAttachment]
     let uploadedProofCount: Int
 
@@ -2469,20 +2802,38 @@ enum ExemptionInputRule {
     }
 }
 
-/// The categories a student can file a problem report under, in the Android
-/// order; the selected title is what the server stores.
+/// The privacy-bounded categories frozen by `CreateFeedbackRequest`.
+/// Display titles remain localized while transport always uses the uppercase
+/// contract value.
 enum FeedbackCategory: String, CaseIterable, Identifiable, Hashable, Codable {
-    case functionality = "功能异常"
-    case checkIn = "打卡问题"
-    case grades = "成绩问题"
-    case course = "课程问题"
-    case account = "账号问题"
-    case exemption = "免测/认证"
-    case system = "系统故障"
+    case bug = "功能异常"
+    case suggestion = "改进建议"
+    case accessibility = "无障碍使用"
+    case privacy = "隐私问题"
     case other = "其他"
 
     var id: String { rawValue }
     var title: String { rawValue }
+
+    var apiValue: String {
+        switch self {
+        case .bug: return "BUG"
+        case .suggestion: return "SUGGESTION"
+        case .accessibility: return "ACCESSIBILITY"
+        case .privacy: return "PRIVACY"
+        case .other: return "OTHER"
+        }
+    }
+
+    static func title(forAPIValue value: String) -> String {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "BUG": return FeedbackCategory.bug.title
+        case "SUGGESTION": return FeedbackCategory.suggestion.title
+        case "ACCESSIBILITY": return FeedbackCategory.accessibility.title
+        case "PRIVACY": return FeedbackCategory.privacy.title
+        default: return FeedbackCategory.other.title
+        }
+    }
 }
 
 enum FeedbackTicketStatus: String, CaseIterable, Identifiable, Hashable, Codable {
@@ -2538,32 +2889,17 @@ struct FeedbackTicket: Identifiable, Hashable, Codable {
 
 enum FeedbackRule {
     static let maximumDescriptionLength = 2000
+    /// Legacy local image-picker implementation limit. The R02 public feedback
+    /// contract is text-only and never serializes these files.
     static let maximumScreenshots = 3
 
-    static func validationMessage(
-        description: String,
-        email: String,
-        phone: String
-    ) -> String? {
+    static func validationMessage(description: String) -> String? {
         let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedDescription.isEmpty { return BNBUL10n.text("请填写问题描述。") }
         if trimmedDescription.count > maximumDescriptionLength {
             // A plain count, not a grouped number: the baseline prints 2000.
             return BNBUL10n.formatted("问题描述最多 %@ 字。", String(maximumDescriptionLength))
-        }
-        if trimmedEmail.isEmpty { return BNBUL10n.text("请留下邮箱，便于接收处理回复。") }
-        if !CourseJoinRequestRule.isValidEmail(trimmedEmail) {
-            return BNBUL10n.text("请输入有效的邮箱地址。")
-        }
-        if trimmedPhone.isEmpty { return BNBUL10n.text("请留下联系电话，便于跟进问题。") }
-        guard trimmedPhone.range(
-            of: "^[0-9+()\\-\\s]{5,32}$",
-            options: .regularExpression
-        ) != nil else {
-            return BNBUL10n.text("请输入有效的联系电话。")
         }
         return nil
     }
@@ -3422,22 +3758,37 @@ struct StudentNotice: Identifiable, Hashable, Codable {
     }
 }
 
-/// Hour targets a teacher may customize per course (rule 4.4). Values arrive
-/// from the server; `standard` is the fallback for servers that do not publish
-/// them yet and for any field that arrives unusable.
+/// Local/demo hour-target shape retained for cached fixtures. Production
+/// student sessions cannot read ScoreRule targets, so their workspace uses
+/// `unavailable`; displayed progress is still the direct sum of VALID records.
 struct SportHourRule: Hashable, Codable {
     let total: Double
     let courseRequired: Double
     let generalRequired: Double
     let dailyLimit: Double
+    let isAvailable: Bool
 
     static let standard = SportHourRule(total: 20, courseRequired: 10, generalRequired: 10, dailyLimit: 2)
+    static let unavailable = SportHourRule(
+        total: 0,
+        courseRequired: 0,
+        generalRequired: 0,
+        dailyLimit: 0,
+        isAvailable: false
+    )
 
-    init(total: Double, courseRequired: Double, generalRequired: Double, dailyLimit: Double) {
+    init(
+        total: Double,
+        courseRequired: Double,
+        generalRequired: Double,
+        dailyLimit: Double,
+        isAvailable: Bool = true
+    ) {
         self.total = total
         self.courseRequired = courseRequired
         self.generalRequired = generalRequired
         self.dailyLimit = dailyLimit
+        self.isAvailable = isAvailable
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3455,6 +3806,7 @@ struct SportHourRule: Hashable, Codable {
         case dailyLimit
         case dailyLimitHours
         case dailyMaxHours
+        case isAvailable
     }
 
     init(from decoder: Decoder) throws {
@@ -3487,6 +3839,7 @@ struct SportHourRule: Hashable, Codable {
             [.total, .totalRequired, .totalRequiredHours, .requiredHours],
             fallback: courseRequired + generalRequired
         )
+        isAvailable = try container.decodeIfPresent(Bool.self, forKey: .isAvailable) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
@@ -3495,6 +3848,7 @@ struct SportHourRule: Hashable, Codable {
         try container.encode(courseRequired, forKey: .courseRequired)
         try container.encode(generalRequired, forKey: .generalRequired)
         try container.encode(dailyLimit, forKey: .dailyLimit)
+        try container.encode(isAvailable, forKey: .isAvailable)
     }
 
     /// Rejects values that would break progress math: a non-finite number or a
@@ -3621,6 +3975,14 @@ struct AppUpdateRequirement: Equatable {
 enum BNBUAppVersion {
     static var current: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    /// iOS release enforcement is numeric and server-authoritative. Marketing
+    /// version text is never substituted when CFBundleVersion is unavailable.
+    static var currentBuildNumber: Int? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              let value = Int(raw), value > 0 else { return nil }
+        return value
     }
 
     /// Marketing version with the build number, for the settings and changelog pages.

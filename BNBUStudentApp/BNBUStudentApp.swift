@@ -49,10 +49,11 @@ struct BNBUStudentApp: App {
             state.enforcesCheckInTimeWindow = false
         }
 #endif
-        if arguments.contains("-ui-testing-authenticated") {
+#if DEBUG
+        if LocalDemoAccess.permitsMockWorkspace,
+           arguments.contains("-ui-testing-authenticated") {
             state.demoLogin()
         }
-#if DEBUG
         if arguments.contains("-ui-testing-completed-exercise") {
             state.installCompletedExerciseSessionForUITesting()
         }

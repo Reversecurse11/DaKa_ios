@@ -1,89 +1,44 @@
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
-const iosRoot = path.resolve(scriptDirectory, "..");
-const workspaceRoot = path.resolve(iosRoot, "..", "..");
-const backendRoot = process.env.BNBU_BACKEND_ROOT
-  ? path.resolve(process.env.BNBU_BACKEND_ROOT)
-  : path.join(workspaceRoot, "BNBU-Sports-Android", "backend");
+// The P0 flow audit owns the detailed session, record, media, exemption,
+// authentication and atomic-join assertions. Importing it makes this wider iOS
+// gate fail whenever that contract-critical audit fails.
+await import("./p0-contract-flow-audit.mjs");
+await import("./r02-source-audit.mjs");
 
-function read(relativePath) {
-  return fs.readFileSync(path.join(iosRoot, relativePath), "utf8");
-}
+const iosRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = join(iosRoot, "..");
+const normalizeLF = (value) => value.replace(/\r\n?/gu, "\n");
+const read = (path) => normalizeLF(readFileSync(path, "utf8"));
+const authoritativePath = join(repoRoot, "docs", "backend-contracts", "openapi.yaml");
+const snapshotPath = join(iosRoot, "openapi", "openapi.snapshot.yaml");
+const metadataPath = join(iosRoot, "openapi", "contract.json");
+const expectedVersion = "3.0.0-contract";
+const expectedHash = "020594cb6c0dc220bf96f30326a04144cb8081ec44f56bc8b3746ea4001ace4f";
 
-function requireText(source, expected, label) {
-  if (!source.includes(expected)) {
-    throw new Error(`${label}: missing ${JSON.stringify(expected)}`);
-  }
-  console.log(`PASS ${label}`);
-}
-
-function requireAnyText(source, candidates, label) {
-  if (!candidates.some((candidate) => source.includes(candidate))) {
-    throw new Error(`${label}: missing any of ${JSON.stringify(candidates)}`);
-  }
-  console.log(`PASS ${label}`);
-}
-
-function requireOrder(source, sequence, label) {
-  let cursor = 0;
-  for (const expected of sequence) {
-    const found = source.indexOf(expected, cursor);
-    if (found < 0) {
-      throw new Error(`${label}: ${JSON.stringify(expected)} missing or out of order`);
-    }
-    cursor = found + expected.length;
-  }
-  console.log(`PASS ${label}`);
-}
-
-function requireCount(source, expected, minimum, label) {
-  const count = source.split(expected).length - 1;
-  if (count < minimum) {
-    throw new Error(`${label}: expected at least ${minimum} occurrences of ${JSON.stringify(expected)}, found ${count}`);
-  }
-  console.log(`PASS ${label}`);
-}
-
-function rejectText(source, forbidden, label) {
-  if (source.includes(forbidden)) {
-    throw new Error(`${label}: found forbidden ${JSON.stringify(forbidden)}`);
-  }
-  console.log(`PASS ${label}`);
-}
-
-function rejectPattern(source, forbidden, label) {
-  if (forbidden.test(source)) {
-    throw new Error(`${label}: matched forbidden ${forbidden}`);
-  }
-  console.log(`PASS ${label}`);
-}
-
-function swiftFiles(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const fullPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) return swiftFiles(fullPath);
-    return entry.isFile() && entry.name.endsWith(".swift") ? [fullPath] : [];
+function filesRecursively(directory, extension) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = join(directory, entry.name);
+    if (entry.isDirectory()) return filesRecursively(fullPath, extension);
+    return entry.isFile() && entry.name.endsWith(extension) ? [fullPath] : [];
   });
 }
 
-function assertBalancedSwiftDelimiters(filePath) {
-  const source = fs.readFileSync(filePath, "utf8");
+function assertBalancedSwift(source, label) {
   const expectedCloser = { "(": ")", "[": "]", "{": "}" };
   const opening = new Set(Object.keys(expectedCloser));
   const closing = new Set(Object.values(expectedCloser));
   const stack = [];
   let state = "code";
   let blockDepth = 0;
-
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     const next = source[index + 1];
-    const nextTwo = source.slice(index, index + 3);
-
+    const nextThree = source.slice(index, index + 3);
     if (state === "line-comment") {
       if (character === "\n") state = "code";
       continue;
@@ -105,7 +60,7 @@ function assertBalancedSwiftDelimiters(filePath) {
       continue;
     }
     if (state === "multiline-string") {
-      if (nextTwo === '\"\"\"') {
+      if (nextThree === '\"\"\"') {
         state = "code";
         index += 2;
       }
@@ -122,7 +77,7 @@ function assertBalancedSwiftDelimiters(filePath) {
       index += 1;
       continue;
     }
-    if (nextTwo === '\"\"\"') {
+    if (nextThree === '\"\"\"') {
       state = "multiline-string";
       index += 2;
       continue;
@@ -134,746 +89,244 @@ function assertBalancedSwiftDelimiters(filePath) {
     if (opening.has(character)) stack.push(character);
     if (closing.has(character)) {
       const opener = stack.pop();
-      if (!opener || expectedCloser[opener] !== character) {
-        throw new Error(`Unbalanced delimiter in ${filePath} near character ${index}`);
-      }
+      assert.equal(expectedCloser[opener], character, `${label} has an unbalanced delimiter`);
     }
   }
+  assert.equal(blockDepth, 0, `${label} has an unterminated block comment`);
+  assert.equal(stack.length, 0, `${label} has an unterminated delimiter`);
+  assert.ok(!source.includes("<<<<<<<"), `${label} contains a merge-conflict marker`);
+}
 
-  if (state === "block-comment" || state === "string" || state === "multiline-string" || stack.length > 0) {
-    throw new Error(`Unterminated Swift token in ${filePath}: state=${state}, stack=${stack.join("")}`);
+const authoritative = read(authoritativePath);
+const snapshot = read(snapshotPath);
+const metadata = JSON.parse(read(metadataPath));
+const actualHash = createHash("sha256").update(snapshot).digest("hex");
+assert.equal(snapshot, authoritative, "iOS OpenAPI snapshot LF-canonical content differs from monorepo authority");
+assert.equal(metadata.contractVersion, expectedVersion);
+assert.equal(metadata.sha256, expectedHash);
+assert.equal(metadata.byteLength, 348350);
+assert.equal(Buffer.byteLength(snapshot, "utf8"), metadata.byteLength);
+assert.equal(actualHash, expectedHash);
+assert.match(authoritative, /version:\s*3\.0\.0-contract\b/);
+
+const appRoot = join(iosRoot, "BNBUStudentApp");
+const testRoot = join(iosRoot, "BNBUStudentTests");
+const uiTestRoot = join(iosRoot, "BNBUStudentUITests");
+const appSwiftFiles = filesRecursively(appRoot, ".swift");
+const testSwiftFiles = filesRecursively(testRoot, ".swift");
+const uiTestSwiftFiles = filesRecursively(uiTestRoot, ".swift");
+for (const file of [...appSwiftFiles, ...testSwiftFiles, ...uiTestSwiftFiles]) {
+  assertBalancedSwift(read(file), file);
+}
+
+const appSources = appSwiftFiles.map(read).join("\n");
+assert.doesNotMatch(
+  appSources,
+  /["'](?:auth\/login|sport\/|student\/(?:profile|courses|workspace|grades|physical-test-exemptions|checkin-exemptions)|upload\/proof|common\/notifications)/,
+  "retired route literal remains in app source"
+);
+assert.doesNotMatch(appSources, /import\s+CoreLocation/);
+assert.doesNotMatch(appSources, /ExerciseLocationProvider/);
+
+const remote = read(join(appRoot, "Core", "RemoteStudentRepository.swift"));
+for (const route of [
+  "auth/student-sign-in-codes",
+  "auth/student-sign-in-codes/verify",
+  "course-invites/\\(tokenPath)/preview",
+  "course-invites/\\(tokenPath)/join-capabilities",
+  "course-invites/\\(tokenPath)/join",
+  "me/email-verification-challenges",
+  "auth/logout",
+  "exercise-sessions",
+  "exercise-records",
+  "media-uploads",
+  "exemption-applications",
+  "system-mode",
+  "app-release-policy",
+  "help-articles",
+  "feedback",
+]) {
+  assert.ok(remote.includes(route), `missing current-contract route ${route}`);
+}
+for (const retiredRoute of [
+  'get("health")',
+  'get("config/minimum-app-version")',
+  'get("common/help-articles")',
+  'post(\n            "scoring/convert-endurance"',
+]) {
+  assert.ok(!remote.includes(retiredRoute), `retired runtime route remains: ${retiredRoute}`);
+}
+
+// Every literal request made through the repository HTTP helpers must resolve
+// to an operation in the authoritative OpenAPI. The signed object-storage
+// upload intentionally bypasses these helpers and is the sole external-URL
+// exception. Dynamic session actions are constrained to the three explicit
+// contract operations below rather than treated as an arbitrary wildcard.
+const openapiOperations = [];
+let activePath = null;
+for (const line of authoritative.split(/\r?\n/u)) {
+  const pathMatch = line.match(/^  (\/[^:]+):\s*$/u);
+  if (pathMatch) {
+    activePath = pathMatch[1];
+    continue;
   }
-  rejectText(source, "<<<<<<<", `No merge-conflict marker in ${path.basename(filePath)}`);
+  const methodMatch = line.match(/^    (get|post|put|patch|delete):\s*$/u);
+  if (activePath && methodMatch) {
+    openapiOperations.push({ method: methodMatch[1].toUpperCase(), path: activePath });
+  }
 }
 
-const remote = read("BNBUStudentApp/Core/RemoteStudentRepository.swift");
-const models = read("BNBUStudentApp/Core/Models.swift");
-const theme = read("BNBUStudentApp/Core/Theme.swift");
-const appState = read("BNBUStudentApp/Core/AppState.swift");
-const localStore = read("BNBUStudentApp/Core/AppLocalStore.swift");
-const credentialStore = read("BNBUStudentApp/Core/SecureCredentialStore.swift");
-const components = read("BNBUStudentApp/Features/Components.swift");
-const loginView = read("BNBUStudentApp/Features/LoginView.swift");
-const profileView = read("BNBUStudentApp/Features/ProfileView.swift");
-const coursesView = read("BNBUStudentApp/Features/CoursesView.swift");
-const courseJoinViews = read("BNBUStudentApp/Features/CourseJoinViews.swift");
-const checkinView = read("BNBUStudentApp/Features/CheckInView.swift");
-const gradesView = read("BNBUStudentApp/Features/GradesView.swift");
-const dashboardView = read("BNBUStudentApp/Features/DashboardView.swift");
-const releaseInfoPlist = read("BNBUStudentApp/Resources/Info.plist");
-const debugInfoPlist = read("BNBUStudentApp/Resources/Info-Debug.plist");
-const privacyManifest = read("BNBUStudentApp/Resources/PrivacyInfo.xcprivacy");
-const releaseValidator = read("scripts/validate-release-config.sh");
-const macReleaseGate = read("scripts/run-macos-release-gate.sh");
-const modelTests = read("BNBUStudentTests/BNBUStudentModelTests.swift");
-const project = read("BNBUStudent.xcodeproj/project.pbxproj");
-const appSources = swiftFiles(path.join(iosRoot, "BNBUStudentApp"))
-  .map((file) => fs.readFileSync(file, "utf8"))
-  .join("\n");
-const openapiPath = path.join(backendRoot, "openapi", "openapi.yaml");
+const literalRuntimeCalls = [...remote.matchAll(/\b(get|post|patch|put)\s*\(\s*"((?:\\.|[^"\\])*)"/gsu)]
+  .map((match) => ({ method: match[1].toUpperCase(), path: match[2] }));
+const paginatedRuntimeCalls = [...remote.matchAll(
+  /\bgetAllContractPages\s*\(\s*[A-Za-z][A-Za-z0-9.]*,\s*path:\s*"((?:\\.|[^"\\])*)"/gsu,
+)].map((match) => ({ method: "GET", path: match[1] }));
+const runtimeCalls = [...literalRuntimeCalls, ...paginatedRuntimeCalls];
+const uniqueRuntimeCalls = new Set(runtimeCalls.map(({ method, path }) => `${method} ${path}`));
+assert.equal(runtimeCalls.length, 52, "unexpected number of iOS literal HTTP call sites");
+assert.equal(uniqueRuntimeCalls.size, 44, "unexpected number of unique iOS literal HTTP operations");
 
-if (!fs.existsSync(openapiPath)) {
-  throw new Error(`Backend OpenAPI not found: ${openapiPath}`);
-}
-const openapi = fs.readFileSync(openapiPath, "utf8");
+const normalizeRuntimePath = (path) => `/${path}`
+  .replace(/\\\((?:[^()]|\([^()]*\))*\)/gu, "{runtimeValue}")
+  .replace(/\/{2,}/gu, "/");
+const matchesContractPath = (runtimePath, contractPath) => {
+  const runtimeSegments = runtimePath.split("/");
+  const contractSegments = contractPath.split("/");
+  return runtimeSegments.length === contractSegments.length && runtimeSegments.every((segment, index) => {
+    const contractSegment = contractSegments[index];
+    if (segment === "{runtimeValue}") return /^\{[^}]+\}$/u.test(contractSegment);
+    return segment === contractSegment;
+  });
+};
+const hasOperation = (method, path) => openapiOperations.some((operation) =>
+  operation.method === method && matchesContractPath(path, operation.path)
+);
+const internalTestToolOperations = new Set([
+  "GET /internal/test-tools/capabilities",
+  "POST /internal/test-tools/exercise-sessions/{runtimeValue}/advance-duration",
+]);
+const observedInternalTestToolOperations = new Set();
 
-for (const swiftFile of swiftFiles(path.join(iosRoot, "BNBUStudentApp")).concat(swiftFiles(path.join(iosRoot, "BNBUStudentTests")))) {
-  assertBalancedSwiftDelimiters(swiftFile);
-}
-console.log("PASS Swift source delimiters are structurally balanced");
-
-requireText(remote, 'http://123.207.5.70:82/api/v1', "Debug targets the current IP:82 /api/v1 server");
-rejectText(remote, "123.207.5.70:3333", "Obsolete iOS API port is absent from runtime source");
-requireText(remote, '"role": "student"', "Student login explicitly requests the student role");
-requireText(remote, '"clientType": "mobile"', "Student login identifies the mobile client");
-
-const workspaceEndpoints = [
-  "sport/summary",
-  "student/profile",
-  "student/courses",
-  "student/grades",
-  "sport/records",
-  "sport/identity",
-  "common/notifications",
-  "student/physical-test-exemptions"
-];
-for (const endpoint of workspaceEndpoints) {
-  // getIfBusinessReady wraps get() for endpoints that may return
-  // configuration-pending business errors (r19: CHECKIN_SETTING_REQUIRED etc).
-  requireAnyText(
-    remote,
-    [`get("${endpoint}")`, `getIfBusinessReady("${endpoint}")`],
-    `Workspace requests ${endpoint}`
+for (const call of runtimeCalls) {
+  if (call.path.includes("\\(action)")) {
+    for (const action of ["pause", "resume", "finish"]) {
+      const expanded = normalizeRuntimePath(call.path.replace("\\(action)", action));
+      assert.ok(hasOperation(call.method, expanded), `iOS runtime call missing from OpenAPI: ${call.method} ${expanded}`);
+    }
+    continue;
+  }
+  const normalizedPath = normalizeRuntimePath(call.path);
+  const normalizedOperation = `${call.method} ${normalizedPath}`;
+  if (internalTestToolOperations.has(normalizedOperation)) {
+    observedInternalTestToolOperations.add(normalizedOperation);
+    assert.ok(
+      !hasOperation(call.method, normalizedPath),
+      `internal test-tool route must not enter the public OpenAPI: ${normalizedOperation}`
+    );
+    continue;
+  }
+  assert.ok(
+    hasOperation(call.method, normalizedPath),
+    `iOS runtime call missing from OpenAPI: ${call.method} ${normalizedPath}`
   );
-  requireText(openapi, `/${endpoint}:`, `OpenAPI publishes ${endpoint}`);
 }
-
-for (const endpoint of ["/auth/login:", "/scoring/convert-endurance:", "/upload/proof:"]) {
-  requireText(openapi, endpoint, `OpenAPI publishes ${endpoint.slice(1, -1)}`);
-}
-
-requireText(remote, "StudentCoursesPayload", "Course-list response has a dedicated decoder");
-requireText(remote, "StudentGradesPayload", "Grades response has a dedicated decoder");
-
-// New business model: no task publishing, no review states. The legacy
-// CourseTask/ReviewStatus chain and the check-in supplement flow are removed.
-rejectText(appSources, "struct CourseTask", "Legacy CourseTask model is removed");
-rejectText(appSources, "enum TaskStatus", "Legacy TaskStatus model is removed");
-rejectText(appSources, "enum ReviewStatus", "Legacy ReviewStatus model is removed");
-rejectText(appSources, "submissionTask(for", "Legacy submissionTask API is removed");
-rejectText(appSources, 'get("student/tasks")', "iOS no longer requests the removed task list");
-rejectText(appSources, 'getIfBusinessReady("student/tasks")', "iOS no longer requests the removed task list defensively");
-rejectText(remote, '"taskId"', "Check-in submission no longer sends a task reference");
-rejectText(remote, "supplementCheckIn", "The check-in supplement route is removed");
-requireText(models, "enum RecordValidity", "Records use the valid/invalid model");
-requireText(models, "case \"invalid\", \"INVALID\", \"无效\", \"rejected\", \"REJECTED\", \"被驳回\", \"已驳回\":", "Legacy review states map deterministically onto validity");
-requireText(models, "var invalidReason: String?", "Invalid records surface the teacher-provided reason");
-requireText(models, "struct CheckInSubmission", "Check-in submissions have a validated value type");
-requireText(appState, "func validatedSubmission(creditType: CreditType, courseId: String?, hours: Double)", "Submission validation is centralized and fail-closed");
-requireText(appState, "guard creditType != .organizationOffset else { return nil }", "Organization offsets can never be student-submitted");
-requireText(appState, "func submissionContext(for session: ExerciseSession)", "Submission context derives from the completed exercise session");
-requireText(remote, "record.representsCompleteServerRecord", "MutationResult cannot masquerade as a complete record");
-requireText(remote, "application.representsCompleteServerApplication", "MutationResult cannot masquerade as a complete exemption");
-requireText(coursesView, "$0.isCurrent && !$0.isAwaitingEnrollmentReview", "Current courses use the backend scope flag and exclude pending applications");
-rejectText(coursesView, "currentSemesterKey", "Course scope no longer depends on an English semester label");
-
-rejectText(appState, "max(hours, 0.5)", "Submission hours cannot produce backend-invalid 0.5h values");
-requireText(appState, "hours == 1 || hours == 2", "Submission hours are restricted to the 1h/2h API enum");
-requireText(appState, 'TimeZone(identifier: "Asia/Shanghai")', "Daily submission guard uses the backend business timezone");
-requireText(appState, ".withFractionalSeconds", "Daily submission guard parses backend fractional ISO timestamps");
-requireText(models, "static let maxRequestBytes = 120_000_000", "Check-in proof batch enforces the 120MB request limit");
-requireText(models, "enum ExemptionProofRule", "Physical exemptions have a dedicated proof rule");
-requireText(models, "static let maxAttachmentCount = 5", "Physical exemptions enforce the five-proof API limit");
-requireText(models, "static let maximumCombinedReasonLength = 2_000", "Physical exemption reason enforces the 2000-character API limit");
-requireText(models, "static let maximumDescriptionLength = 200", "Check-in note enforces the 200-character business rule (stricter than the 2000-character API limit)");
-requireText(models, "struct ExercisePause", "Exercise sessions record every pause/resume instant");
-requireText(models, "static let maximumPauseBeforeAutoEnd: TimeInterval = 6 * oneHour", "A pause over six hours auto-ends the session");
-requireText(models, "wallClock - paused", "Paused time never counts toward exercise duration");
-requireText(models, "static let maximumPhotoDrafts = 6", "In-session photo drafts cap at six");
-requireText(checkinView, "ExerciseCameraCaptureButton", "Check-in proofs are captured through the camera-only flow");
-rejectText(checkinView, "PhotosPicker", "Check-in proofs cannot be picked from the photo library");
-rejectText(checkinView, "ProofAttachmentPanel", "Check-in no longer uses the album-capable proof panel");
-requireText(models, "请填写运动说明", "The sport note is required for all check-ins (Q&A 7/23 Q5)");
-requireText(checkinView, "您已完成两小时打卡", "Two-hour completion uses the confirmed prompt copy (Q&A 7/23 Q7)");
-requireText(checkinView, "你确定要结束本次运动吗？", "Ending exercise passes the 5.6 anti-mistap confirmation");
-requireText(checkinView, "运动时长未满 1 小时", "Under-one-hour ends surface the 5.6 notice after confirmation");
-// Check-in page parity with the Android baseline (Android_PICTURE 22/24).
-requireText(checkinView, 'Text("运动打卡")', "The check-in tab keeps its Android page title");
-requireText(checkinView, 'case submit = "运动"', "The check-in segments read 运动/记录 as on Android");
-requireText(checkinView, 'Text("本次运动")', "The preparation page keeps the Android section header");
-requireText(checkinView, "CheckInCategorySelector", "Category selection uses Android's paired buttons, not a sliding pill");
-requireText(checkinView, 'Text("有效运动时长")', "The running timer keeps its Android caption");
-requireText(checkinView, "sessionStatRow", "The timer card carries Android's three-up 开始/预计学时/现场凭证 row");
-requireText(checkinView, 'Text("现场凭证")', "Evidence lives in its own card as on Android");
-requireText(checkinView, 'title: "现场拍照"', "Photo capture is its own button as on Android");
-requireText(checkinView, 'title: "现场录像"', "Video capture is its own button as on Android");
-requireText(models, "static let maximumVideoDrafts", "The video counter is backed by an explicit cap");
-requireText(checkinView, "struct SportTypeSelector", "The sport picker stays a dedicated component");
-requireText(checkinView, "struct CourseSportRow", "A course-related session states the course's sport instead of offering a choice");
-requireText(checkinView, "selectedCategory == .courseRelated, let sport = boundCourseSport", "The sport grid is withheld once the course names its sport");
-requireText(models, "var sportType: ExerciseSportType?", "A course carries the sport its section is taught as");
-requireText(checkinView, "ExerciseSportType.gridOptions", "Every sport is offered at once in the grid");
-rejectText(checkinView, "查看更多运动项目", "The sport grid is never collapsed behind a 'show more' link");
-requireText(models, "case tableTennis", "The sport list covers all eight Android options");
-requireText(
-    read("BNBUStudentApp/Features/AppRootView.swift"),
-    'case grades = "运动进度"',
-    "The fourth tab is labelled 运动进度 as on Android"
+assert.deepEqual(
+  observedInternalTestToolOperations,
+  internalTestToolOperations,
+  "the exact iOS internal test-tool route inventory changed"
 );
-
-// Courses, profile and exemption parity with the Android baseline
-// (Android_PICTURE 1/8).
-requireText(coursesView, 'title: "本学期"', "The courses list keeps Android's 本学期 section header");
-requireText(coursesView, "currentCourseCountLabel", "The section header carries Android's course count on the trailing edge");
-requireText(coursesView, "enrolmentHeadline", "The page header states how many courses are in progress, as on Android");
-requireText(coursesView, "courseFactLine", "Course cards list teacher and term as icon rows, not a fact grid");
-rejectText(coursesView, "CourseFact(", "Course cards no longer use the 2x2 fact grid Android does not have");
-requireText(profileView, 'title: "常用服务"', "The profile services block keeps Android's 常用服务 heading");
-requireText(profileView, "ProfileServiceTile", "The two service entries render as Android's side-by-side tiles");
-requireText(profileView, 'title: "体育免测与免打卡申请"', "The exemption centre keeps Android's full page title");
-requireText(profileView, "校队或社团免打卡须填写组织名称", "The exemption notes keep Android's team/club paragraph");
-requireText(gradesView, "reviewNote", "Exemption cards show the review note in Android's callout block");
-requireText(models, "var proofCountSummary", "Exemption cards surface Android's uploaded-file count line");
-
-// Course detail, records, settings and memberships parity with the Android
-// baseline (Android_PICTURE 232654 / 232702 / 232916 / 232922).
-const detailViews = read("BNBUStudentApp/Features/DetailViews.swift");
-const settingsViews = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
-requireText(detailViews, "CourseDetailFactRow", "Course detail lists Android's four divided fact rows");
-requireText(detailViews, 'label: "开课学期"', "Course detail states the term the class is offered in");
-requireText(detailViews, "recordCountLabel", "The related-records heading carries Android's trailing count");
-rejectText(detailViews, "我的课程相关进度", "Course detail drops the progress card Android does not show there");
-requireText(detailViews, "RecordFact(", "Record cards use Android's start/end/duration/credited grid");
-requireText(detailViews, 'label: "运动凭证"', "Record cards summarise evidence as a line, as on Android");
-requireText(models, "var startedAt: String?", "Records carry session timings once the server sends them");
-requireText(theme, "static let displayOrder: [BNBUAppearanceMode]", "Appearance modes list 浅色/深色/跟随系统 as on Android");
-requireText(settingsViews, "BNBUAppearanceMode.displayOrder", "Settings renders the appearance modes in Android's order");
-requireText(components, "BNBUGroupLabel", "Settings group headings exist");
-requireText(models, "var validUntilText", "Membership expiry prints as a written date, as on Android");
-
-requireText(models, "enum CheckInTimeWindowRule", "The daily open window rule (3.3) exists client-side");
-requireText(appState, "CheckInTimeWindowRule.canStartExercise", "Starting a session is gated by the daily open window");
-requireText(appState, "session.locationStatus == .unavailable", "A location fix never overwrites an earlier one");
-
-// Course join application (business rule 4.2)
-requireText(models, "enum CourseEnrollmentStatus", "Course enrolment carries an approval state (4.2)");
-requireText(models, "static let backwardCompatibleDefault = CourseEnrollmentStatus.approved", "Servers predating 4.2 keep their existing course relationships");
-requireText(models, "var allowsCheckIn: Bool { enrollmentStatus == .approved }", "Only an approved enrolment can back a check-in");
-requireText(models, "enum CourseJoinCodeRule", "Invite codes have a client-side rule");
-requireText(models, "static func code(fromScannedPayload payload: String)", "Course QR payloads resolve to an invite code");
-requireText(appState, "func lookupCourseInvite(rawCode: String)", "An invite code resolves to a course before the student applies");
-requireText(appState, "func submitCourseJoinRequest(", "Students can submit a course join application");
-// Joining precedes sign-in: the application is what creates the relationship,
-// so it must not be gated on an account.
-rejectText(appState, "请先登录后再提交课程加入申请。", "A join application is filed before the student has an account");
-requireText(courseJoinViews, "struct CourseJoinConfirmView", "The invite is confirmed on its own page before identity details are typed");
-requireText(courseJoinViews, "courseJoinConfirm.submit", "The confirmation page submits the application");
-requireText(models, "enum CourseJoinRequestRule", "Name and student number are validated client-side");
-// Registration binds both contacts: a reinstalled app signs back in with a
-// code, so an unreachable student must never reach the teacher's queue.
-requireText(models, "enum ContactBindingRule", "Contact binding has client-side rules");
-requireText(models, "enum ContactChannel", "Phone and email are bound as named channels");
-requireText(courseJoinViews, "struct ContactBindingView", "Contact binding is its own step in the join flow");
-requireText(courseJoinViews, ").sendCode\")", "Binding a contact sends a verification code");
-requireText(courseJoinViews, "ContactBindingRule.resendInterval", "The send button waits out the server's resend window");
-requireText(appState, "请先完成手机号和邮箱绑定。", "An application without both contacts bound is refused");
-requireText(modelTests, "testCourseJoinRequestRequiresBothContactsBound", "XCTest covers the contact-binding gate");
-requireText(modelTests, "testContactBindingChecksFormatAndCodeBeforeAccepting", "XCTest covers contact and code validation");
-requireText(modelTests, "testBoundContactsAreShownMasked", "XCTest covers masking bound contacts");
-
-// Support pages the lead asked to finish while the backend is still building.
-const feedbackViews = read("BNBUStudentApp/Features/FeedbackViews.swift");
-const contactManagementViews = read("BNBUStudentApp/Features/ContactManagementViews.swift");
-requireText(models, "enum FeedbackRule", "Feedback input limits live with the other rules");
-requireText(models, "enum FeedbackCategory", "The eight Android feedback categories exist");
-requireText(feedbackViews, "screen.feedback", "The feedback page is reachable, not a greyed-out row");
-requireText(feedbackViews, "FeedbackRule.maximumScreenshots", "Screenshots stop at the documented maximum");
-requireText(feedbackViews, "screen.feedbackSubmitted", "A filed report confirms with its ticket number");
-requireText(contactManagementViews, "screen.contactManagement", "Settings can manage bound contacts");
-requireText(contactManagementViews, "allowsReplacement: true", "A verified contact can be replaced from Settings");
-requireText(models, "case team = \"校队免打卡\"", "A team check-in exemption is applicable");
-requireText(models, "case club = \"社团免打卡\"", "A club check-in exemption is applicable");
-requireText(models, "static func selectableItems(gender:", "Only the gender-matched endurance run is offered");
-requireText(gradesView, "exemption.organization.field", "A check-in exemption asks which organization it is claimed through");
-requireText(gradesView, "ExemptionTypeSelector", "The exemption type grid replaces the locked row");
-requireText(appState, "请填写校队或社团名称", "A check-in exemption cannot be filed without its organization");
-requireText(remote, "student/checkin-exemptions", "Check-in exemptions post to their own collection");
-const settingsSource = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
-rejectText(settingsSource, "验证码登录接口发布后开放", "The contact row is no longer greyed out");
-rejectText(settingsSource, "反馈工单接口发布后开放", "The feedback row is no longer greyed out");
-requireText(loginView, "appState.signInWithCode", "Verification-code sign-in submits instead of reporting a stub");
-requireText(loginView, "verification.sendCode", "Requesting a sign-in code is its own control");
-requireText(loginView, "screen.recoverySubmitted", "A filed recovery request confirms what happens next");
-rejectText(loginView, "验证码登录接口尚未接入 iOS", "The sign-in stub notice is gone");
-rejectText(loginView, "账号恢复接口尚未接入 iOS", "The recovery stub notice is gone");
-requireText(models, "struct CourseInvite", "An invite lookup has its own model");
-requireText(loginView, "login.joinRequest.entry", "The sign-in screen reports an application under review");
-requireText(modelTests, "testCourseJoinRequestIsFiledBeforeSignIn", "XCTest covers filing an application without an account");
-requireText(modelTests, "testCourseJoinRequestRequiresANameAndStudentNumber", "XCTest covers the identity form rules");
-requireText(modelTests, "testCourseJoinRequestSurvivesRelaunchBeforeSignIn", "XCTest covers the pre-sign-in application cache");
-requireText(appState, "$0.isCurrent && $0.allowsCheckIn", "A pending course is never selected as the exercise course");
-requireText(appState, "workspace.courses.contains(where: { $0.id == courseId && $0.allowsCheckIn })", "Course-related submissions revalidate the approved enrolment");
-requireText(courseJoinViews, "CourseQRScannerView", "Course joining offers a QR scanning entry");
-requireText(courseJoinViews, "AVCaptureMetadataOutput", "The QR entry reads codes through live capture");
-requireText(courseJoinViews, "case .unavailable:", "The QR entry degrades gracefully without a camera");
-rejectText(coursesView, "courses.join.entry", "Joining a course is offered on the sign-in screen only");
-rejectText(coursesView, "JoinRequestEntryPanel", "The courses page lists courses, not join applications");
-rejectText(dashboardView, "JoinRequestEntryPanel", "The dashboard lists no join application entry");
-rejectText(dashboardView, "dashboard.join.scan", "The dashboard offers no scan entry");
-requireText(loginView, "扫码加入课程", "The sign-in screen keeps the only join entry");
-rejectText(loginView, "login.password.route", "Students are not offered account-and-password sign-in");
-requireText(coursesView, "PendingEnrollmentCard", "Pending applications render as their own state");
-requireText(modelTests, "testPendingEnrollmentBlocksExerciseStartAndSubmission", "Pending enrolments are proven not to produce check-ins");
-
-// Teacher-configurable hour targets (business rule 4.4)
-requireText(appState, "var hourRule: SportHourRule { workspace.hourRule }", "Hour targets follow the server rather than a client constant (4.4)");
-requireText(models, "var hourRule: SportHourRule", "The workspace carries the published hour targets");
-requireText(models, "decodeIfPresent(SportHourRule.self, forKey: .hourRule) ?? .standard", "Caches written before 4.4 still decode");
-requireText(models, "guard value.isFinite, value >= 0 else { return nil }", "Unusable hour targets never reach the progress math");
-requireText(remote, "hourRule: summary?.hourRule ?? .standard", "Remote workspaces adopt the published hour targets");
-requireText(modelTests, "testWorkspaceCachedBeforeHourTargetsStillDecodes", "Hour-target rollout is proven not to reset local caches");
-
-// Student-visible grade content (业务流程 v6.0 §1.4 + Android GradesScreen.kt).
-// The student sees the endurance-run outcome and check-in hour completion, and
-// nothing else: component names, weights, weighted contributions and the total
-// are teacher-side grading rules.
-requireOrder(
-  gradesView,
-  ["completionHeader", "EnduranceRunCard(", "CheckInHoursCard("],
-  "The grades page keeps the baseline block order"
-);
-rejectText(gradesView, "resolvedComponents", "The grades page no longer fabricates a breakdown");
-rejectText(gradesView, "GradeWeightFormatter", "The grades page no longer renders weights");
-rejectText(gradesView, "weightedTotal", "The grades page no longer renders a weighted estimate");
-rejectText(gradesView, "grades.total", "The grades page no longer renders an overall total");
-rejectText(gradesView, "showsComponents", "Grade-state visibility no longer gates the student view");
-rejectText(models, "GradeComponent(key: \"checkin\"", "No client-side default breakdown is invented (§1.4)");
-requireText(gradesView, "status == .exempt || status == .absent", "Only an exemption or an absence shows a teacher-assigned score");
-requireText(gradesView, "status == .absent ? 0 : score", "An absence always displays as zero");
-requireText(models, "enum EnduranceRunStatus", "The endurance-run outcome is an explicit four-state model");
-requireText(models, "init(serverValue: String?, timeSeconds: Int?)", "An unknown endurance status degrades to what the duration implies");
-requireText(models, "let enduranceRunScore: Int?", "The teacher-assigned endurance score is carried");
-requireText(models, "var rawCourse: Double", "Course hours carry their pre-offset value (§2.1)");
-requireText(models, "let gradeCalculatedAt: String", "The grade recalculation timestamp is carried");
-requireText(modelTests, "testEnduranceRunStatusSeparatesExemptionAbsenceAndNoEntry", "Endurance-run states are covered by XCTest");
-requireText(modelTests, "testProgressCarriesRawHoursForBothCategories", "Offsettable course hours are covered by XCTest");
-requireText(modelTests, "testGradePayloadKeepsTeacherRulesOutOfTheStudentView", "Teacher grading rules are proven to stay out of the student view");
-// Grade slices and the pipeline state still decode because the server sends
-// them; the Android baseline keeps them in the model and renders neither.
-requireText(models, "struct GradeComponent", "Grade slices remain a server-driven model");
-requireText(models, "enum CourseGradeState", "The course grading pipeline still decodes")
-
-// Dashboard block order follows the Android baseline DashboardScreen.kt, which
-// keeps today's decision above longer-term progress.
-requireOrder(
-  dashboardView,
-  [
-    "header",
-    "todayCheckInPanel",
-    "ExerciseResumePanel(session:",
-    "progressOverview",
-    "progressBreakdown"
-  ],
-  "Dashboard blocks keep the baseline order"
-);
-requireText(dashboardView, "if hasActiveEnrollment {", "Today's check-in panel needs an approved enrolment");
-requireText(dashboardView, "CheckInTimeWindowRule.canStartExercise(at: date)", "The dashboard reuses the check-in window rule rather than its own copy");
-rejectText(appSources, "startUpdatingLocation", "Location is a one-shot fix, never continuous tracking");
-requireText(debugInfoPlist, "NSLocationWhenInUseUsageDescription", "Debug build declares the when-in-use location purpose");
-requireText(releaseInfoPlist, "NSLocationWhenInUseUsageDescription", "Release build declares the when-in-use location purpose");
-rejectText(debugInfoPlist + releaseInfoPlist, "NSLocationAlwaysAndWhenInUseUsageDescription", "Background location is never requested");
-requireText(gradesView, "maxAttachmentCount: ExemptionProofRule.maxAttachmentCount", "Exemption picker stops at five proofs");
-requireText(appState, "guard ExemptionProofRule.accepts(proofAttachments)", "Exemption submission revalidates its proof contract");
-requireText(remote, "guard attachment.uploadData != nil || attachment.sourceFileURL != nil", "Uploads require original bounded Data or the selected local file rather than a thumbnail");
-rejectText(remote, "attachment.uploadData ?? attachment.thumbnailData", "Thumbnail data cannot be uploaded as original evidence");
-rejectText(remote, 'path: "checkins/', "Frozen v1 upload never falls back to a legacy checkins path");
-rejectText(remote, "尚未部署凭证上传接口", "404 errors do not expose a stale deployment diagnosis");
-
-requireText(credentialStore, "import Security", "Credentials use Keychain Services");
-requireText(credentialStore, "kSecAttrAccessibleWhenUnlockedThisDeviceOnly", "Keychain credentials are device-only and require unlock");
-requireText(credentialStore, "kSecAttrSynchronizable", "Keychain explicitly controls synchronization");
-requireText(credentialStore, "kCFBooleanFalse", "Credential synchronization is disabled");
-rejectText(remote, "UserDefaults.standard.set(accessToken", "Access tokens are not written to UserDefaults");
-requireText(remote, "credentialStore.set(Data(accessToken.utf8)", "Access tokens are persisted through secure storage");
-requireText(remote, "legacyAccessTokenDefaultsKey", "Legacy plaintext token storage is migrated");
-
-rejectText(remote, 'url(for: "auth/logout")', "Frozen v1 logout performs no unsupported network call");
-rejectText(remote, 'url(for: "auth/refresh")', "Frozen v1 performs no unsupported token refresh");
-rejectText(openapi, "/auth/logout:", "OpenAPI confirms there is no server logout endpoint");
-rejectText(openapi, "/auth/refresh:", "OpenAPI confirms there is no refresh endpoint");
-requireText(remote, "func logout() -> Bool", "Repository logout is deterministic local cleanup");
-requireText(remote, "authenticationEpoch &+= 1", "Authentication responses are generation-guarded");
-requireText(remote, "guard loginEpoch == authenticationEpoch", "A late login response cannot restore a logged-out session");
-requireText(appState, "func logout() async", "App logout waits for local secure-store cleanup");
-requireText(appState, "localStore.clearRemoteWorkspace", "Logout and expiry clear the active account cache");
-requireText(appState, "localStore.clearDraft()", "Logout and expiry clear unsubmitted drafts");
-
-requireText(appState, "@MainActor\nfinal class AppState", "Observable UI state is MainActor isolated");
-requireText(remote, "actor RemoteStudentRepository", "Network session mutation is actor isolated");
-requireText(appState, "isRefreshingWorkspace", "Workspace refreshes are single-flight guarded");
-requireText(appState, "InFlightMutationGate", "Mutation requests have a reusable duplicate-submission gate");
-requireText(appState, 'let mutationKey = "submit-exemption"', "Exemption submissions have a single-flight guard");
-requireText(appState, 'let mutationKey = "supplement-exemption:', "Exemption supplements have an identity-scoped guard");
-requireText(models, "enum IdempotencyKeyPolicy", "iOS defines the backend idempotency-key policy");
-requireText(models, '"ios-\\(UUID().uuidString.lowercased())"', "iOS mutation attempts receive a valid unique key");
-requireText(models, "struct PendingRemoteMutationAttempt", "Pending mutations retain their logical-attempt identity");
-requireText(models, "let serverIdentity: String", "Pending mutations are server scoped");
-requireText(models, "let studentID: String", "Pending mutations are account scoped");
-requireText(models, "let requestFields: [String: String]", "Pending mutations persist their canonical request fields");
-requireText(models, "let sourceProofs: [ProofAttachment]", "Pending mutations persist stable source-proof identity");
-requireText(models, "private struct PersistedSourceProof", "Source-proof recovery uses a restricted persisted representation");
-requireText(models, "private struct PersistedUploadedProof", "Uploaded-proof recovery uses canonical COS references");
-requireText(models, '!trimmed.contains("://")', "Pending source-proof persistence strips signed and local URLs");
-requireText(models, "thumbnailData: nil", "Pending mutation references omit thumbnails");
-requireText(models, "uploadData: nil", "Pending mutation references omit original bytes");
-requireText(models, "let contentDigest: String?", "Local proof identity survives protected draft persistence");
-requireText(models, "try container.encodeIfPresent(contentDigest", "Proof content identity is persisted without original bytes");
-requireText(models, "for (position, attachment) in attachments.enumerated()", "Mutation fingerprints preserve attachment order");
-requireText(models, "append(String(position), to: &input)", "Mutation fingerprints encode only the stable attachment position");
-requireText(models, "append(attachment.contentDigest ??", "Mutation fingerprints use the persisted proof content identity");
-for (const metadataAppend of [
-  "append(attachment.id",
-  "append(attachment.type",
-  "append(attachment.fileName",
-  "append(attachment.byteCount",
-  "append(attachment.durationSeconds",
-  "append(attachment.source",
-  "append(attachment.cosKey",
-  "append(attachment.mimeType",
+for (const scopedMediaInitiationPath of [
+  "/media-uploads",
+  "/exemption-applications/{runtimeValue}/media-uploads",
 ]) {
-  rejectText(models, metadataAppend, `Mutation fingerprint excludes attachment metadata ${metadataAppend}`);
+  assert.ok(
+    hasOperation("POST", scopedMediaInitiationPath),
+    `iOS scoped media initiation route missing from OpenAPI: POST ${scopedMediaInitiationPath}`
+  );
 }
-requireText(models, "enum ProofContentDigest", "Proof content hashing has a single auditable implementation");
-requireText(models, "static let streamingChunkBytes = 1_048_576", "File proof hashing has a bounded one-megabyte buffer");
-requireText(models, "let handle = try FileHandle(forReadingFrom: fileURL)", "File proof hashing reads from the original local URL");
-requireText(models, "handle.read(upToCount: chunkSize)", "File proof hashing is chunked instead of whole-file Data");
-requireText(models, "hasher.update(data: chunk)", "Every streamed proof chunk feeds incremental SHA-256");
-requireText(models, "return hasher.finalize().hexString", "Streamed proof hashing returns canonical SHA-256");
-requireText(models, "var sourceFileURL: URL? = nil", "Large proof uploads keep a transient local file URL");
-rejectText(models, "case sourceFileURL", "Transient proof file URLs are never Codable persistence fields");
-requireText(models, "var pendingRemoteMutation: PendingRemoteMutationAttempt?", "Check-in drafts persist ambiguous mutation attempts");
-requireText(appState, 'let scope = "sport-record:create"', "Check-in creation resolves a stable logical attempt");
-requireText(appState, '"exemption:create:physical-test"', "Exemption creation resolves a stable logical attempt");
-requireText(appState, '"exemption:create:check-in"', "A check-in exemption retries under its own scope");
-requireText(appState, 'let scope = "exemption:supplement:', "Exemption supplements resolve a stable logical attempt");
-requireText(appState, "for index in attempt.uploadedProofs.count..<sourceProofs.count", "Check-in retry skips proofs already uploaded to COS");
-requireCount(appState, "idempotencyKey: attempt.idempotencyKey", 3, "AppState passes its stable key to all three remote mutations");
-requireText(localStore, 'pendingMutationStorageKey = "bnbu.student.remote.mutations.v1"', "Pending attempts have a dedicated protected journal");
-requireText(localStore, "readPendingRemoteMutations", "Pending attempt journal is restored on launch");
-requireText(localStore, "savePendingRemoteMutations", "Pending attempt journal is durably updated");
-requireText(localStore, "clearPendingRemoteMutations", "Pending attempt journal has explicit cleanup");
-requireText(localStore, "return defaults.data(forKey: key) == data", "Defaults-backed journal writes are verified by exact read-back");
-requireText(localStore, "shouldFailRemoval", "Pending-journal removal failures are injectable for behavior tests");
-requireText(localStore, "guard shouldFailRemoval?(key) != true else { return false }", "Injected removal failures return a strict failure signal");
-requireText(appState, "localStore.readPendingRemoteMutations()", "AppState restores all pending mutation scopes at startup");
-requireText(appState, "clearAllPendingRemoteMutations()", "Session boundaries discard durable mutation attempts");
-requireText(appState, "sanitizePersistedRemoteMutations", "Persisted mutation attempts are validated after login");
-requireText(appState, "attempt.serverIdentity == remoteMutationServerIdentity", "Restored attempts reject another server");
-requireText(appState, "attempt.studentID == studentID", "Restored attempts reject another account");
-requireText(appState, "RemoteMutationJournalPolicy.shouldRetain(after: error)", "All three flows use one phase-independent journal error policy");
-requireText(appState, "try storePendingRemoteMutation(attempt)", "Remote writes require a confirmed durable attempt");
-requireText(appState, "throw RemoteMutationJournalError.writeFailed", "Journal persistence fails closed before further network writes");
-requireText(appState, "if attempt.isServerConfirmed", "Server-confirmed entries dispatch to cleanup-only recovery");
-requireCount(appState, "guard !attempt.isServerConfirmed else {", 3, "All three original forms block a server-confirmed mutation before network work");
-requireText(appState, "retainServerConfirmedAttemptInMemory(attempt)", "Failed success-marker cleanup remains visibly server-confirmed");
-requireText(appState, "pendingRemoteMutations[attempt.scope] = previous", "Failed journal writes roll back the published in-memory attempt");
-requireText(models, "case finalMutationPrepared", "The journal records preparation immediately before a final mutation");
-requireText(models, "case serverConfirmed", "The journal distinguishes server success from ambiguous completion");
-requireText(models, "mutating func markServerConfirmed", "All successful flows can enter the cleanup-only state");
-requireText(appState, "try removePendingRemoteMutationStrict(scope: scope)", "Deterministic failures clear only their affected scope");
-requireText(appState, "canResumePendingCheckIn", "A fully uploaded persisted attempt can resume without original bytes");
-requireText(appState, "pendingExemptionFormRecovery", "Exemption forms can recover their persisted payload and proof identity");
-requireText(appState, "canResumePendingExemption", "Exemption retries can continue without original bytes after all uploads completed");
-requireText(appState, "func discardPendingRemoteMutation(scope: String)", "Every pending scope exposes a safe explicit discard API");
-requireText(appState, "func canRetryPendingRemoteMutation(scope: String)", "Every pending scope exposes readiness for a user-triggered retry");
-requireText(appState, "func retryPendingRemoteMutation(scope: String) async", "Every pending scope has a journal-backed retry dispatcher");
-requireText(profileView, 'SectionTitle(eyebrow: "RECOVERY", title: "本地恢复操作")', "Profile enumerates mutation recovery and cleanup state");
-requireText(profileView, "appState.pendingRemoteMutationSummaries", "Profile lists all pending scopes");
-requireText(profileView, "appState.retryPendingRemoteMutation(scope:", "Profile exposes user-triggered retry for every ready scope");
-requireText(profileView, 'summary.isServerConfirmed ? "仅清理本地标记" : "继续安全重试"', "Profile labels server-confirmed recovery as local cleanup only");
-requireText(profileView, "appState.discardPendingRemoteMutation(scope:", "Profile exposes per-scope discard");
-requireText(profileView, '"放弃这次待重试操作？"', "Per-scope discard requires destructive confirmation");
-requireText(remote, "case serverError(statusCode: Int, code: String?, message: String)", "Server mutation errors preserve HTTP status and API code");
-requireCount(remote, ".serverError(statusCode: statusCode, code: error.code, message: error.message)", 2, "Both backend error envelopes preserve API codes");
-requireText(remote, 'statusCode == 409 && normalizedCode.hasPrefix("IDEMPOTENCY_")', "Every backend IDEMPOTENCY_* conflict retains the logical attempt");
-requireText(remote, "[408, 425, 429].contains(statusCode)", "Timeout, Too Early and rate-limit responses retain the logical attempt");
-requireText(remote, 'request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")', "Repository sends the stable Idempotency-Key header");
-requireText(remote, '"student/physical-test-exemptions"', "Exemptions use the canonical physical-test route");
-requireText(remote, '"student/physical-test-exemptions/\\(application.id)/supplements"', "Exemption supplements use the canonical route");
-requireText(openapi, "/student/physical-test-exemptions/{id}/supplements:", "OpenAPI publishes canonical exemption supplements");
-rejectText(remote, 'post("student/exemptions"', "iOS no longer writes through the deprecated exemption route");
-rejectText(remote, 'get("student/exemptions")', "iOS no longer lists through the deprecated exemption route");
-requireText(models, "case supplementRequired", "Supplement-required exemption state remains distinct");
-requireText(models, "case expired", "Expired exemption state remains distinct");
-requireText(models, "var canSupplement: Bool", "Exemption supplement eligibility is explicit");
-requireText(gradesView, "if application.status.canSupplement", "Only actionable exemptions expose the supplement button");
-requireText(gradesView, 'Label("补充材料"', "iOS exposes the exemption supplement action");
-requireText(profileView, ".sheet(item: $supplementApplication)", "The exemption center presents the supplement form");
-rejectText(gradesView, "免测接口暂不支持补材料", "Stale unsupported-supplement copy is removed");
-requireText(components, "@MainActor\n    final class Coordinator", "UIKit camera callbacks are MainActor isolated");
+assert.ok(remote.includes('initiatePath = "media-uploads"'));
+assert.ok(
+  remote.includes(
+    'initiatePath = "exemption-applications/\\(try Self.pathComponent(exemptionApplicationId))/media-uploads"'
+  )
+);
 
-requireText(localStore, ".completeFileProtection", "Student caches use complete file protection");
-requireText(localStore, "FileProtectionType.complete", "Protected storage applies NSFileProtectionComplete");
-requireText(localStore, "isExcludedFromBackup = true", "Student caches are excluded from cloud backup");
-requireText(localStore, "SHA256.hash", "Account/server cache filenames do not reveal identifiers");
-requireText(localStore, "clearRemoteWorkspace", "A single account cache can be erased on logout");
-requireText(remote, "makeProtectedMultipartBodyFile", "Multipart uploads use protected temporary files");
-requireText(remote, "fromFile: bodyFileURL", "Large uploads stream from a file instead of duplicating request Data");
-requireText(remote, "defer { try? FileManager.default.removeItem(at: bodyFileURL) }", "Multipart files are deleted after every upload result");
-requireText(remote, "removeStaleUploadFiles", "Crash-leftover multipart files are cleaned on repository startup");
-requireText(remote, "attachment.uploadData != nil || attachment.sourceFileURL != nil", "Proof upload accepts bounded Data or a file-backed source");
-requireText(remote, "FileHandle(forReadingFrom: sourceFileURL)", "Large multipart bodies stream from the local proof file");
-requireText(remote, "sourceHandle.read(upToCount: ProofContentDigest.streamingChunkBytes)", "Multipart file copying is also bounded");
-requireText(remote, "ProofTransientFileStore.removeStaleCopies()", "Crash-leftover local proof copies are removed on startup");
-requireText(components, "struct ImportedProofFile: Transferable", "PhotosPicker imports large proofs as file representations");
-requireText(components, "FileRepresentation(importedContentType: .movie)", "Photo-library videos remain file-backed");
-requireText(components, "let digest = try ProofContentDigest.sha256(fileURL: fileURL)", "Photo-library file identity uses streaming SHA-256");
-requireText(components, "let digest = try ProofContentDigest.sha256(fileURL: protectedURL)", "Camera video identity uses streaming SHA-256");
-requireText(models, "attributes: [.protectionKey: FileProtectionType.complete]", "Transient proof files use complete file protection");
-requireText(models, "values.isExcludedFromBackup = true", "Transient proof files are excluded from backup");
+const nonLiteralHelperCalls = [...remote.matchAll(/\b(get|post|patch|put)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)/gu)]
+  .map((match) => `${match[1].toUpperCase()} ${match[2]}`);
+assert.deepEqual(
+  nonLiteralHelperCalls,
+  ["GET path", "POST initiatePath", "GET path"],
+  "an unaudited variable HTTP route was introduced",
+);
+assert.equal(
+  [...remote.matchAll(/getIfBusinessReady\s*\(/gu)].length,
+  1,
+  "the legacy guarded variable route must remain uncalled"
+);
+assert.ok(remote.includes('headers: ["X-Join-Capability": capability.joinCapability]'));
+assert.ok(remote.includes("for (name, value) in headers"));
+assert.ok(remote.includes("private var refreshTask: Task<Void, Error>?"));
+assert.ok(remote.includes("private func getAllContractPages<Value: Decodable & Sendable>"));
+assert.ok(remote.includes('URLQueryItem(name: "cursor", value: cursor)'));
+assert.ok(remote.includes("seenCursors.insert(nextCursor).inserted"));
 
-requireText(debugInfoPlist, "<key>NSAllowsArbitraryLoads</key>\n\t\t<false/>", "Debug ATS arbitrary network access is disabled");
-requireText(debugInfoPlist, "<key>NSAllowsLocalNetworking</key>\n\t\t<true/>", "Debug keeps local simulator networking");
-requireText(debugInfoPlist, "<key>123.207.5.70</key>", "Debug has a narrow temporary HTTP test-host exception");
-requireText(releaseInfoPlist, "<key>NSAllowsArbitraryLoads</key>\n\t\t<false/>", "Release ATS arbitrary network access is disabled");
-rejectText(releaseInfoPlist, "NSAllowsLocalNetworking", "Release does not allow local networking");
-rejectText(releaseInfoPlist, "NSExceptionDomains", "Release contains no insecure HTTP exception");
-rejectText(releaseInfoPlist, "123.207.5.70", "Release plist contains no staging host");
-rejectText(debugInfoPlist + releaseInfoPlist, "NSTemporaryExceptionAllowsInsecureHTTPLoads", "Deprecated ATS exceptions are absent");
-requireText(debugInfoPlist + releaseInfoPlist, "NSCameraUsageDescription", "Camera access has a purpose description");
-requireText(debugInfoPlist + releaseInfoPlist, "NSMicrophoneUsageDescription", "Video audio access has a purpose description");
-rejectText(debugInfoPlist + releaseInfoPlist, "NSPhotoLibraryUsageDescription", "System PhotosPicker avoids broad photo-library permission");
-rejectText(components, "PHPhotoLibrary.requestAuthorization", "Photo selection does not request full library access");
-requireText(components, ".photosPicker(", "Photo evidence uses the system privacy-preserving picker");
+const models = read(join(appRoot, "Core", "Models.swift"));
+assert.ok(models.includes("static let minimumLength = 16"));
+assert.ok(models.includes("static let maximumLength = 512"));
+assert.ok(models.includes('environment["BNBU_INVITE_URL_HOSTS"]'));
+assert.ok(models.includes("allowedURLHosts.contains(host)"));
+assert.ok(models.includes("static let maximumVideoDurationSeconds: TimeInterval = 15"));
 
-requireText(privacyManifest, "<key>NSPrivacyTracking</key>\n\t<false/>", "Privacy manifest declares no tracking");
-requireText(privacyManifest, "NSPrivacyAccessedAPICategoryUserDefaults", "Privacy manifest declares UserDefaults required-reason API");
-requireText(privacyManifest, "CA92.1", "UserDefaults access has the app-only required reason");
-for (const dataType of ["UserID", "Fitness", "PhotosorVideos", "OtherUserContent", "SensitiveInfo", "PreciseLocation"]) {
-  requireText(privacyManifest, `NSPrivacyCollectedDataType${dataType}`, `Privacy manifest declares ${dataType}`);
+const captureComponents = read(join(appRoot, "Features", "ExerciseCaptureComponents.swift"));
+const sharedComponents = read(join(appRoot, "Features", "Components.swift"));
+assert.ok(captureComponents.includes("ExerciseMediaDraftRule.maximumVideoDurationSeconds"));
+assert.ok(captureComponents.includes("authorizationStatus(for: .audio)"));
+assert.ok(captureComponents.includes("requestAccess(for: .audio)"));
+assert.ok(sharedComponents.includes("picker.videoMaximumDuration = videoMaximumDuration"));
+assert.ok(!sharedComponents.includes("picker.videoMaximumDuration = 30"));
+
+const project = read(join(iosRoot, "BNBUStudent.xcodeproj", "project.pbxproj"));
+assert.ok(project.includes("StudentAPIClient.swift in Sources"));
+assert.ok(!project.includes("ExerciseLocationProvider.swift"));
+assert.ok(!project.includes("JoinRequestStatusView.swift"));
+
+const releaseInfo = read(join(appRoot, "Resources", "Info.plist"));
+const debugInfo = read(join(appRoot, "Resources", "Info-Debug.plist"));
+const privacyManifest = read(join(appRoot, "Resources", "PrivacyInfo.xcprivacy"));
+const privacyPolicyEnglish = read(join(appRoot, "Resources", "privacy_policy_en.md"));
+const privacyPolicyChinese = read(join(appRoot, "Resources", "privacy_policy_zh_cn.md"));
+for (const plist of [releaseInfo, debugInfo]) {
+  assert.ok(plist.includes("BNBUOrganizationCode"));
+  assert.ok(plist.includes("BNBUInviteURLHosts"));
+  assert.doesNotMatch(plist, /NSLocation(?:WhenInUse|Always)/);
 }
-
-rejectText(debugInfoPlist + releaseInfoPlist, "CFBundleURLTypes", "No custom URL-scheme deep-link surface is registered");
-rejectText(project, "com.apple.developer.associated-domains", "No unreviewed universal-link entitlement is enabled");
-rejectText(appSources, ".onOpenURL", "App has no implicit deep-link handler");
-
-rejectPattern(appSources, /(^|[^A-Za-z0-9_])print\s*\(/m, "Runtime source does not print sensitive values");
-rejectText(appSources, "NSLog(", "Runtime source does not use unredacted NSLog");
-requireText(remote, 'return BNBUL10n.text("服务器未能处理该请求，请检查提交内容或稍后重试。")', "Unknown backend errors are sanitized before display");
-requireText(theme, "enum BNBUL10n", "Client-generated messages resolve through the app-language helper");
-requireText(theme, 'ofType: "lproj"', "The language helper loads the language-specific bundle for translations");
-
-requireText(project, 'INFOPLIST_FILE = "BNBUStudentApp/Resources/Info-Debug.plist";', "Debug uses the debug-only ATS plist");
-requireText(project, "INFOPLIST_FILE = BNBUStudentApp/Resources/Info.plist;", "Release uses the hardened plist");
-requireText(project, 'BNBU_API_BASE_URL = "https://configuration-required.invalid/api/v1";', "Release starts with an explicit non-shippable API placeholder");
-requireText(project, "Validate Release Configuration", "Xcode runs the Release configuration gate");
-requireText(releaseValidator, 'if [ "${CONFIGURATION:-}" != "Release" ]', "Release validator leaves Debug builds untouched");
-requireText(releaseValidator, "configuration-required.invalid", "Release validator rejects the placeholder host");
-requireText(releaseValidator, "*/api/v1", "Release validator enforces the frozen API prefix");
-requireText(macReleaseGate, "set -Eeuo pipefail", "Mac Release gate fails closed on shell errors");
-for (const step of [
-  "preflight",
-  "static_audit",
-  "debug_clean_build",
-  "xctest",
-  "xcuitest",
-  "release_build_unsigned",
-  "release_analyze_unsigned"
-]) {
-  requireText(macReleaseGate, step, `Mac Release gate records ${step}`);
-}
-requireText(macReleaseGate, "write_summary_with_bash", "Mac Release gate can write its summary without Node");
-requireText(macReleaseGate, "command -v node", "Mac Release gate selects the available JSON writer safely");
-requireText(macReleaseGate, "BNBU_IOS_RELEASE_GATE_RESULT", "Mac Release gate emits a machine-readable final marker");
-requireText(macReleaseGate, "summary.json", "Mac Release gate persists a machine-readable summary");
-requireText(macReleaseGate, "validate_release_api_url", "Mac Release gate validates the formal API URL before building");
-requireText(macReleaseGate, 'url.protocol !== "https:"', "Mac Release gate requires HTTPS for formal builds");
-requireText(macReleaseGate, "CODE_SIGNING_ALLOWED=NO", "Mac Release gate supports unsigned CI build and analysis");
-requireText(macReleaseGate, "only-testing:BNBUStudentTests", "Mac Release gate executes the XCTest target");
-requireText(macReleaseGate, "only-testing:BNBUStudentUITests", "Mac Release gate executes the XCUITest target");
-requireText(macReleaseGate, "redact_release_url_from_log", "Mac Release gate redacts the formal API URL from logs");
-requireText(project, "COPY_PHASE_STRIP = YES;", "Release strips copied symbols");
-requireText(project, "STRIP_INSTALLED_PRODUCT = YES;", "Release strips the installed product");
-requireText(project, 'SWIFT_OPTIMIZATION_LEVEL = "-O";', "Release enables Swift optimization");
-
-requireText(components, 'accessibilityLabel("删除凭证 \\(attachment.fileName)")', "Proof deletion has a descriptive VoiceOver label");
-requireText(components, ".accessibilityElement(children: .combine)", "Status rows expose combined VoiceOver context");
-requireText(loginView, '.accessibilityLabel("学号或邮箱")', "Login account field has an explicit accessibility label");
-requireText(gradesView, '.accessibilityLabel("情况说明")', "Exemption detail editor has an explicit accessibility label");
-requireText(
-  read("BNBUStudentApp/Features/ProfileDetailViews.swift"),
-  '"退出登录？"',
-  "Logout requires user confirmation"
+assert.doesNotMatch(
+  privacyManifest,
+  /NSPrivacyCollectedDataType(?:Precise|Coarse)Location/,
+  "privacy manifest must not declare location while the app does not collect it"
 );
+assert.ok(privacyPolicyEnglish.includes("does not request location permission, collect coordinates"));
+assert.ok(privacyPolicyChinese.includes("不调用 Core Location，不读取、保存或上传经纬度"));
+JSON.parse(read(join(appRoot, "Resources", "InfoPlist.xcstrings")));
+JSON.parse(read(join(appRoot, "Resources", "Localizable.xcstrings")));
 
-for (const sourceName of [
-  "RemoteStudentRepository.swift",
-  "SecureCredentialStore.swift",
-  "AppLocalStore.swift",
-  "Models.swift",
-  "AppState.swift",
-  "CoursesView.swift",
-  "GradesView.swift",
-  "AppShellViews.swift",
-  "ProfileDetailViews.swift",
-  "JoinRequestStatusView.swift"
-]) {
-  requireText(project, sourceName, `Xcode project contains ${sourceName}`);
-}
+const modelTests = read(join(testRoot, "BNBUStudentModelTests.swift"));
+assert.ok(modelTests.includes("testLegacyPhoneCodeSignInFailsClosed"));
+assert.ok(modelTests.includes("testLegacyCourseJoinRequestNeverCreatesTeacherApprovalState"));
+assert.ok(modelTests.includes("testLegacyPendingCourseJoinCacheIsIgnoredOnRelaunch"));
+assert.ok(modelTests.includes("testExerciseSessionNeverCollectsLocation"));
+assert.ok(modelTests.includes("testExerciseVideoCaptureUsesAcceptedFifteenSecondLimit"));
+assert.ok(modelTests.includes("testCursorListsDrainEveryPageWithoutRepeatingTheFirstCursor"));
+assert.doesNotMatch(modelTests, /XCTAssertTrue\([^\n]*(?:submitCourseJoinRequest|sendLoginCode|signInWithCode|sendContactVerificationCode|verifyContactCode|submitRecoveryRequest)/);
+assert.doesNotMatch(modelTests, /attachExerciseSessionLocation/);
 
-// Appearance and hour formatting: two defects found in the 29 July demo.
-const appEntryPoint = read("BNBUStudentApp/BNBUStudentApp.swift");
-requireText(
-  appEntryPoint,
-  "appearanceMode.applyToWindows()",
-  "The appearance mode is applied to the window so presented sheets repaint too"
-);
-rejectText(
-  appEntryPoint,
-  "preferredColorScheme(appearanceMode.colorScheme)",
-  "The root does not set preferredColorScheme, which never reaches a presented sheet"
-);
-const featureSources = swiftFiles(path.join(iosRoot, "BNBUStudentApp", "Features"))
-  .map((file) => fs.readFileSync(file, "utf8"))
-  .join("\n");
-rejectText(
-  featureSources,
-  ".hourText",
-  "Views format hours through localizedHourText so a Chinese UI never shows \"4h\""
-);
-// A pinned strip of the page background reads as a black line across whatever
-// scrolls under it, because the dark background token is pure black while the
-// cards are #1C1C1E.
-rejectText(
-  featureSources,
-  "BNBUTheme.background.frame(height:",
-  "No page-background strip is pinned over scrolling content"
-);
+const uiTests = read(join(uiTestRoot, "BNBUStudentSmokeUITests.swift"));
+assert.doesNotMatch(uiTests, /BNBU_TEST_PASSWORD|ui-testing-login-password/);
+assert.ok(uiTests.includes("testLocalRealLoginFlow"));
+assert.ok(uiTests.includes("testLocalRealCheckInSubmitAndReadBackFlow"));
+assert.ok(uiTests.includes("testLocalRecordsShowExpectedNote"));
+assert.ok(uiTests.includes("waitForLocalMailpitCode"));
+assert.ok(uiTests.includes('"http://127.0.0.1:13000/api/v1"'));
+assert.ok(uiTests.includes('"http://127.0.0.1:18025"'));
 
-// Startup gates (Android `AuthUiState`): restore, privacy consent, first-launch
-// course guide, then sign-in.
-const appShellViews = read("BNBUStudentApp/Features/AppShellViews.swift");
-const profileDetailViews = read("BNBUStudentApp/Features/ProfileDetailViews.swift");
-const joinRequestStatusView = read("BNBUStudentApp/Features/JoinRequestStatusView.swift");
-
-requireOrder(
-  appShellViews,
-  ["case restoring", "case privacyConsent", "case preLoginGuide", "case login", "case authenticated"],
-  "The app shell keeps Android's startup gate order"
-);
-requireText(
-  appShellViews,
-  "guard BNBUDevicePrivacyConsent.hasAccepted(defaults: defaults) else {",
-  "Privacy consent is a gate ahead of sign-in, not a login-form checkbox"
-);
-// Resolving the stage one frame late swapped the root view under the tab bar,
-// which dropped the accessibility identifiers on its items.
-requireText(
-  read("BNBUStudentApp/BNBUStudentApp.swift"),
-  "initialValue: AppShellStage.resolved(",
-  "The startup destination is resolved before the first frame"
-);
-requireText(
-  appShellViews,
-  'record["version"] as? String == currentVersion',
-  "Consent records the policy version so a new policy re-asks"
-);
-// The disclosure must describe what this app actually does; Android's copy
-// names Firebase and promises no microphone, neither of which is true here.
-rejectText(appShellViews, "Firebase", "The iOS consent summary does not claim Firebase messaging");
-requireText(appShellViews, "麦克风记录声音", "The iOS consent summary discloses microphone use during video capture");
-requireText(
-  appState,
-  "localStore.saveCourseJoinRequest(request)",
-  "A join application filed before sign-in survives a relaunch"
-);
-
-// Settings, account details, about, and the changelog are separate pages.
-requireText(profileView, '.accessibilityIdentifier("profile.settings.button")', "The profile header exposes the settings gear");
-requireText(profileView, '.accessibilityIdentifier("profile.accountDetails.button")', "The profile header card opens account details");
-rejectText(profileView, "private var settingsPanel", "The profile tab no longer inlines the settings block");
-requireOrder(
-  profileDetailViews,
-  ["accountSecurityPanel", "preferencesPanel", "helpAndSupportPanel", "logoutCard"],
-  "The settings page keeps Android's group order"
-);
-requireText(models, "Bundle.main.infoDictionary", "The about page reads the real bundle version");
-requireText(profileDetailViews, "BNBUAppVersion.displayName", "The about page shows the resolved bundle version");
-
-// Post-enrolment walkthrough (Android `PostEnrollmentGuideScreen`): four pages
-// about running one exercise session, not a feature tour.
-const studentExperienceViews = read("BNBUStudentApp/Features/StudentExperienceViews.swift");
-requireText(studentExperienceViews, 'Text("运动指引")', "The walkthrough keeps Android's title");
-requireCount(studentExperienceViews, "OnboardingPage(", 4, "The walkthrough has Android's four pages");
-requireOrder(
-  studentExperienceViews,
-  ["开始一次运动", "记录运动过程", "提交并查看记录", "需要时提交申请"],
-  "The walkthrough keeps Android's page order"
-);
-requireText(studentExperienceViews, "onboarding.skip", "The walkthrough can be skipped from any page");
-requireText(studentExperienceViews, "onboarding.finish", "The last page enters the workspace");
-requireText(studentExperienceViews, "onboarding.back", "Pages past the first can step back");
-
-// Help centre (Android `HelpCenterScreen`): articles come from the administrator
-// endpoint, the last result is cached, and a failure is retryable rather than
-// silently empty.
-requireText(remote, '"common/help-articles"', "Help articles are read from the published help endpoint");
-requireText(models, "struct HelpArticle", "A published help article has its own type");
-requireText(models, "static func displayOrdered(", "Articles follow the administrator's sort order");
-requireText(models, "var isDisplayable: Bool", "An article without a title or body is dropped instead of rendered empty");
-requireText(appState, "func refreshHelpArticles() async", "The help centre loads its content from the repository");
-requireText(appState, "localStore.saveHelpArticles(fetched)", "The last successful help payload is cached for offline use");
-requireText(appState, "帮助内容暂时无法加载，请稍后重试。", "A help failure without a cache says so instead of showing an empty page");
-requireText(studentExperienceViews, '.task { await appState.refreshHelpArticles() }', "Opening the help centre asks for the latest articles");
-requireText(studentExperienceViews, '"help.retry"', "A failed help load can be retried from the page");
-requireText(studentExperienceViews, '"help.cached-notice"', "A cached help copy is labelled as such");
-requireText(studentExperienceViews, '"help.articles-empty"', "Published-but-empty help content has its own state");
-requireText(studentExperienceViews, '"help.loading"', "The help centre shows progress while loading");
-requireText(modelTests, "testHelpArticlesArriveInAdministratorOrderAndAreCachedForNextTime", "XCTest covers help ordering and caching");
-requireText(modelTests, "testHelpArticleFailureFallsBackToTheCachedCopyAndSaysSo", "XCTest covers the cached help fallback");
-requireText(modelTests, "testHelpArticleFailureWithoutACacheReportsARetryableError", "XCTest covers the retryable help failure");
-
-// Availability policy (Android `SystemMode`, `MaintenancePage`, banners) and the
-// minimum-version gate. The health fields stay optional during the backend
-// rollout, so a missing field must leave the app usable.
-requireText(models, "enum SystemMode", "The server's availability policy has its own type");
-requireText(models, 'case "READ_ONLY", "READONLY": return .readOnly', "Both server spellings of read-only are accepted");
-requireText(models, "var blocksWrites: Bool", "Read-only and maintenance are known to block writes");
-requireText(appState, "func refreshSystemStatus() async", "The shell asks for the availability policy at startup");
-requireText(appState, "系统当前处于维护模式，暂不能提交或修改内容。", "A blocked write says the system is under maintenance");
-requireText(appState, "系统当前处于只读模式，暂不能提交或修改内容。", "A blocked write says the system is read-only");
-requireCount(appState, "guard allowWrite()", 7, "Every write path passes the availability gate");
-requireText(appShellViews, "screen.maintenance", "Maintenance replaces the shell instead of dimming it");
-requireText(appShellViews, "banner.readOnly", "Read-only mode is announced above the shell");
-requireText(appShellViews, "banner.plannedMaintenance", "A planned maintenance window is announced ahead of time");
-requireText(appShellViews, "screen.updateRequired", "A build below the minimum is blocked by an update page");
-requireText(models, "static func requirement(", "The minimum-version comparison lives with the rules");
-requireText(remote, '"config/minimum-app-version"', "The minimum version is read from the published configuration");
-requireText(remote, 'get("health")', "The availability policy is read from the health endpoint");
-requireText(checkinView, "guard appState.isWriteAllowed", "A read-only server disables check-in submission");
-requireText(feedbackViews, "feedback.readOnlyNotice", "The feedback form says why it cannot be submitted");
-requireText(gradesView, "appState.isWriteAllowed", "A read-only server disables exemption submission");
-requireText(modelTests, "testSystemModeParsesEveryServerSpellingAndBlocksWrites", "XCTest covers availability parsing");
-requireText(modelTests, "testReadOnlyModeRefusesEveryWriteAndSaysWhy", "XCTest covers the read-only write gate");
-requireText(modelTests, "testMinimumVersionOnlyBlocksBuildsBelowTheRequirement", "XCTest covers the version gate");
-rejectText(profileDetailViews, "BNBU Student MVP 1.0", "No hard-coded version string reaches the about page");
-
-// Join-request status: four server states, with correction kept apart from
-// rejection because only one of them is actionable by the student.
-requireText(joinRequestStatusView, "case .needsCorrection:", "The join-request page handles the correction state");
-requireText(joinRequestStatusView, "case .active:", "An approved request leaves the status page");
-requireText(joinRequestStatusView, "onApproved()", "An approved request reports back instead of rendering a fifth state");
-requireText(modelTests, "testJoinRequestStatusKeepsCorrectionApartFromRejection", "XCTest covers join-request status decoding");
-requireText(modelTests, "testDevicePrivacyConsentIsVersionedAndSatisfiesTheLoginForm", "XCTest covers device-level consent versioning");
-requireText(modelTests, "testWorkspaceCacheKeepsJoinRequestAndToleratesOlderCaches", "XCTest covers join-request cache compatibility");
-
-// Opening a notice marks it read, which removes it from the unread filter; the
-// pushed detail must not depend on that row.
-rejectText(dashboardView, "simultaneousGesture(TapGesture()", "Notice rows do not race navigation against mark-as-read");
-requireText(dashboardView, "navigationDestination(item: $openedNotice)", "The notice detail is pushed from a captured copy");
-requireText(project, "PrivacyInfo.xcprivacy in Resources", "Xcode copies the privacy manifest into the app");
-
-requireText(modelTests, "testCurrentBackendStudentWorkspacePayloadsDecode", "XCTest covers current workspace payload shapes");
-requireText(modelTests, "testRecordValidityMapsLegacyReviewStatesOntoValidInvalid", "XCTest covers legacy review-state mapping onto validity");
-requireText(modelTests, "testMutationResultsAreNotMistakenForCompleteDomainObjects", "XCTest covers mutation-result classification");
-requireText(modelTests, "testStudentProgressWithoutIdentityFailsClosedToEmptyIdentifier", "XCTest covers missing progress identity without a hard-coded student fallback");
-requireText(modelTests, "testSubmissionHoursAlwaysMatchBackendOneOrTwoHourContract", "XCTest covers the hours enum");
-requireText(modelTests, "testDailySubmissionBoundaryUsesChinaTimeAndFractionalISODate", "XCTest covers the China-time daily boundary");
-requireText(modelTests, "testExemptionProofRuleStopsAtFiveBackendReferences", "XCTest covers exemption proof count");
-requireText(modelTests, "testExemptionReasonMatchesBackendLengthContract", "XCTest covers exemption reason length");
-requireText(modelTests, "testCheckInDescriptionStopsAboveTwoHundredCharacters", "XCTest covers check-in description length");
-requireText(modelTests, "testPersistedLocalProofRequiresOriginalFileReselection", "XCTest covers restored proof integrity");
-requireText(modelTests, "testMembershipAndExemptionStatusDecodeCurrentNullableBackendShape", "XCTest covers nullable identity and exemption statuses");
-requireText(modelTests, "testProductionURLValidationRejectsPlaceholderAndInsecureHosts", "XCTest covers Release API URL validation");
-requireText(modelTests, "testMutationGateRejectsDuplicateInFlightOperationUntilCompletion", "XCTest covers duplicate in-flight mutation rejection");
-requireText(modelTests, "testAccessTokenMigratesFromDefaultsToDeviceCredentialStore", "XCTest covers plaintext-token migration");
-requireText(modelTests, "testLogoutIsLocalAndClearsSecureCredentialWithoutServerEndpoint", "XCTest covers local-only logout");
-requireText(modelTests, "testLogoutInvalidatesLoginResponseThatFinishesLater", "XCTest covers logout-versus-login race handling");
-requireText(modelTests, "testCourseRelatedSubmissionKeepsCourseReferenceWhileGeneralOmitsIt", "XCTest covers course references and taskId-free submission bodies");
-requireText(modelTests, "testProofUploadUsesOnlyFrozenV1EndpointAndCleansTemporaryBody", "XCTest covers the sole v1 upload path and temporary-file cleanup");
-requireText(modelTests, "testProtectedLocalStoreUsesFilesExcludedFromBackup", "XCTest covers protected file persistence");
-requireText(modelTests, "testAppStateLogoutClearsDraftAndPersistedLocalState", "XCTest covers logout cleanup of drafts and caches");
-requireText(modelTests, "testIdempotencyAttemptMatchesOnlySamePayloadAccountAndServer", "XCTest covers payload/account/server attempt isolation");
-requireText(modelTests, "testCheckInAmbiguousRetryReusesUploadedProofBodyAndIdempotencyKey", "XCTest covers restart-safe same-key, same-body retry without re-upload");
-requireText(modelTests, "testExemptionMutationsRecoverSamePayloadKeyAndUploadedReferencesAfterRestart", "XCTest covers restart-safe recovery for both exemption mutations");
-requireText(modelTests, "testAllPendingMutationScopesRoundTripWithoutRawBytesThumbnailsOrSignedURLs", "XCTest covers the safe journal representation for every scope");
-requireText(modelTests, "testPendingMutationSummariesAllowPerScopeDiscardAndLogoutCleanup", "XCTest covers per-scope discard and logout cleanup");
-requireText(modelTests, "testDeterministicClientErrorDiscardsCheckInAttemptJournal", "XCTest covers deterministic 4xx journal cleanup");
-requireText(modelTests, "testUploadStageDeterministicClientErrorClearsEachMutationScope", "XCTest covers upload-stage deterministic cleanup in all flows");
-requireText(modelTests, "testUploadStageAmbiguousNetworkErrorRetainsEachMutationScope", "XCTest covers upload-stage ambiguous retention in all flows");
-requireText(modelTests, "testInitialJournalWriteFailureBlocksUploadAndFinalMutationForAllFlows", "XCTest covers fail-closed initial journal persistence in all flows");
-requireText(modelTests, "testUploadedProofReferenceWriteFailureBlocksFinalMutationForAllFlows", "XCTest covers fail-closed proof-reference persistence in all flows");
-requireText(modelTests, "testServerConfirmedCleanupFailureNeverResubmitsAndClearsOnNextLoginForAllFlows", "XCTest covers cleanup failure, no-resubmit and later cleanup in all flows");
-requireText(modelTests, 'XCTAssertTrue(authoritativeProof.source.hasPrefix("https://"))', "XCTest verifies the authoritative signed proof URL is reloaded after restart retry success");
-requireText(modelTests, "testProofContentDigestSurvivesDraftRoundTripWithoutPersistingOriginalBytes", "XCTest covers proof fingerprint persistence and changed-byte detection");
-requireText(modelTests, "testRemoteMutationFingerprintReusesIdentityWhenSameContentIsRenamed", "XCTest covers same-content rename and metadata-stable attempt identity");
-requireText(modelTests, "testRemoteMutationFingerprintChangesWhenAttachmentBytesChange", "XCTest covers changed bytes rotating attempt identity");
-requireText(modelTests, "testProofContentDigestStreamsFileInBoundedChunks", "XCTest audits bounded multi-chunk file hashing");
-requireText(modelTests, "observedChunkSizes.allSatisfy", "XCTest asserts the streaming SHA-256 buffer ceiling");
-requireText(modelTests, "XCTAssertFalse(journalText.contains(fileURL.path))", "XCTest proves the pending journal excludes transient local proof URLs");
-requireText(modelTests, "testChangedCheckInPayloadStartsNewIdempotencyAttemptAndUploadSet", "XCTest covers changed payload receiving a new key and upload set");
-requireText(modelTests, "testCanonicalMutationRoutesCarryExplicitIdempotencyKeys", "XCTest covers all four canonical idempotent mutation routes");
-requireText(modelTests, "testIdempotencyConflictCodesRemainStructuredAndAmbiguous", "XCTest covers IDEMPOTENCY_CONFLICT and IDEMPOTENCY_KEY_REUSED retention");
-requireText(modelTests, "testAppStateSupplementsOnlyActionableExemptionStatuses", "XCTest covers exemption supplement eligibility and state transition");
-
-console.log(`PASS iOS contract audit (${openapiPath})`);
+console.log(`PASS iOS contract audit (${expectedVersion}, ${expectedHash})`);

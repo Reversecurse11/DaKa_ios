@@ -20,13 +20,6 @@ struct CoursesView: View {
                             .foregroundStyle(BNBUTheme.muted)
                     }
 
-                    if !pendingCourses.isEmpty {
-                        SectionTitle(eyebrow: "PENDING", title: "待审核课程")
-                        ForEach(pendingCourses) { course in
-                            PendingEnrollmentCard(course: course)
-                        }
-                    }
-
                     if appState.workspace.courses.isEmpty {
                         EmptyPlaceholder(
                             title: "暂无课程",
@@ -105,15 +98,9 @@ struct CoursesView: View {
         .buttonStyle(.plain)
     }
 
-    /// Applications awaiting review get their own section so they are never
-    /// mistaken for a course the student can already check in against.
-    private var pendingCourses: [Course] {
-        appState.pendingEnrollmentCourses
-    }
-
     private var currentCourses: [Course] {
         appState.workspace.courses
-            .filter { $0.isCurrent && !$0.isAwaitingEnrollmentReview }
+            .filter { $0.isCurrent && $0.allowsCheckIn }
             .sorted { $0.displayTitle < $1.displayTitle }
     }
 
@@ -135,11 +122,12 @@ struct CoursesView: View {
 
     private var historyCourses: [Course] {
         appState.workspace.courses
-            .filter { !$0.isCurrent && !$0.isAwaitingEnrollmentReview }
+            .filter { !$0.isCurrent && $0.allowsCheckIn }
             .sorted { $0.semester > $1.semester }
     }
 }
 
+#if false // QR Enrollment is directly ACTIVE; there is no approval card.
 private struct PendingEnrollmentCard: View {
     let course: Course
 
@@ -167,6 +155,7 @@ private struct PendingEnrollmentCard: View {
         }
     }
 }
+#endif
 
 private struct CourseCard: View {
     let course: Course

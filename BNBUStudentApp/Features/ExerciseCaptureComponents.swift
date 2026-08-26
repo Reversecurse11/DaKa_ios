@@ -6,6 +6,27 @@ enum ExerciseCameraCapturePurpose {
     case checkIn
     case exemption
 
+    var videoMaximumDuration: TimeInterval {
+        switch self {
+        case .checkIn:
+            return ExerciseMediaDraftRule.maximumVideoDurationSeconds
+        case .exemption:
+            return 30
+        }
+    }
+
+    func requiresMicrophone(
+        for initialCaptureMode: UIImagePickerController.CameraCaptureMode?
+    ) -> Bool {
+        guard initialCaptureMode != .photo else { return false }
+        switch self {
+        case .checkIn:
+            return true
+        case .exemption:
+            return false
+        }
+    }
+
     var unavailableMessage: String {
         switch self {
         case .checkIn:
@@ -44,6 +65,8 @@ struct ExerciseCameraCaptureButton: View {
 
     @State private var isCameraPresented = false
     @State private var activeAlert: ExerciseCameraAlert?
+    @State private var pendingAttachment: ProofAttachment?
+    @State private var retakesAfterConfirmation = false
 
     var body: some View {
         Button {
@@ -65,10 +88,38 @@ struct ExerciseCameraCaptureButton: View {
         .disabled(isDisabled)
         .accessibilityIdentifier(accessibilityIdentifier ?? "checkin.capture.camera")
         .fullScreenCover(isPresented: $isCameraPresented) {
-            CameraCapturePicker(initialCaptureMode: initialCaptureMode) { attachment in
-                onCapture(attachment)
+            CameraCapturePicker(
+                initialCaptureMode: initialCaptureMode,
+                videoMaximumDuration: purpose.videoMaximumDuration
+            ) { attachment in
+                // A camera result is not Session evidence yet. The student can
+                // still cancel or retake here; only the explicit keep action
+                // moves it into the retained evidence collection.
+                pendingAttachment = attachment
             }
             .ignoresSafeArea()
+        }
+        .sheet(item: $pendingAttachment, onDismiss: {
+            guard retakesAfterConfirmation else { return }
+            retakesAfterConfirmation = false
+            isCameraPresented = true
+        }) { attachment in
+            ExerciseCaptureConfirmationSheet(
+                attachment: attachment,
+                cancelAction: {
+                    discardPendingAttachment(attachment)
+                    pendingAttachment = nil
+                },
+                retakeAction: {
+                    discardPendingAttachment(attachment)
+                    retakesAfterConfirmation = true
+                    pendingAttachment = nil
+                },
+                keepAction: {
+                    pendingAttachment = nil
+                    onCapture(attachment)
+                }
+            )
         }
         .alert(item: $activeAlert) { alert in
             switch alert {
@@ -95,6 +146,23 @@ struct ExerciseCameraCaptureButton: View {
                     message: Text("当前设备策略不允许使用摄像头，请联系设备管理员。"),
                     dismissButton: .default(Text("好"))
                 )
+            case .microphoneDenied:
+                return Alert(
+                    title: Text("麦克风权限未开启"),
+                    message: Text("现场录像必须包含声音，需要允许 BNBU Student 使用麦克风。"),
+                    primaryButton: .default(Text("去设置")) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    },
+                    secondaryButton: .cancel(Text("取消"))
+                )
+            case .microphoneRestricted:
+                return Alert(
+                    title: Text("麦克风受系统限制"),
+                    message: Text("现场录像必须包含声音，但当前设备策略不允许使用麦克风。"),
+                    dismissButton: .default(Text("好"))
+                )
             }
         }
     }
@@ -106,12 +174,12 @@ struct ExerciseCameraCaptureButton: View {
         }
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            isCameraPresented = true
+            presentCameraAfterMicrophoneCheck()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 Task { @MainActor in
                     if granted {
-                        isCameraPresented = true
+                        presentCameraAfterMicrophoneCheck()
                     } else {
                         activeAlert = .denied
                     }
@@ -125,23 +193,132 @@ struct ExerciseCameraCaptureButton: View {
             activeAlert = .restricted
         }
     }
+
+    private func discardPendingAttachment(_ attachment: ProofAttachment) {
+        guard attachment.type == .video else { return }
+        ProofTransientFileStore.removeManagedCopy(at: attachment.sourceFileURL)
+    }
+
+    @MainActor
+    private func presentCameraAfterMicrophoneCheck() {
+        guard purpose.requiresMicrophone(for: initialCaptureMode) else {
+            isCameraPresented = true
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            isCameraPresented = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                Task { @MainActor in
+                    if granted {
+                        isCameraPresented = true
+                    } else {
+                        activeAlert = .microphoneDenied
+                    }
+                }
+            }
+        case .denied:
+            activeAlert = .microphoneDenied
+        case .restricted:
+            activeAlert = .microphoneRestricted
+        @unknown default:
+            activeAlert = .microphoneRestricted
+        }
+    }
+}
+
+/// The only editable step in the check-in evidence lifecycle. Once the
+/// student confirms retention, the attachment is persisted as Session
+/// evidence and later screens intentionally expose no exclude/delete action.
+private struct ExerciseCaptureConfirmationSheet: View {
+    let attachment: ProofAttachment
+    let cancelAction: () -> Void
+    let retakeAction: () -> Void
+    let keepAction: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space20) {
+                Text("确认保留现场凭证")
+                    .font(BNBUFont.headlineSmall)
+                    .foregroundStyle(BNBUTheme.onSurface)
+
+                Text("确认保留后，这份素材会进入本次运动的完整凭证集合，提交前不能再取消选择或删除。")
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                preview
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 240)
+                    .background(BNBUTheme.surfaceVariant)
+                    .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+
+                Spacer(minLength: BNBUSpacing.space8)
+
+                DisabledAwareButton(
+                    title: "确认保留",
+                    systemImage: "checkmark.shield.fill",
+                    isDisabled: false,
+                    accessibilityIdentifier: "checkin.capture.keep"
+                ) {
+                    keepAction()
+                }
+
+                HStack(spacing: BNBUSpacing.space12) {
+                    SecondaryActionButton(title: "重拍", systemImage: "arrow.clockwise") {
+                        retakeAction()
+                    }
+                    .accessibilityIdentifier("checkin.capture.retake")
+
+                    SecondaryActionButton(title: "放弃", systemImage: "xmark") {
+                        cancelAction()
+                    }
+                    .accessibilityIdentifier("checkin.capture.discard")
+                }
+            }
+            .padding(BNBUSpacing.screen)
+            .background(BNBUPageBackground())
+            .interactiveDismissDisabled()
+        }
+        .accessibilityIdentifier("checkin.capture.confirmation")
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        if let thumbnailData = attachment.thumbnailData,
+           let image = UIImage(data: thumbnailData) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+        } else {
+            Image(systemName: attachment.type == .video ? "video.fill" : "photo.fill")
+                .font(.system(size: 52, weight: .semibold))
+                .foregroundStyle(BNBUTheme.primary)
+        }
+    }
 }
 
 private enum ExerciseCameraAlert: Identifiable {
     case unavailable
     case denied
     case restricted
+    case microphoneDenied
+    case microphoneRestricted
 
     var id: String {
         switch self {
         case .unavailable: return "unavailable"
         case .denied: return "denied"
         case .restricted: return "restricted"
+        case .microphoneDenied: return "microphone-denied"
+        case .microphoneRestricted: return "microphone-restricted"
         }
     }
 }
 
-/// Small tinted capsule used for the session lifecycle state and the location
+/// Small tinted capsule used for the session lifecycle state and capture
 /// result, matching the pills Android puts on the trailing edge of each card.
 struct SessionStatePill: View {
     let text: String
@@ -167,7 +344,6 @@ struct SessionStatePill: View {
 /// owns selection; this only mirrors Android's "已拍摄素材" preview.
 struct ExerciseDraftThumbnailStrip: View {
     let drafts: [ExerciseMediaDraft]
-    let onDelete: (ExerciseMediaDraft) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
@@ -201,16 +377,10 @@ struct ExerciseDraftThumbnailStrip: View {
                             .font(BNBUFont.labelSmall)
                             .foregroundStyle(BNBUTheme.onSurface)
                         Spacer(minLength: 0)
-                        Button {
-                            onDelete(draft)
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(BNBUFont.labelSmall)
-                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("checkin.draft.delete.\(draft.id)")
-                        .accessibilityLabel("删除草稿 \(draft.fileName)")
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(BNBUFont.labelSmall)
+                            .foregroundStyle(BNBUTheme.tertiary)
+                            .accessibilityLabel("已确认保留")
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -232,14 +402,11 @@ struct ExerciseDraftThumbnailStrip: View {
     }
 }
 
-/// Draft picker shown in the evidence form: the student selects check-in
-/// proofs from media captured during/after the exercise. Selection is capped
-/// at 6 photos + 1 video (business rule 6.1).
+/// Read-only retained evidence shown in the final form. Capture confirmation
+/// is the last point where a student may cancel or retake; every draft in this
+/// collection is submitted and cannot be excluded here.
 struct ExerciseProofSelectionPanel: View {
     let drafts: [ExerciseMediaDraft]
-    @Binding var selectedDraftIDs: Set<String>
-    let onDelete: (ExerciseMediaDraft) -> Void
-    @State private var notice: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -251,103 +418,57 @@ struct ExerciseProofSelectionPanel: View {
                     .padding(.vertical, 6)
             } else {
                 HStack(spacing: 8) {
-                    StatusBadge(text: "已选 \(selectedImageCount) 张照片")
-                    StatusBadge(text: "已选 \(selectedVideoCount) 个视频")
+                    StatusBadge(text: "已保留 \(imageCount) 张照片")
+                    StatusBadge(text: "已保留 \(videoCount) 个视频")
                     Spacer()
                 }
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(drafts) { draft in
-                        ExerciseMediaDraftCard(
-                            draft: draft,
-                            isSelected: selectedDraftIDs.contains(draft.id),
-                            toggleAction: { toggle(draft) },
-                            deleteAction: { onDelete(draft) }
-                        )
+                        ExerciseMediaDraftCard(draft: draft)
                     }
                 }
             }
-
-            if let notice {
-                Text(notice)
-                    .font(BNBUFont.labelMedium)
-                    .foregroundStyle(BNBUTheme.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(BNBUTheme.surface)
-                    .bnbuOutlinedSurface()
-            }
         }
     }
 
-    private var selectedDrafts: [ExerciseMediaDraft] {
-        drafts.filter { selectedDraftIDs.contains($0.id) }
+    private var imageCount: Int {
+        drafts.filter { $0.type == .image }.count
     }
 
-    private var selectedImageCount: Int {
-        selectedDrafts.filter { $0.type == .image }.count
-    }
-
-    private var selectedVideoCount: Int {
-        selectedDrafts.filter { $0.type == .video }.count
-    }
-
-    private func toggle(_ draft: ExerciseMediaDraft) {
-        if selectedDraftIDs.contains(draft.id) {
-            selectedDraftIDs.remove(draft.id)
-            notice = nil
-            return
-        }
-        if draft.type == .image, selectedImageCount >= ProofUploadRule.maxImageCount {
-            notice = "最多选择 \(ProofUploadRule.maxImageCount) 张照片作为凭证。"
-            return
-        }
-        if draft.type == .video, selectedVideoCount >= ProofUploadRule.maxVideoCount {
-            notice = "最多选择 \(ProofUploadRule.maxVideoCount) 个视频作为凭证。"
-            return
-        }
-        selectedDraftIDs.insert(draft.id)
-        notice = nil
+    private var videoCount: Int {
+        drafts.filter { $0.type == .video }.count
     }
 }
 
 struct ExerciseMediaDraftCard: View {
     @Environment(\.locale) private var locale
     let draft: ExerciseMediaDraft
-    let isSelected: Bool
-    let toggleAction: () -> Void
-    let deleteAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button(action: toggleAction) {
-                ZStack(alignment: .topLeading) {
-                    thumbnail
-                        .aspectRatio(1.25, contentMode: .fit)
-                        .clipped()
-                        .bnbuOutlinedSurface()
+            ZStack(alignment: .topLeading) {
+                thumbnail
+                    .aspectRatio(1.25, contentMode: .fit)
+                    .clipped()
+                    .bnbuOutlinedSurface()
 
-                    if draft.type == .video {
-                        Image(systemName: "play.fill")
-                            .font(BNBUFont.labelMedium)
-                            .foregroundStyle(BNBUTheme.surface)
-                            .frame(width: 28, height: 28)
-                            .background(BNBUTheme.ink)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    }
-
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(BNBUFont.titleLarge)
-                        .foregroundStyle(isSelected ? BNBUTheme.primary : BNBUTheme.surface)
-                        .background(
-                            Circle().fill(isSelected ? BNBUTheme.surface : BNBUTheme.ink.opacity(0.35))
-                        )
-                        .padding(6)
+                if draft.type == .video {
+                    Image(systemName: "play.fill")
+                        .font(BNBUFont.labelMedium)
+                        .foregroundStyle(BNBUTheme.surface)
+                        .frame(width: 28, height: 28)
+                        .background(BNBUTheme.ink)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
+
+                Image(systemName: "checkmark.shield.fill")
+                    .font(BNBUFont.titleLarge)
+                    .foregroundStyle(BNBUTheme.tertiary)
+                    .background(Circle().fill(BNBUTheme.surface))
+                    .padding(6)
+                    .accessibilityLabel("已确认保留")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("checkin.draft.toggle.\(draft.id)")
-            .accessibilityLabel(isSelected ? "取消选择 \(draft.fileName)" : "选择 \(draft.fileName) 作为凭证")
 
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -361,22 +482,16 @@ struct ExerciseMediaDraftCard: View {
                         .foregroundStyle(BNBUTheme.muted)
                 }
                 Spacer()
-                Button(action: deleteAction) {
-                    Image(systemName: "trash")
-                        .font(BNBUFont.labelMedium)
-                        .foregroundStyle(BNBUTheme.muted)
-                        .frame(width: 26, height: 26)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("checkin.draft.delete.\(draft.id)")
-                .accessibilityLabel("删除草稿 \(draft.fileName)")
+                Text("已保留")
+                    .font(BNBUFont.labelSmall)
+                    .foregroundStyle(BNBUTheme.tertiary)
             }
         }
         .padding(10)
         .background(BNBUTheme.surface)
         .overlay(
             Rectangle()
-                .stroke(isSelected ? BNBUTheme.primary : BNBUTheme.line, lineWidth: isSelected ? 2 : 1)
+                .stroke(BNBUTheme.tertiary, lineWidth: 1.5)
         )
         .accessibilityElement(children: .contain)
     }

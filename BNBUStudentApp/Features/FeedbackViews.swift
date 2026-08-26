@@ -53,7 +53,9 @@ struct FeedbackView: View {
                     identifier: { "feedback.tab.\($0.rawValue)" }
                 )
 
-                if let message = appState.errorMessage {
+                if let userError = appState.userFacingError {
+                    BNBUErrorPanel(error: userError)
+                } else if let message = appState.errorMessage {
                     ValidationPanel(message: message)
                 }
 
@@ -71,7 +73,9 @@ struct FeedbackView: View {
         .scrollDismissesKeyboard(.immediately)
         .onChange(of: tab) { _, newValue in
             appState.errorMessage = nil
-            if newValue == .tickets { appState.refreshFeedbackTickets() }
+            if newValue == .tickets {
+                Task { await appState.refreshFeedbackTickets() }
+            }
         }
     }
 }
@@ -92,12 +96,10 @@ private struct FeedbackForm: View {
     @EnvironmentObject private var appState: AppState
     let onSubmitted: (FeedbackTicket) -> Void
 
-    @State private var category: FeedbackCategory = .functionality
+    @State private var category: FeedbackCategory = .bug
     @State private var description = ""
-    @State private var email = ""
-    @State private var phone = ""
-    @State private var screenshots: [ProofAttachment] = []
-    @State private var hasPrefilledEmail = false
+    @State private var submittedForm = false
+    @FocusState private var descriptionFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
@@ -114,44 +116,28 @@ private struct FeedbackForm: View {
                 }
             }
 
-            FeedbackScreenshotPanel(screenshots: $screenshots)
-
             SwissPanel {
                 VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
-                    panelHeader(title: "联系方式", helper: "用于回复和跟进此问题，不会公开展示。")
-                    FeedbackField(
-                        label: "邮箱（必填）",
-                        placeholder: "name@example.com",
-                        text: $email,
-                        keyboardType: .emailAddress,
-                        identifier: "feedback.email"
-                    )
-                    FeedbackField(
-                        label: "联系电话（必填）",
-                        placeholder: "例如：138 0000 0000",
-                        text: $phone,
-                        keyboardType: .phonePad,
-                        identifier: "feedback.phone"
-                    )
+                    Label("隐私边界", systemImage: "lock.shield")
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.primary)
+                    Text("反馈会按当前登录账号关联。这里只提交问题类型、文字内容和允许的 App/系统版本信息；不会收集或发送邮箱、电话、截图、日志、Token 或设备标识。")
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .accessibilityIdentifier("feedback.privacyBoundary")
             }
 
             PrimaryActionButton(
-                title: "提交问题",
+                title: appState.isSubmittingFeedback ? "正在提交…" : "提交问题",
                 systemImage: "paperplane.fill",
                 accessibilityIdentifier: "feedback.submit"
             ) {
                 submit()
             }
-            .disabled(!appState.isWriteAllowed)
-            .opacity(appState.isWriteAllowed ? 1 : 0.5)
-        }
-        .onAppear {
-            // The bound address is the one support will reply to, so it is the
-            // sensible default; the student can still change it.
-            guard !hasPrefilledEmail else { return }
-            hasPrefilledEmail = true
-            if email.isEmpty { email = appState.workspace.student.email }
+            .disabled(!appState.isWriteAllowed || appState.isSubmittingFeedback)
+            .opacity(appState.isWriteAllowed && !appState.isSubmittingFeedback ? 1 : 0.5)
         }
     }
 
@@ -196,58 +182,46 @@ private struct FeedbackForm: View {
                 .bnbuOutlinedSurface(lineWidth: 1)
             }
             .accessibilityIdentifier("feedback.category")
+            .accessibilityLabel("问题类型")
+            .accessibilityValue(Text(LocalizedStringKey(category.title)))
+            .accessibilityHint("必填；双击后选择问题类型")
         }
     }
 
     private var descriptionField: some View {
-        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
-            Text("问题描述（必填）")
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-
-            TextEditor(text: $description)
-                .bnbuInputText()
-                .frame(minHeight: 120)
-                .padding(10)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(lineWidth: 1)
-                .overlay(alignment: .topLeading) {
-                    if description.isEmpty {
-                        Text("例如：操作步骤、预期结果和实际情况")
-                            .font(BNBUFont.bodyLarge)
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant.opacity(0.6))
-                            .padding(.horizontal, 15)
-                            .padding(.top, 18)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .onChange(of: description) { _, value in
-                    if value.count > FeedbackRule.maximumDescriptionLength {
-                        description = String(value.prefix(FeedbackRule.maximumDescriptionLength))
-                    }
-                }
-                .accessibilityLabel(Text("问题描述（必填）"))
-                .accessibilityIdentifier("feedback.description")
-
-            Text(verbatim: "\(description.count)/\(FeedbackRule.maximumDescriptionLength)")
-                .font(BNBUFont.labelSmall)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
+        BNBUTextArea(
+            label: "问题描述",
+            text: $description,
+            placeholder: "例如：操作步骤、预期结果和实际情况",
+            required: true,
+            helperText: "请勿填写密码、验证码、Token 或其他敏感凭据。",
+            errorText: submittedForm && description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "请填写问题描述。"
+                : nil,
+            characterLimit: FeedbackRule.maximumDescriptionLength,
+            enabled: !appState.isSubmittingFeedback,
+            loading: appState.isSubmittingFeedback,
+            focusBinding: $descriptionFocused,
+            accessibilityIdentifier: "feedback.description"
+        )
     }
 
     private func submit() {
+        submittedForm = true
         dismissBNBUKeyboard()
-        guard let ticket = appState.submitFeedback(
-            category: category,
-            description: description,
-            email: email,
-            phone: phone,
-            screenshots: screenshots
-        ) else { return }
-        description = ""
-        screenshots = []
-        onSubmitted(ticket)
+        if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            descriptionFocused = true
+            return
+        }
+        Task {
+            guard let ticket = await appState.submitFeedback(
+                category: category,
+                description: description
+            ) else { return }
+            description = ""
+            submittedForm = false
+            onSubmitted(ticket)
+        }
     }
 }
 
@@ -410,26 +384,29 @@ private struct FeedbackField: View {
     let label: String
     let placeholder: String
     @Binding var text: String
+    var required = false
+    var helperText: String?
+    var errorText: String?
     var keyboardType: UIKeyboardType = .default
+    var textContentType: UITextContentType?
+    var enabled = true
+    var focusBinding: FocusState<Bool>.Binding?
     let identifier: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
-            Text(LocalizedStringKey(label))
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-
-            TextField(LocalizedStringKey(placeholder), text: $text)
-                .bnbuInputText()
-                .keyboardType(keyboardType)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(lineWidth: 1)
-                .accessibilityLabel(Text(LocalizedStringKey(label)))
-                .accessibilityIdentifier(identifier)
-        }
+        BNBUFormField(
+            label: label,
+            placeholder: placeholder,
+            text: $text,
+            required: required,
+            helperText: helperText,
+            errorText: errorText,
+            keyboardType: keyboardType,
+            textContentType: textContentType,
+            enabled: enabled,
+            focusBinding: focusBinding,
+            accessibilityIdentifier: identifier
+        )
     }
 }
 
@@ -438,27 +415,35 @@ private struct FeedbackTicketList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
-            if let notice = appState.feedbackNotice {
+            if appState.isLoadingFeedback, appState.feedbackTickets.isEmpty {
+                ProgressView("正在加载反馈记录…")
+                    .frame(maxWidth: .infinity, minHeight: 96)
+                    .accessibilityIdentifier("feedback.loading")
+            } else if let notice = appState.feedbackNotice {
                 ValidationPanel(message: notice)
             }
 
-            if appState.feedbackTickets.isEmpty {
-                EmptyPlaceholder(
-                    title: "暂无已提交问题",
-                    message: "提交问题后，可在这里查看处理状态。"
-                )
-            } else {
-                ForEach(appState.feedbackTickets) { ticket in
-                    FeedbackTicketCard(ticket: ticket)
+            if !appState.isLoadingFeedback || !appState.feedbackTickets.isEmpty {
+                if appState.feedbackTickets.isEmpty {
+                    EmptyPlaceholder(
+                        title: "暂无已提交问题",
+                        message: "提交问题后，可在这里查看处理状态。"
+                    )
+                } else {
+                    ForEach(appState.feedbackTickets) { ticket in
+                        FeedbackTicketCard(ticket: ticket)
+                    }
                 }
             }
 
             OutlinedActionButton(title: "刷新处理状态", systemImage: "arrow.clockwise") {
-                appState.refreshFeedbackTickets()
+                Task { await appState.refreshFeedbackTickets() }
             }
+            .disabled(appState.isLoadingFeedback)
+            .opacity(appState.isLoadingFeedback ? 0.55 : 1)
             .accessibilityIdentifier("feedback.refresh")
         }
-        .onAppear { appState.refreshFeedbackTickets() }
+        .task { await appState.refreshFeedbackTickets() }
         .accessibilityIdentifier("feedback.tickets")
     }
 }

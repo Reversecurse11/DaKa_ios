@@ -18,15 +18,15 @@ To provide account and teaching services, we may process your student ID, name, 
 
 ## 3. iOS permissions
 
-Camera access is used to scan a course invitation code and to capture proof photos or videos at the time of the activity. The microphone is used only while you record a video with sound. Location is requested once in the foreground when you start an activity, to prepare the on-site verification; the app never requests always-on or background location and never builds a track. Selecting existing media uses the system photo picker, so the app receives only the items you pick and never requests access to your whole library. Notification permission is used for course deadlines, review results and service reminders. The app does not request contacts, calendars, reminders, health or fitness data, motion data, Bluetooth, local network, speech recognition or App Tracking Transparency, and it does not read the clipboard.
+Camera access is used to scan a course invitation code and to capture proof photos or videos at the time of the activity. The microphone is used only while you record a video with sound. The current version does not request location permission, collect coordinates, or build a location track. Selecting existing media uses the system photo picker, so the app receives only the items you pick and never requests access to your whole library. Notification permission is used for course deadlines, review results and service reminders. The app does not request contacts, calendars, reminders, health or fitness data, motion data, Bluetooth, local network, speech recognition or App Tracking Transparency, and it does not read the clipboard.
 
 ## 4. Course, check-in and application processing
 
 Course invitations, enrolment requests, check-ins, exercise duration, supporting materials, exemption applications and grades are processed to deliver the teaching workflow, prevent duplicate submissions and allow authorised teachers to review records. Media drafts remain on the device until submitted or discarded; submitted materials are retained with the related teaching record under applicable school retention rules.
 
-## 5. Location and device information
+## 5. Device information
 
-A one-time foreground location is stored in the local exercise-session file, which uses complete file protection and is excluded from backups; the current version does not upload raw coordinates to the server. Technical requests may include device model, iOS and app version, language, network state, time zone, IP address, request path and status code, for security and troubleshooting. The app does not read the advertising identifier and does not use any cross-app tracking identifier.
+No location or coordinate is stored in the local exercise-session file or uploaded to the server. Technical requests may include device model, iOS and app version, language, network state, time zone, IP address, request path and status code, for security and troubleshooting. The app does not read the advertising identifier and does not use any cross-app tracking identifier.
 
 ## 6. Notifications and service providers
 
@@ -42,7 +42,7 @@ Information is stored for the period needed for the relevant teaching, account, 
 
 ## 9. Your rights
 
-Subject to applicable law, you may request access, correction, deletion, explanation, withdrawal of consent or account-related assistance. You can withdraw camera, microphone, location and notification access at any time in iOS Settings. Withdrawing consent does not affect processing already completed on a valid basis, and may prevent functions that depend on that information. Contact the school sports teaching administration through the official campus support channel for requests.
+Subject to applicable law, you may request access, correction, deletion, explanation, withdrawal of consent or account-related assistance. Account deletion is available under Profile — Settings — Account & Security — Delete Account. The flow explains the consequences, requires an initial confirmation, verifies identity with a one-time code sent to the verified email, and requires a final irreversible confirmation. A successful deletion disables sign-in and revokes all device sessions and tokens; information that must remain for teaching or audit integrity is de-identified and retained under the applicable rules. Any later registration is a new account and does not restore the old account. You can withdraw camera, microphone and notification access at any time in iOS Settings. Withdrawing consent does not affect processing already completed on a valid basis, and may prevent functions that depend on that information. Contact the school sports teaching administration through the official campus support channel for requests.
 
 ## 10. Children and policy updates
 

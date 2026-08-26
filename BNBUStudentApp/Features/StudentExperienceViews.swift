@@ -216,28 +216,22 @@ struct HelpCenterView: View {
 
     private let entries = [
         HelpEntry(
-            category: "登录与密码",
-            question: "无法登录或忘记密码怎么办？",
-            answer: "请先确认学号和密码无误。当前 App 尚未接入忘记密码接口；需要重置时，请联系课程教师或系统管理员。",
-            keywords: ["账号", "学号", "邮箱", "重置", "锁定", "login", "password"]
+            category: "登录与验证码",
+            question: "无法登录或收不到邮箱验证码怎么办？",
+            answer: "学生端使用学校邮箱验证码登录，不使用账号密码。请确认学校邮箱填写正确，检查垃圾邮件，并在倒计时结束后重试；仍无法收到时，请联系课程教师或系统管理员。",
+            keywords: ["账号", "学校邮箱", "验证码", "垃圾邮件", "锁定", "login", "otp"]
         ),
         HelpEntry(
             category: "运动打卡",
             question: "如何完成一次运动打卡？",
-            answer: "选择打卡类型和运动项目后开始计时，可暂停或继续。结束时确认时长，选择至少 1 张现场照片或 1 个现场视频作为凭证，然后提交。",
+            answer: "选择打卡类型和运动项目后开始计时，可暂停或继续。运动中现场拍摄并确认保留至少 1 张照片或 1 个视频；结束后，全部已确认保留素材会自动作为本次凭证提交。",
             keywords: ["开始运动", "结束运动", "暂停", "时长", "每日一次", "check-in"]
-        ),
-        HelpEntry(
-            category: "定位",
-            question: "为什么获取不到定位？",
-            answer: "请在 iPhone“设置 → 隐私与安全性 → 定位服务”中允许本 App 使用定位。定位失败不会阻止计时和提交，记录会显示为“未获取位置”。",
-            keywords: ["GPS", "权限", "室内", "位置", "location"]
         ),
         HelpEntry(
             category: "凭证上传",
             question: "照片和视频凭证有什么限制？",
-            answer: "凭证必须在运动过程中或结束后的提交环节使用相机现场拍摄，不能从相册选择。每次最多提交 6 张照片和 1 个视频，且至少选择其中 1 项。",
-            keywords: ["照片", "视频", "相机", "相册", "6张", "upload", "evidence"]
+            answer: "凭证必须现场拍摄，不能从相册选择；确认保留前可以取消或重拍。每次最多 6 张照片和 1 个视频；确认保留后不能在最终提交时排除，任何素材仍在处理中或处理失败都会阻止提交。",
+            keywords: ["照片", "视频", "相机", "相册", "确认保留", "处理中", "失败", "upload", "evidence"]
         ),
         HelpEntry(
             category: "草稿恢复",
@@ -679,7 +673,7 @@ private struct OnboardingScreenshotPreview: View {
                 ZStack {
                     Circle()
                         .fill(BNBUTheme.primaryContainer)
-                    Image(systemName: "location.fill")
+                    Image(systemName: "stopwatch.fill")
                         .foregroundStyle(BNBUTheme.primary)
                 }
                 .frame(width: 46, height: 46)
@@ -866,7 +860,7 @@ private struct OnboardingScreenshotPreview: View {
 
     private var checkInStatus: String {
         switch animationStep {
-        case 0: return "正在定位"
+        case 0: return "准备开始"
         case 1: return "运动进行中"
         case 2: return "运动已暂停"
         default: return "运动进行中"
@@ -883,7 +877,7 @@ private struct OnboardingScreenshotPreview: View {
 
     private var checkInDetail: String {
         switch animationStep {
-        case 0: return "正在获取当前位置"
+        case 0: return "选择项目后开始记录时长"
         case 1: return "正在记录运动时长"
         case 2: return "计时已暂停，可现场拍摄"
         default: return "计时已继续，可随时结束"

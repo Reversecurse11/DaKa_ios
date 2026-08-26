@@ -136,21 +136,27 @@ struct ProfileView: View {
     }
 
     private func profileFacts(student: StudentProfile) -> some View {
-        HStack(alignment: .top, spacing: BNBUSpacing.space8) {
-            profileFact(label: "学号", value: student.displayStudentNumber)
-            profileFact(label: "班级", value: student.className.isEmpty ? "—" : student.className)
-            profileFact(
-                label: "年级",
-                value: {
-                    let grade = BNBUL10n.dynamicText(appState.academicProjection.grade)
-                    return grade.isEmpty ? BNBUL10n.text("待计算") : grade
-                }()
-            )
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: BNBUSpacing.space8) {
+                profileFact(label: "学号", value: student.displayStudentNumber)
+                profileFact(label: "班级", value: student.className.isEmpty ? "—" : student.className)
+                profileFact(label: "年级", value: profileGrade)
+            }
+            VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                profileFact(label: "学号", value: student.displayStudentNumber)
+                profileFact(label: "班级", value: student.className.isEmpty ? "—" : student.className)
+                profileFact(label: "年级", value: profileGrade)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(BNBUTheme.surfaceVariant)
         .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+    }
+
+    private var profileGrade: String {
+        let grade = BNBUL10n.dynamicText(appState.academicProjection.grade)
+        return grade.isEmpty ? BNBUL10n.text("待计算") : grade
     }
 
     private func profileFact(label: String, value: String) -> some View {
@@ -161,8 +167,10 @@ struct ProfileView: View {
             Text(verbatim: value)
                 .font(BNBUFont.titleSmall)
                 .foregroundStyle(BNBUTheme.onSurface)
-                .lineLimit(1)
+                .lineLimit(2)
                 .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -592,8 +600,8 @@ private struct ExemptionCenterSheet: View {
                     .font(BNBUFont.titleMedium)
                     .foregroundStyle(BNBUTheme.onSurface)
                 Text(verbatim: exemptionCenterText(
-                    "可申请耐力跑免测，或校队、社团免打卡。耐力跑项目按学生资料匹配为女生 800m 或男生 1000m；校队、社团须填写组织名称。证明材料必须使用本机相机现场拍摄。",
-                    "You can apply for an endurance-run exemption, or a team or club check-in exemption. The run is matched to 800 m for female students or 1000 m for male students; a team or club needs its name. Proof must be photographed live with this device."
+                    "可申请耐力跑免测，或校队、社团免打卡。耐力跑项目按学生资料匹配为女生 800m 或男生 1000m；校队、社团须填写组织名称。证明材料可使用相机拍摄或从文件中选择，并会记录来源。",
+                    "You can apply for an endurance-run exemption, or a team or club check-in exemption. The run is matched to 800 m for female students or 1000 m for male students; a team or club needs its name. Proof can be captured with the camera or selected from files, with its source retained."
                 ))
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -750,8 +758,10 @@ private struct EnduranceScoringSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var minutes = ""
     @State private var seconds = ""
-    @State private var validationMessage: String?
     @State private var result: EnduranceScoreResult?
+    @State private var attemptedConversion = false
+    @FocusState private var minutesFocused: Bool
+    @FocusState private var secondsFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -780,12 +790,12 @@ private struct EnduranceScoringSheet: View {
 
                         SwissPanel {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(verbatim: enduranceText("演示试算", "Preview calculation"))
+                                Text(verbatim: enduranceText("全局规则试算", "Global-rule preview"))
                                     .font(BNBUFont.labelMedium)
                                     .foregroundStyle(BNBUTheme.primary)
                                 Text(verbatim: enduranceText(
-                                    "输入用时后按性别和年级组换算。女生对应 800m，男生对应 1000m。此工具只用于试算，不写入正式成绩。",
-                                    "Enter a time to calculate by gender and grade group. Women use 800 m and men use 1000 m. This preview does not change official grades."
+                                    "输入用时后按管理员发布的全局规则换算。女生对应 800m，男生对应 1000m。试算不会写入正式成绩。",
+                                    "Enter a time to use the global rules published by administrators. Women use 800 m and men use 1000 m. Previewing does not change official grades."
                                 ))
                                     .font(BNBUFont.bodySmall)
                                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
@@ -809,14 +819,26 @@ private struct EnduranceScoringSheet: View {
                                     durationField(
                                         title: enduranceText("分钟", "Minutes"),
                                         placeholder: "0",
-                                        text: $minutes
+                                        text: $minutes,
+                                        helperText: enduranceText("0–99 分钟", "0–99 minutes"),
+                                        errorText: minutesError,
+                                        submitLabel: .next,
+                                        focusBinding: $minutesFocused,
+                                        identifier: "endurance.minutes",
+                                        onSubmit: { secondsFocused = true }
                                     )
                                     Text("′")
                                         .font(.system(size: 28, weight: .medium))
                                     durationField(
                                         title: enduranceText("秒", "Seconds"),
                                         placeholder: "00",
-                                        text: $seconds
+                                        text: $seconds,
+                                        helperText: enduranceText("0–59 秒", "0–59 seconds"),
+                                        errorText: secondsError,
+                                        submitLabel: .done,
+                                        focusBinding: $secondsFocused,
+                                        identifier: "endurance.seconds",
+                                        onSubmit: { convert() }
                                     )
                                     Text("″")
                                         .font(.system(size: 28, weight: .medium))
@@ -835,7 +857,7 @@ private struct EnduranceScoringSheet: View {
                             }
                         }
 
-                        if let message = validationMessage ?? appState.errorMessage {
+                        if let message = appState.errorMessage {
                             BNBUErrorPanel(message: message)
                         }
 
@@ -975,48 +997,65 @@ private struct EnduranceScoringSheet: View {
     private func durationField(
         title: String,
         placeholder: String,
-        text: Binding<String>
+        text: Binding<String>,
+        helperText: String,
+        errorText: String?,
+        submitLabel: SubmitLabel,
+        focusBinding: FocusState<Bool>.Binding,
+        identifier: String,
+        onSubmit: @escaping () -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            TextField(placeholder, text: text)
-                .keyboardType(.numberPad)
-                .bnbuInputText()
-                .padding(12)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(lineWidth: 1)
-                .onChange(of: text.wrappedValue) { _, value in
-                    text.wrappedValue = String(value.filter(\.isNumber).prefix(2))
-                }
-                .disabled(appState.isLoading || isPreview)
+        BNBUFormField(
+            label: title,
+            placeholder: placeholder,
+            text: text,
+            required: true,
+            helperText: helperText,
+            errorText: errorText,
+            characterLimit: 2,
+            keyboardType: .numberPad,
+            enabled: !appState.isLoading && !isPreview,
+            submitLabel: submitLabel,
+            onSubmit: onSubmit,
+            focusBinding: focusBinding,
+            accessibilityIdentifier: identifier
+        )
+        .onChange(of: text.wrappedValue) { _, value in
+            text.wrappedValue = String(value.filter(\.isNumber).prefix(2))
+            result = nil
         }
         .frame(maxWidth: .infinity)
     }
 
+    private var minuteValue: Int { Int(minutes) ?? 0 }
+    private var secondValue: Int { Int(seconds) ?? 0 }
+
+    private var minutesError: String? {
+        guard attemptedConversion, minuteValue * 60 + secondValue <= 0 else { return nil }
+        return enduranceText("请输入大于 0 的总用时。", "Enter a total time greater than zero.")
+    }
+
+    private var secondsError: String? {
+        guard attemptedConversion, !(0...59).contains(secondValue) else { return nil }
+        return enduranceText("秒数必须在 0–59 之间。", "Seconds must be between 0 and 59.")
+    }
+
     private func convert() {
-        let minuteValue = Int(minutes) ?? 0
-        let secondValue = Int(seconds) ?? 0
+        attemptedConversion = true
         guard (0...59).contains(secondValue) else {
-            validationMessage = enduranceText(
-                "秒数请输入 0-59 之间的数字。",
-                "Enter seconds between 0 and 59."
-            )
             result = nil
+            secondsFocused = true
             return
         }
         let totalSeconds = minuteValue * 60 + secondValue
         guard totalSeconds > 0 else {
-            validationMessage = enduranceText(
-                "请输入有效的跑步时间。",
-                "Enter a valid running time."
-            )
             result = nil
+            minutesFocused = true
             return
         }
 
-        validationMessage = nil
+        minutesFocused = false
+        secondsFocused = false
         dismissBNBUKeyboard()
         Task {
             result = await appState.convertEndurance(timeSeconds: totalSeconds)

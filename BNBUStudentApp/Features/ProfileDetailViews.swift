@@ -67,22 +67,37 @@ struct AccountDetailsView: View {
         value.isEmpty ? BNBUL10n.text("待完善") : value
     }
 }
-
 private struct AccountDetailRow: View {
     let label: String
     let value: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: BNBUSpacing.space12) {
-            Text(LocalizedStringKey(label))
-                .font(BNBUFont.bodyMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            Text(verbatim: value)
-                .font(BNBUFont.bodyMedium)
-                .foregroundStyle(BNBUTheme.onSurface)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: BNBUSpacing.space12) {
+                rowLabel
+                Spacer(minLength: BNBUSpacing.space12)
+                rowValue
+                    .multilineTextAlignment(.trailing)
+            }
+            VStack(alignment: .leading, spacing: BNBUSpacing.space4) {
+                rowLabel
+                rowValue
+            }
         }
+    }
+
+    private var rowLabel: some View {
+        Text(LocalizedStringKey(label))
+            .font(BNBUFont.bodyMedium)
+            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+    }
+
+    private var rowValue: some View {
+        Text(verbatim: value)
+            .font(BNBUFont.bodyMedium)
+            .foregroundStyle(BNBUTheme.onSurface)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 }
 
@@ -102,6 +117,7 @@ struct ProfileSettingsView: View {
     @State private var showFeedback = false
     @State private var showContactManagement = false
     @State private var showLogoutConfirmation = false
+    @State private var showAccountDeletion = false
 
     var body: some View {
         ZStack {
@@ -148,6 +164,13 @@ struct ProfileSettingsView: View {
         .sheet(isPresented: $showContactManagement) {
             ContactManagementView()
         }
+        .sheet(isPresented: $showAccountDeletion) {
+            NavigationStack {
+                AccountDeletionView {
+                    showAccountDeletion = false
+                }
+            }
+        }
         .confirmationDialog(
             "退出登录？",
             isPresented: $showLogoutConfirmation,
@@ -170,11 +193,19 @@ struct ProfileSettingsView: View {
                 BNBUGroupLabel("账户与安全")
                     .padding(.bottom, 4)
                 BNBUNavigationSettingRow(
-                    title: "绑定或更换邮箱、手机号",
-                    systemImage: "phone",
+                    title: "绑定或更换登录邮箱",
+                    systemImage: "envelope.fill",
                     accessibilityIdentifier: "settings.contactBinding"
                 ) {
                     showContactManagement = true
+                }
+                settingsDivider
+                BNBUNavigationSettingRow(
+                    title: "注销账户",
+                    systemImage: "trash.fill",
+                    accessibilityIdentifier: "settings.accountDeletion"
+                ) {
+                    showAccountDeletion = true
                 }
             }
         }
@@ -306,6 +337,234 @@ struct ProfileSettingsView: View {
     }
 }
 
+/// Student account deletion is deliberately separate from ordinary logout.
+/// It requires an explanation, an initial confirmation, a verified-email OTP,
+/// and a final destructive confirmation before Backend performs the atomic
+/// de-identification and session revocation.
+struct AccountDeletionView: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.locale) private var locale
+
+    let onClose: () -> Void
+
+    @State private var challenge: ContractAccountDeletionChallenge?
+    @State private var verificationCode = ""
+    @State private var showInitialConfirmation = false
+    @State private var showFinalConfirmation = false
+    @FocusState private var verificationCodeFocused: Bool
+
+    var body: some View {
+        ZStack {
+            BNBUPageBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+                    BNBUBackRow(action: onClose)
+                    Text("注销账户")
+                        .font(BNBUFont.headlineSmall)
+                        .foregroundStyle(BNBUTheme.onSurface)
+
+                    if let userError = appState.userFacingError {
+                        BNBUErrorPanel(error: userError)
+                    } else if let errorMessage = appState.errorMessage {
+                        BNBUErrorPanel(message: errorMessage)
+                    }
+
+                    if let challenge {
+                        verificationPanel(challenge)
+                    } else {
+                        explanationPanel
+                    }
+                }
+                .padding(BNBUSpacing.screen)
+                .padding(.bottom, BNBUSpacing.bottomSpacer)
+            }
+            .scrollDismissesKeyboard(.immediately)
+        }
+        .navigationBarHidden(true)
+        .confirmationDialog(
+            "开始账户注销？",
+            isPresented: $showInitialConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("获取邮箱验证码", role: .destructive) {
+                Task {
+                    let requested = await appState.requestAccountDeletionChallenge(locale: apiLocale)
+                    challenge = requested
+                    verificationCodeFocused = requested != nil
+                }
+            }
+            .accessibilityIdentifier("accountDeletion.request.confirm")
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("下一步会向已验证邮箱发送一次性验证码；此时尚不会注销账户。")
+        }
+        .confirmationDialog(
+            "最终确认注销账户？",
+            isPresented: $showFinalConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("永久注销账户", role: .destructive) {
+                guard let challenge else { return }
+                verificationCodeFocused = false
+                dismissBNBUKeyboard()
+                Task {
+                    let deleted = await appState.confirmAccountDeletion(
+                        challenge: challenge,
+                        verificationCode: verificationCode
+                    )
+                    if deleted { onClose() }
+                }
+            }
+            .accessibilityIdentifier("accountDeletion.final.confirm")
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确认后账号立即不可登录，全部设备会话和 Token 失效。再次注册会被视为一个新账户，不会恢复旧账户。")
+        }
+        .accessibilityIdentifier("screen.accountDeletion")
+    }
+
+    private var explanationPanel: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Label("这是不可逆操作", systemImage: "exclamationmark.triangle.fill")
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.error)
+                    Text("注销成功后，本账号立即不能继续登录，所有设备上的 Access Session、Refresh Token、设备和推送关联都会失效。")
+                        .font(BNBUFont.bodyMedium)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    BNBUGroupLabel("数据如何处理")
+                    deletionFact(
+                        icon: "person.fill.xmark",
+                        title: "可识别个人信息",
+                        detail: "按规则删除或匿名化，不再用于登录或识别你的账号。"
+                    )
+                    deletionFact(
+                        icon: "doc.text.magnifyingglass",
+                        title: "业务与审计记录",
+                        detail: "为课程完整性和审计必须保留的记录会去标识化保留，不会被篡改。"
+                    )
+                    deletionFact(
+                        icon: "person.badge.plus",
+                        title: "以后重新注册",
+                        detail: "必须作为新账户注册；系统不会偷偷恢复本账号的旧资料。"
+                    )
+                }
+            }
+
+            DisabledAwareButton(
+                title: appState.isProcessingAccountDeletion ? "处理中…" : "继续注销账户",
+                systemImage: "trash",
+                isDisabled: appState.isProcessingAccountDeletion,
+                accessibilityIdentifier: "accountDeletion.start"
+            ) {
+                showInitialConfirmation = true
+            }
+        }
+    }
+
+    private func verificationPanel(_ challenge: ContractAccountDeletionChallenge) -> some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                    Label("重新验证身份", systemImage: "envelope.badge.shield.half.filled")
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.primary)
+                    Text("验证码已发送到账号的已验证邮箱。输入验证码后，还会再显示一次最终确认。")
+                        .font(BNBUFont.bodyMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    DetailFactRow(label: "验证方式", value: "邮箱一次性验证码")
+                    DetailFactRow(label: "有效期至", value: challenge.expiresAt)
+                }
+            }
+
+            SwissPanel {
+                VStack(alignment: .leading, spacing: BNBUSpacing.space16) {
+                    BNBUFormField(
+                        label: "邮箱验证码",
+                        placeholder: "4–10 位数字",
+                        text: $verificationCode,
+                        required: true,
+                        helperText: "验证码仅用于本次注销确认，不会写入日志。",
+                        errorText: verificationCode.isEmpty || isValidCode
+                            ? nil
+                            : "请输入 4 到 10 位数字验证码。",
+                        characterLimit: 10,
+                        keyboardType: .numberPad,
+                        textContentType: .oneTimeCode,
+                        enabled: !appState.isProcessingAccountDeletion,
+                        submitLabel: .done,
+                        onSubmit: {
+                            if isValidCode && !appState.isProcessingAccountDeletion {
+                                verificationCodeFocused = false
+                                dismissBNBUKeyboard()
+                                showFinalConfirmation = true
+                            }
+                        },
+                        focusBinding: $verificationCodeFocused,
+                        accessibilityIdentifier: "accountDeletion.verificationCode"
+                    )
+                    .onChange(of: verificationCode) { _, value in
+                        verificationCode = String(value.filter(\.isNumber).prefix(10))
+                    }
+
+                    DisabledAwareButton(
+                        title: appState.isProcessingAccountDeletion ? "处理中…" : "已填写验证码，继续最终确认",
+                        systemImage: "checkmark.shield",
+                        isDisabled: !isValidCode || appState.isProcessingAccountDeletion,
+                        accessibilityIdentifier: "accountDeletion.verify"
+                    ) {
+                        verificationCodeFocused = false
+                        dismissBNBUKeyboard()
+                        showFinalConfirmation = true
+                    }
+
+                    Button("重新开始注销验证") {
+                        verificationCodeFocused = false
+                        verificationCode = ""
+                        self.challenge = nil
+                        appState.clearError()
+                    }
+                    .font(BNBUFont.labelMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .accessibilityIdentifier("accountDeletion.restart")
+                }
+            }
+        }
+    }
+
+    private func deletionFact(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: BNBUSpacing.space12) {
+            Image(systemName: icon)
+                .foregroundStyle(BNBUTheme.primary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: title)
+                    .font(BNBUFont.titleSmall)
+                Text(verbatim: detail)
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var apiLocale: String {
+        locale.identifier.lowercased().hasPrefix("en") ? "en" : "zh-CN"
+    }
+
+    private var isValidCode: Bool {
+        ContactBindingRule.isValidStudentSignInCode(
+            verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+}
+
 /// Android's `AboutScreen`: product name, version, and a route to the changelog.
 struct AboutView: View {
     let onBack: () -> Void
@@ -428,4 +687,3 @@ private struct ChangelogItem: View {
         .padding(.bottom, 10)
     }
 }
-

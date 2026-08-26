@@ -85,6 +85,7 @@ struct AppShellView: View {
     @Binding var stage: AppShellStage
 
     @State private var presentsCourseJoin = false
+    @State private var presentsRestoredEmailBinding = false
 
     private var showsStartupGatesInUITesting: Bool {
         ProcessInfo.processInfo.arguments.contains("-ui-testing-startup-gates")
@@ -109,7 +110,19 @@ struct AppShellView: View {
                 }
             }
         }
-        .task { await appState.refreshSystemStatus() }
+        .task {
+            if let restored = await appState.restoreRemoteSessionIfAvailable(),
+               case .requiresFirstEmailBinding(_) = restored {
+                stage = .login
+                presentsRestoredEmailBinding = true
+            }
+            await appState.refreshSystemStatus()
+        }
+        .sheet(isPresented: $presentsRestoredEmailBinding) {
+            CourseJoinSheet(startsWithFirstEmailBinding: true)
+                .environmentObject(appState)
+                .interactiveDismissDisabled()
+        }
         .overlay {
             if let requirement = appState.updateRequirement {
                 UpdateRequiredOverlay(requirement: requirement)
@@ -191,9 +204,19 @@ private struct AuthenticatedShellView: View {
     @State private var showOnboarding = false
 
     var body: some View {
-        AppRootView()
+        VStack(spacing: 0) {
+#if DEBUG
+            if appState.isLocalReviewMode {
+                LocalReviewBannerView {
+                    Task { await appState.logout() }
+                }
+            }
+#endif
+            AppRootView()
+        }
             .onAppear {
                 guard !isUITesting else { return }
+                guard !appState.isLocalReviewMode else { return }
                 if BNBUOnboarding.completedVersion(
                     studentID: appState.workspace.student.id
                 ) < BNBUOnboarding.currentVersion {
@@ -213,6 +236,42 @@ private struct AuthenticatedShellView: View {
             }
     }
 }
+
+#if DEBUG
+private struct LocalReviewBannerView: View {
+    @Environment(\.locale) private var locale
+    let onExit: () -> Void
+
+    var body: some View {
+        HStack(spacing: BNBUSpacing.space12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(copy("免登录测试模式", "Password-free review mode"))
+                    .font(BNBUFont.labelLarge)
+                Text(copy(
+                    "仅使用本地合成学生数据，不会请求真实 Backend。",
+                    "Only local synthetic student data is used; the real Backend is not called."
+                ))
+                .font(BNBUFont.bodySmall)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(copy("退出测试", "Exit review"), action: onExit)
+                .font(BNBUFont.labelMedium)
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("localReview.exit")
+        }
+        .padding(.horizontal, BNBUSpacing.screen)
+        .padding(.vertical, BNBUSpacing.space8)
+        .foregroundStyle(BNBUTheme.onTertiaryContainer)
+        .background(BNBUTheme.tertiaryContainer)
+        .accessibilityIdentifier("banner.localReview")
+    }
+
+    private func copy(_ chinese: String, _ english: String) -> String {
+        locale.identifier.hasPrefix("zh") ? chinese : english
+    }
+}
+#endif
 
 // MARK: - Availability policy
 
@@ -512,7 +571,7 @@ struct PrivacyConsentView: View {
                 // build declares NSMicrophoneUsageDescription for in-app video and
                 // has no remote push registration yet, so the disclosure has to
                 // describe what iOS actually does.
-                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频，并在前台单次获取位置。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
+                Text("为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机或读取你选择的图片、视频；本 App 不申请定位权限，也不采集位置或坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(BNBUFont.LineSpacing.bodyMedium)
@@ -564,8 +623,8 @@ struct PreLoginCourseGuideView: View {
         ),
         BNBUGuideStep(
             eyebrow: "核对信息后再加入",
-            title: "确认并提交申请",
-            detail: "核对课程和个人资料后提交加入申请；如需补正或等待审核，按页面提示处理。",
+            title: "确认并直接加入",
+            detail: "核对课程和个人资料后，通过服务器邀请直接加入；新账号需先验证邮箱。",
             artwork: .joinRequest
         )
     ]
@@ -765,12 +824,12 @@ struct BNBUGuideArtwork: View {
                 artworkCard(
                     systemImage: "checkmark.seal",
                     title: "核对课程与个人资料",
-                    detail: "确认后提交加入申请"
+                    detail: "确认后直接加入课程"
                 )
                 Spacer(minLength: 0)
                 VStack(spacing: BNBUSpacing.space8) {
-                    artworkStatusRow(text: "已提交，等待老师审核", tint: BNBUTheme.secondary)
-                    artworkStatusRow(text: "审核通过后即可开始打卡", tint: BNBUTheme.tertiary)
+                    artworkStatusRow(text: "Enrollment 已 ACTIVE", tint: BNBUTheme.secondary)
+                    artworkStatusRow(text: "加入后即可开始运动打卡", tint: BNBUTheme.tertiary)
                 }
             }
         }

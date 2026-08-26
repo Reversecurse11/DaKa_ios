@@ -68,6 +68,9 @@ struct DashboardView: View {
     }
 
     private var hasHourRisk: Bool {
+        if appState.isRemoteMode {
+            return appState.workspace.progress.authoritativeQualificationStatus != "QUALIFIED"
+        }
         appState.courseRemaining > 0 || appState.generalRemaining > 0
     }
 
@@ -95,7 +98,9 @@ struct DashboardView: View {
     }
 
     private var todayCheckInPanel: some View {
-        let hasCheckedIn = appState.hasSubmittedCheckInToday()
+        // Device-local Asia/Shanghai dates are only a local-demo convenience.
+        // Remote eligibility belongs to Backend organization businessDate.
+        let hasCheckedIn = !appState.isRemoteMode && appState.hasSubmittedCheckInToday()
         return HomeCard(contentPadding: BNBUSpacing.space20) {
             HStack(spacing: BNBUSpacing.space12) {
                 Text("今日打卡")
@@ -109,12 +114,16 @@ struct DashboardView: View {
                 }
             }
 
-            Text(LocalizedStringKey(hasCheckedIn ? "今日已成功打卡" : "今天还未打卡"))
+            Text(verbatim: appState.isRemoteMode
+                ? BNBUL10n.text("提交资格由服务器判断")
+                : BNBUL10n.text(hasCheckedIn ? "今日已成功打卡" : "今天还未打卡"))
                 .font(BNBUFont.headlineSmall)
                 .foregroundStyle(BNBUTheme.onSurface)
                 .padding(.top, BNBUSpacing.space16)
 
-            Text(LocalizedStringKey(hasCheckedIn ? "今天的运动记录已保存。" : "完成一次运动后即可提交打卡。"))
+            Text(verbatim: appState.isRemoteMode
+                ? BNBUL10n.text("组织时区与业务日期由服务器校验，客户端不会按本机日期提前拦截。")
+                : BNBUL10n.text(hasCheckedIn ? "今天的运动记录已保存。" : "完成一次运动后即可提交打卡。"))
                 .font(BNBUFont.bodyMedium)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .padding(.top, 6)
@@ -122,12 +131,13 @@ struct DashboardView: View {
             TimelineView(.everyMinute) { context in
                 CheckInWindowStatusRow(
                     date: context.date,
-                    isEnforced: appState.enforcesCheckInTimeWindow
+                    isEnforced: appState.enforcesCheckInTimeWindow,
+                    policy: appState.currentExerciseCourse?.checkInTimeWindow ?? .unavailable
                 )
             }
             .padding(.top, BNBUSpacing.space16)
 
-            if !hasCheckedIn {
+            if appState.isRemoteMode || !hasCheckedIn {
                 PrimaryActionButton(
                     title: "去打卡",
                     systemImage: "plus.app.fill",
@@ -152,7 +162,7 @@ struct DashboardView: View {
                 )
             }
 
-            Text("本学期总完成")
+            Text(appState.isRemoteMode ? "服务端确认总有效时长" : "本学期总完成")
                 .font(BNBUFont.bodySmall)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -161,42 +171,63 @@ struct DashboardView: View {
             progressTotalLine
                 .padding(.top, BNBUSpacing.space4)
 
-            HomeProgressBar(
-                value: appState.totalCompleted,
-                total: appState.hourRule.total,
-                height: 8
-            )
-            .padding(.top, BNBUSpacing.panel)
+            if appState.isRemoteMode {
+                Text(verbatim: BNBUL10n.text("进度按当前课程中审核结果为有效的打卡记录实时累计。"))
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, BNBUSpacing.space12)
+            } else {
+                HomeProgressBar(
+                    value: appState.totalCompleted,
+                    total: appState.hourRule.total,
+                    height: 8
+                )
+                .padding(.top, BNBUSpacing.panel)
 
-            Text(verbatim: totalRemainingText)
-                .font(BNBUFont.bodyMedium)
-                .foregroundStyle(appState.totalRemaining == 0 ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, BNBUSpacing.space12)
+                Text(verbatim: totalRemainingText)
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(appState.totalRemaining == 0 ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, BNBUSpacing.space12)
+            }
         }
     }
 
+    @ViewBuilder
     private var progressTotalLine: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            Text(verbatim: appState.totalCompleted.localizedHourText)
-                .font(.system(size: 44, weight: .semibold))
-                .tracking(-1)
-                .foregroundStyle(BNBUTheme.onSurface)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+        if appState.isRemoteMode {
+            HStack(alignment: .bottom, spacing: BNBUSpacing.space8) {
+                Text(verbatim: appState.totalCompleted.localizedHourText)
+                    .font(.system(size: 44, weight: .semibold))
+                    .tracking(-1)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: BNBUSpacing.space8)
+            }
+        } else {
+            HStack(alignment: .bottom, spacing: 0) {
+                Text(verbatim: appState.totalCompleted.localizedHourText)
+                    .font(.system(size: 44, weight: .semibold))
+                    .tracking(-1)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
-            Text(verbatim: "/ \(appState.hourRule.total.localizedHourText)")
-                .font(BNBUFont.titleMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                .padding(.leading, BNBUSpacing.space8)
-                .padding(.bottom, 6)
+                Text(verbatim: "/ \(appState.hourRule.total.localizedHourText)")
+                    .font(BNBUFont.titleMedium)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .padding(.leading, BNBUSpacing.space8)
+                    .padding(.bottom, 6)
 
-            Spacer(minLength: BNBUSpacing.space8)
+                Spacer(minLength: BNBUSpacing.space8)
 
-            Text(verbatim: "\(Int(appState.completionRatio * 100))%")
-                .font(BNBUFont.headlineSmall)
-                .foregroundStyle(BNBUTheme.primary)
-                .padding(.bottom, BNBUSpacing.space4)
+                Text(verbatim: "\(Int(appState.completionRatio * 100))%")
+                    .font(BNBUFont.headlineSmall)
+                    .foregroundStyle(BNBUTheme.primary)
+                    .padding(.bottom, BNBUSpacing.space4)
+            }
         }
     }
 
@@ -217,29 +248,55 @@ struct DashboardView: View {
                 .foregroundStyle(BNBUTheme.onSurface)
 
             HomeCard {
-                ProgressMetric(
-                    title: "课程相关运动",
-                    value: appState.workspace.progress.course,
-                    total: appState.hourRule.courseRequired,
-                    // Organization credit only offsets self-directed hours, so
-                    // the course metric has no offset row to show.
-                    rawValue: appState.workspace.progress.course,
-                    remainingHours: appState.courseRemaining
-                )
+                if appState.isRemoteMode {
+                    observationalMetric(
+                        title: BNBUL10n.text("课程相关运动（仅分类）"),
+                        value: appState.workspace.progress.course
+                    )
+                } else {
+                    ProgressMetric(
+                        title: "课程相关运动",
+                        value: appState.workspace.progress.course,
+                        total: appState.hourRule.courseRequired,
+                        // Organization credit only offsets self-directed hours, so
+                        // the course metric has no offset row to show.
+                        rawValue: appState.workspace.progress.course,
+                        remainingHours: appState.courseRemaining
+                    )
+                }
 
                 Rectangle()
                     .fill(BNBUTheme.outlineVariant.opacity(0.55))
                     .frame(height: 1)
                     .padding(.vertical, BNBUSpacing.space20)
 
-                ProgressMetric(
-                    title: "自主其他运动",
-                    value: appState.workspace.progress.general,
-                    total: appState.hourRule.generalRequired,
-                    rawValue: appState.workspace.progress.rawGeneral,
-                    remainingHours: appState.generalRemaining
-                )
+                if appState.isRemoteMode {
+                    observationalMetric(
+                        title: BNBUL10n.text("其他运动（仅分类）"),
+                        value: appState.workspace.progress.general
+                    )
+                } else {
+                    ProgressMetric(
+                        title: "自主其他运动",
+                        value: appState.workspace.progress.general,
+                        total: appState.hourRule.generalRequired,
+                        rawValue: appState.workspace.progress.rawGeneral,
+                        remainingHours: appState.generalRemaining
+                    )
+                }
             }
+        }
+    }
+
+    private func observationalMetric(title: String, value: Double) -> some View {
+        HStack(spacing: BNBUSpacing.space12) {
+            Text(verbatim: title)
+                .font(BNBUFont.bodyMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
+            Spacer(minLength: BNBUSpacing.space8)
+            Text(verbatim: value.localizedHourText)
+                .font(BNBUFont.titleMedium)
+                .foregroundStyle(BNBUTheme.onSurface)
         }
     }
 }
@@ -346,16 +403,17 @@ private struct NotificationBell: View {
 private struct CheckInWindowStatusRow: View {
     let date: Date
     let isEnforced: Bool
+    let policy: CheckInTimeWindowPolicy
 
     private var canStart: Bool {
-        !isEnforced || CheckInTimeWindowRule.canStartExercise(at: date)
+        !isEnforced || policy.blockingMessage(at: date) == nil
     }
 
     private var detail: String {
         if canStart {
-            return BNBUL10n.formatted("每日打卡时间 %@", CheckInTimeWindowRule.displayText)
+            return BNBUL10n.formatted("本教学班打卡时间 %@", policy.displayText)
         }
-        return CheckInTimeWindowRule.startBlockedMessage
+        return policy.blockingMessage(at: date) ?? BNBUL10n.text("当前不可开始运动。")
     }
 
     var body: some View {
@@ -519,36 +577,33 @@ struct NoticeRow: View {
     let notice: StudentNotice
 
     var body: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label {
-                        Text(LocalizedStringKey(notice.category.rawValue))
-                    } icon: {
-                        Image(systemName: notice.category.symbolName)
-                    }
-                        .font(BNBUFont.labelMedium)
-                        .foregroundStyle(BNBUTheme.blue)
-                    Spacer()
-                    if notice.isUnread {
-                        Circle()
-                            .fill(BNBUTheme.blue)
-                            .frame(width: 9, height: 9)
-                    }
-                }
+        HStack(alignment: .top, spacing: BNBUSpacing.space12) {
+            Image(systemName: notice.isUnread ? "bell.fill" : "checkmark.circle.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(notice.isUnread ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+                .frame(width: 24, height: 24)
 
+            VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(notice.title)
                         .font(BNBUFont.titleMedium)
-                        .foregroundStyle(BNBUTheme.ink)
-                    Spacer()
-                    StatusBadge(text: notice.time)
+                        .fontWeight(notice.isUnread ? .semibold : .regular)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                    Spacer(minLength: BNBUSpacing.space12)
+                    Text(verbatim: BNBUL10n.dynamicText(notice.time))
+                        .font(BNBUFont.labelMedium)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .lineLimit(1)
                 }
                 Text(notice.message)
                     .font(BNBUFont.bodyMedium)
-                    .foregroundStyle(BNBUTheme.muted)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(BNBUSpacing.space16)
+        .background(notice.isUnread ? BNBUTheme.surface : BNBUTheme.surfaceVariant.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.large, style: .continuous))
     }
 }
 
@@ -571,25 +626,41 @@ private struct NotificationCenterSheet: View {
         NavigationStack {
             VStack(spacing: 12) {
                 HStack {
-                    Label("通知", systemImage: appState.unreadNoticeCount > 0 ? "bell.badge.fill" : "bell")
-                        .font(BNBUFont.titleLarge)
+                    Image(systemName: appState.unreadNoticeCount > 0 ? "bell.fill" : "bell")
+                        .font(.system(size: 23, weight: .semibold))
+                        .foregroundStyle(BNBUTheme.primary)
+                    Text("通知")
+                        .font(BNBUFont.headlineSmall)
+                        .foregroundStyle(BNBUTheme.onSurface)
                     Spacer()
-                    StatusBadge(text: unreadBadgeText)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(BNBUTheme.onSurface)
+                            .frame(width: BNBUSpacing.touchTarget, height: BNBUSpacing.touchTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭通知")
+                    .accessibilityIdentifier("notifications.close")
                 }
 
                 HStack {
-                    Spacer()
+                    StatusBadge(text: unreadBadgeText)
+                    Spacer(minLength: BNBUSpacing.space12)
                     Button("全部标为已读") {
                         appState.markAllNoticesRead()
                     }
-                    .font(BNBUFont.titleSmall)
+                    .font(BNBUFont.titleMedium)
+                    .foregroundStyle(BNBUTheme.primary)
                     .disabled(appState.unreadNoticeCount == 0)
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BNBUSpacing.space8) {
                         ForEach(DashboardNotificationFilter.allCases) { filter in
-                            BNBUFilterChip(
+                            NotificationFilterChip(
                                 title: filter.rawValue,
                                 isSelected: filter == selectedFilter
                             ) {
@@ -638,14 +709,9 @@ private struct NotificationCenterSheet: View {
             }
             .padding(.horizontal, BNBUSpacing.screen)
             .padding(.top, 8)
-            .background(BNBUTheme.background)
+            .background(BNBUTheme.surface)
             .navigationDestination(item: $openedNotice) { notice in
                 NoticeDetailView(notice: notice)
-            }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("关闭") { dismiss() }
-                }
             }
         }
         .presentationDetents([.large])
@@ -676,6 +742,39 @@ private struct NotificationCenterSheet: View {
                 return notice.category == .review
             }
         }
+    }
+}
+
+private struct NotificationFilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: BNBUSpacing.space4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text(LocalizedStringKey(title))
+                    .font(BNBUFont.labelMedium)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant)
+            .padding(.horizontal, BNBUSpacing.space16)
+            .frame(minHeight: 44)
+            .background(isSelected ? BNBUTheme.primaryContainer : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+            .overlay {
+                if !isSelected {
+                    RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
+                        .stroke(BNBUTheme.outlineVariant, lineWidth: 1)
+                }
+            }
+        }
+        .buttonStyle(BNBUPressStyle())
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
     }
 }
 

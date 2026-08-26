@@ -896,13 +896,13 @@
         }
       }
     },
-    "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机、读取你选择的图片或视频，并在前台单次获取位置。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。" : {
+    "为完成体育教学服务，我们会处理学号、姓名、课程、成绩和运动打卡记录。仅在你主动使用相关功能时调用相机或读取你选择的图片、视频；本 App 不申请定位权限，也不采集位置或坐标。录制现场视频会同时使用麦克风记录声音。系统通知目前在本机生成，不上传推送标识。上述信息不用于广告或个性化推荐。" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "To provide sports education services, we process your student ID, name, courses, grades, and activity check-in records. The camera, selected photos or videos, and one-time foreground location are used only when you choose the related feature. Recording an on-site video also uses the microphone to capture sound. Notifications are generated on this device for now, and no push identifier is uploaded. This information is not used for advertising or personalised recommendations."
+            "value" : "To provide sports education services, we process your student ID, name, courses, grades, and activity check-in records. Camera access and selected photos or videos are used only when you choose those features. The app does not request location permission or collect location or coordinates. Recording an on-site video also uses the microphone to capture sound. Notifications are generated on this device for now, and no push identifier is uploaded. This information is not used for advertising or personalised recommendations."
           }
         }
       }
@@ -2636,6 +2636,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "剩余 12h"
+          }
+        }
+      }
+    },
+    "改进建议" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Improvement suggestion"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改进建议"
+          }
+        }
+      }
+    },
+    "无障碍使用" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessibility"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无障碍使用"
+          }
+        }
+      }
+    },
+    "隐私问题" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私问题"
           }
         }
       }
@@ -10753,13 +10804,13 @@
         }
       }
     },
-    "绑定或更换邮箱、手机号" : {
+    "绑定或更换登录邮箱" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Link or change email and phone"
+            "value" : "Link or change sign-in email"
           }
         }
       }

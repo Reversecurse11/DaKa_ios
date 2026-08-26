@@ -59,23 +59,6 @@
         }
       }
     },
-    "NSLocationWhenInUseUsageDescription" : {
-      "comment" : "Privacy - Location When In Use Usage Description",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your location is requested once when an exercise starts to help verify the activity. Denying location access does not prevent timing or submission."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅在开始运动打卡时获取一次位置，用于辅助确认运动真实性；拒绝定位不影响计时和提交。"
-          }
-        }
-      }
-    },
     "NSMicrophoneUsageDescription" : {
       "comment" : "Privacy - Microphone Usage Description",
       "localizations" : {

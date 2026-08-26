@@ -23,10 +23,6 @@ private extension ExerciseSportType {
     }
 }
 
-private enum CheckInFormField: Hashable {
-    case note
-}
-
 private enum ExerciseAutoEndAlert: Identifiable {
     /// Active exercise time reached the 2-hour daily cap.
     case dailyCap
@@ -45,21 +41,19 @@ struct CheckInView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locale) private var locale
-    @FocusState private var focusedField: CheckInFormField?
+    @FocusState private var noteFocused: Bool
+    @FocusState private var customSportFocused: Bool
     @State private var selectedSegment: CheckInSegment = .submit
     @State private var selectedCategory: ExerciseCategory = .general
     @State private var note = ""
     @State private var selectedSportType: ExerciseSportType?
     @State private var customSportType = ""
-    /// Draft-pool captures the student picked as proof for this submission.
-    @State private var selectedDraftIDs: Set<String> = []
-    /// Materialized attachments for the current selection. Rebuilt when the
-    /// selection or the draft pool changes, so render passes stay cheap.
-    @State private var proofAttachments: [ProofAttachment] = []
     @State private var submitted = false
     @State private var draftSaved = false
     @State private var draftRestored = false
     @State private var confirmSubmit = false
+    @State private var noteTouched = false
+    @State private var startAttempted = false
     @State private var confirmEndExercise = false
     @State private var endWillBeUncredited = false
     @State private var showUnderHourNotice = false
@@ -115,7 +109,8 @@ struct CheckInView: View {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("完成") {
-                    focusedField = nil
+                    noteFocused = false
+                    customSportFocused = false
                     dismissBNBUKeyboard()
                 }
                 .font(BNBUFont.titleSmall)
@@ -142,9 +137,15 @@ struct CheckInView: View {
             Text(submitConfirmationMessage)
         }
         .onAppear {
-            appState.reconcileExerciseSession()
+            if !appState.isRemoteMode {
+                appState.reconcileExerciseSession()
+            }
             restoreDraftIfNeeded()
-            rebuildProofAttachments()
+            if let resubmission = appState.exerciseRecordResubmission {
+                selectedCategory = resubmission.creditType == .courseRelated
+                    ? .courseRelated
+                    : .general
+            }
             syncSportTypeWithCategory()
             // Business rule 5.4: one-time health reminder per account.
             // Suppressed under UI testing so dialogs stay deterministic.
@@ -154,12 +155,12 @@ struct CheckInView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            if phase == .active, !appState.isRemoteMode {
                 appState.reconcileExerciseSession()
             }
         }
         .onChange(of: selectedSegment) { _, _ in
-            focusedField = nil
+            noteFocused = false
             dismissBNBUKeyboard()
         }
         .onChange(of: selectedCategory) { _, _ in
@@ -168,17 +169,8 @@ struct CheckInView: View {
         .onChange(of: appState.currentExerciseCourse) { _, _ in
             syncSportTypeWithCategory()
         }
-        .onChange(of: selectedDraftIDs) { _, _ in
-            rebuildProofAttachments()
-        }
-        .onChange(of: appState.exerciseMediaDrafts) { _, drafts in
-            let validIDs = Set(drafts.map(\.id))
-            let pruned = selectedDraftIDs.intersection(validIDs)
-            if pruned != selectedDraftIDs {
-                selectedDraftIDs = pruned
-            } else {
-                rebuildProofAttachments()
-            }
+        .onChange(of: appState.exerciseMediaDrafts) { _, _ in
+            draftSaved = false
         }
     }
 
@@ -193,8 +185,10 @@ struct CheckInView: View {
             healthReminderKey: healthReminderKey,
             confirmEndAction: { performConfirmedEndExercise() },
             abandonAction: {
-                appState.discardExerciseSession()
-                resetFormAfterSubmit()
+                Task {
+                    guard await appState.discardExerciseSessionAuthoritatively() else { return }
+                    resetFormAfterSubmit()
+                }
             }
         )
     }
@@ -203,11 +197,10 @@ struct CheckInView: View {
         "bnbu.health.reminder.shown.\(appState.workspace.student.id)"
     }
 
-    private func rebuildProofAttachments() {
-        proofAttachments = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) }
-            .compactMap { appState.proofAttachment(from: $0) }
-        draftSaved = false
+    /// Every confirmed-retained draft is part of the final evidence set. The
+    /// UI never accepts an exclusion list at submission time.
+    private var proofAttachments: [ProofAttachment] {
+        appState.currentExerciseMediaDrafts.compactMap { appState.proofAttachment(from: $0) }
     }
 
     @ViewBuilder
@@ -231,6 +224,32 @@ struct CheckInView: View {
         VStack(alignment: .leading, spacing: 16) {
             readinessCard
 
+            if let resubmission = appState.exerciseRecordResubmission {
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+                        Label(
+                            "正在准备第 \(resubmission.nextAttemptNumber) 次提交",
+                            systemImage: "arrow.clockwise.circle.fill"
+                        )
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.secondary)
+                        Text("被拒绝的历史记录不会被修改。请完成一条新的运动 Session、重新拍摄现场凭证，再提交新的正式尝试。")
+                            .font(BNBUFont.bodySmall)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if appState.exerciseSession == nil {
+                            Button("取消本次补交") {
+                                appState.cancelExerciseRecordResubmission()
+                            }
+                            .font(BNBUFont.labelMedium)
+                            .foregroundStyle(BNBUTheme.muted)
+                            .accessibilityIdentifier("checkin.resubmission.cancel")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("checkin.resubmission.banner")
+            }
+
             if appState.exerciseSession?.status != .active {
                 HStack(alignment: .firstTextBaseline) {
                     Text("本次运动")
@@ -249,9 +268,24 @@ struct CheckInView: View {
                 LocalRecoveryBanner(message: localRecoveryMessage)
             }
 
-            if let errorMessage = appState.errorMessage {
+            if let existingSession = appState.existingRemoteExerciseSession {
+                ExistingRemoteExerciseSessionPanel(
+                    session: existingSession,
+                    refreshAction: {
+                        Task { await appState.refreshExistingRemoteExerciseSession() }
+                    },
+                    homeAction: {
+                        NotificationCenter.default.post(
+                            name: .bnbuOpenDestination,
+                            object: AppTab.dashboard
+                        )
+                    }
+                )
+            }
+
+            if let userError = appState.userFacingError {
                 BNBUErrorPanel(
-                    message: errorMessage,
+                    error: userError,
                     retryTitle: appState.canSafelyRetryCheckIn ? "重试上传" : "刷新记录"
                 ) {
                     if appState.canSafelyRetryCheckIn {
@@ -260,6 +294,17 @@ struct CheckInView: View {
                         Task {
                             await appState.refreshRemoteWorkspace()
                         }
+                    }
+                }
+            } else if let errorMessage = appState.errorMessage {
+                BNBUErrorPanel(
+                    message: errorMessage,
+                    retryTitle: appState.canSafelyRetryCheckIn ? "重试上传" : "刷新记录"
+                ) {
+                    if appState.canSafelyRetryCheckIn {
+                        performSubmit()
+                    } else {
+                        Task { await appState.refreshRemoteWorkspace() }
                     }
                 }
             }
@@ -284,7 +329,7 @@ struct CheckInView: View {
            let course = appState.currentExerciseCourse {
             // The pill reports whether today's window is open, not whether the
             // form is complete — picking a sport is a separate step.
-            let windowIsOpen = CheckInTimeWindowRule.canStartExercise(at: Date())
+            let windowIsOpen = course.checkInTimeWindow.blockingMessage(at: Date()) == nil
             SwissPanel {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
@@ -307,7 +352,7 @@ struct CheckInView: View {
                     }
 
                     readinessRow(systemImage: "stopwatch") {
-                        Text("每日 \(CheckInTimeWindowRule.displayText)")
+                        Text(verbatim: course.checkInTimeWindow.displayText)
                     }
                     readinessRow(systemImage: "circle.fill", iconSize: 8) {
                         Text(verbatim: BNBUL10n.dynamicText(course.displayTitle))
@@ -359,13 +404,8 @@ struct CheckInView: View {
 
                     // The bound course is already named in the readiness card
                     // above, so only the blocking states repeat it here.
-                    if appState.hasPendingEnrollmentOnly {
-                        Label("课程加入申请审核中，老师通过后才能开始运动。", systemImage: "hourglass")
-                            .font(BNBUFont.bodyMedium)
-                            .foregroundStyle(BNBUTheme.muted)
-                            .accessibilityIdentifier("checkin.enrollment.pending")
-                    } else if appState.currentExerciseCourse == nil, selectedCategory == .courseRelated {
-                        Text("当前没有在读体育课程，暂时不能开始运动。")
+                    if appState.currentExerciseCourse == nil, selectedCategory == .courseRelated {
+                        Text("当前没有 ACTIVE 体育课程，暂时不能开始运动。")
                             .font(BNBUFont.bodyMedium)
                             .foregroundStyle(BNBUTheme.muted)
                     }
@@ -379,7 +419,12 @@ struct CheckInView: View {
                     if selectedCategory == .courseRelated, let sport = boundCourseSport {
                         CourseSportRow(sport: sport)
                     } else {
-                        SportTypeSelector(selected: $selectedSportType, customValue: $customSportType)
+                        SportTypeSelector(
+                            selected: $selectedSportType,
+                            customValue: $customSportType,
+                            showValidationErrors: startAttempted,
+                            customFocusBinding: $customSportFocused
+                        )
                     }
                 }
             }
@@ -399,11 +444,18 @@ struct CheckInView: View {
                 .overlay(BNBUTheme.outlineVariant)
 
             DisabledAwareButton(
-                title: startValidationMessage == nil ? "开始运动" : "当前不可开始",
+                title: startBlockingMessage == nil ? "开始运动" : "当前不可开始",
                 systemImage: "play.fill",
-                isDisabled: startValidationMessage != nil,
+                isDisabled: startBlockingMessage != nil,
                 accessibilityIdentifier: "checkin.exercise.start"
             ) {
+                startAttempted = true
+                guard sessionInputValidationMessage == nil else {
+                    if selectedSportType == .other {
+                        customSportFocused = true
+                    }
+                    return
+                }
                 startExercise()
             }
             // The message is already resolved for the app language, so it is read
@@ -472,14 +524,16 @@ struct CheckInView: View {
                     // (business rule 5.5); captures land in the draft pool.
                     exerciseCaptureSection(displayedSession)
 
+                    addSixtyMinutesPanel
+
                     if displayedSession.isPaused {
                         PrimaryActionButton(title: "继续运动", systemImage: "play.fill") {
-                            appState.resumeExerciseSession()
+                            Task { await appState.resumeExerciseSessionAuthoritatively() }
                         }
                         .accessibilityIdentifier("checkin.exercise.resume")
                     } else {
                         PrimaryActionButton(title: "暂停运动", systemImage: "pause.fill") {
-                            appState.pauseExerciseSession()
+                            Task { await appState.pauseExerciseSessionAuthoritatively() }
                         }
                         .accessibilityIdentifier("checkin.exercise.pause")
                     }
@@ -515,8 +569,14 @@ struct CheckInView: View {
             }
             .task(id: displayedSession.status) {
                 if displayedSession.status == .completed, session.status == .active {
-                    autoEndAlert = session.reachedDailyCap(at: context.date) ? .dailyCap : .pauseTimeout
-                    appState.reconcileExerciseSession(at: context.date)
+                    let alert: ExerciseAutoEndAlert = session.reachedDailyCap(at: context.date)
+                        ? .dailyCap
+                        : .pauseTimeout
+                    if await appState.endExerciseSessionAuthoritatively(
+                        at: displayedSession.endTime ?? context.date
+                    ) {
+                        autoEndAlert = alert
+                    }
                 }
             }
         }
@@ -552,7 +612,7 @@ struct CheckInView: View {
                 caption: "预计学时"
             )
             sessionStat(
-                value: String(appState.exerciseMediaDrafts.count),
+                value: String(appState.currentExerciseMediaDrafts.count),
                 caption: "现场凭证"
             )
         }
@@ -586,16 +646,6 @@ struct CheckInView: View {
                             .font(BNBUFont.bodySmall)
                             .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
-                    Spacer(minLength: BNBUSpacing.space8)
-                    SessionStatePill(
-                        text: session.locationStatus == .available
-                            ? BNBUL10n.text("已获取位置")
-                            : BNBUL10n.text("未获取位置"),
-                        tint: session.locationStatus == .available
-                            ? BNBUTheme.tertiary
-                            : BNBUTheme.secondary
-                    )
-                    .accessibilityIdentifier("checkin.location.status")
                 }
 
                 HStack(spacing: 10) {
@@ -606,7 +656,7 @@ struct CheckInView: View {
                         isDisabled: appState.exercisePhotoDraftCount >= ExerciseMediaDraftRule.maximumPhotoDrafts,
                         accessibilityIdentifier: "checkin.capture.photo"
                     ) { attachment in
-                        handleCapturedAttachment(attachment, autoSelect: false)
+                        handleCapturedAttachment(attachment)
                     }
 
                     ExerciseCameraCaptureButton(
@@ -616,12 +666,12 @@ struct CheckInView: View {
                         isDisabled: appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts,
                         accessibilityIdentifier: "checkin.capture.video"
                     ) { attachment in
-                        handleCapturedAttachment(attachment, autoSelect: false)
+                        handleCapturedAttachment(attachment)
                     }
                 }
 
                 if appState.exerciseVideoDraftCount >= ExerciseMediaDraftRule.maximumVideoDrafts {
-                    Text("视频已达到 \(ExerciseMediaDraftRule.maximumVideoDrafts) 个上限，删除后可继续录制。")
+                    Text("视频已达到 \(ExerciseMediaDraftRule.maximumVideoDrafts) 个上限。已确认保留的素材不能删除。")
                         .font(BNBUFont.bodySmall)
                         .foregroundStyle(BNBUTheme.secondary)
                 }
@@ -635,7 +685,7 @@ struct CheckInView: View {
                     StatusBadge(text: "视频 \(appState.exerciseVideoDraftCount)/\(ExerciseMediaDraftRule.maximumVideoDrafts)")
                 }
 
-                if appState.exerciseMediaDrafts.isEmpty {
+                if appState.currentExerciseMediaDrafts.isEmpty {
                     Label {
                         Text("拍摄完成后，照片和视频会立即显示在这里。")
                             .font(BNBUFont.bodySmall)
@@ -650,9 +700,7 @@ struct CheckInView: View {
                     .background(BNBUTheme.surfaceContainerLow)
                     .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
                 } else {
-                    ExerciseDraftThumbnailStrip(drafts: appState.exerciseMediaDrafts) { draft in
-                        appState.removeExerciseMediaDraft(id: draft.id)
-                    }
+                    ExerciseDraftThumbnailStrip(drafts: appState.currentExerciseMediaDrafts)
                 }
             }
         }
@@ -688,15 +736,17 @@ struct CheckInView: View {
     /// Runs after 「确认结束」: an under-one-hour end closes the session with a
     /// notice, without a record or quota usage, keeping drafts for later today.
     private func performConfirmedEndExercise() {
-        guard appState.endExerciseSession() else { return }
-        if appState.exerciseSession?.creditedHours() == 0 {
-            appState.finishUncreditedExerciseSession()
-            resetFormAfterSubmit()
-            showUnderHourNotice = true
+        Task {
+            guard await appState.endExerciseSessionAuthoritatively() else { return }
+            if appState.exerciseSession?.creditedHours() == 0 {
+                appState.finishUncreditedExerciseSession()
+                resetFormAfterSubmit()
+                showUnderHourNotice = true
+            }
         }
     }
 
-    private func handleCapturedAttachment(_ attachment: ProofAttachment, autoSelect: Bool) {
+    private func handleCapturedAttachment(_ attachment: ProofAttachment) {
         let added: Bool
         switch attachment.type {
         case .image:
@@ -714,21 +764,8 @@ struct CheckInView: View {
                 thumbnailData: attachment.thumbnailData
             )
         }
-        guard added, autoSelect, let newDraft = appState.exerciseMediaDrafts.last else { return }
-        let selectedImages = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) && $0.type == .image }.count
-        let selectedVideos = appState.exerciseMediaDrafts
-            .filter { selectedDraftIDs.contains($0.id) && $0.type == .video }.count
-        if newDraft.type == .image, selectedImages < ProofUploadRule.maxImageCount {
-            selectedDraftIDs.insert(newDraft.id)
-        } else if newDraft.type == .video, selectedVideos < ProofUploadRule.maxVideoCount {
-            selectedDraftIDs.insert(newDraft.id)
-        }
-    }
-
-    private func deleteDraft(_ mediaDraft: ExerciseMediaDraft) {
-        selectedDraftIDs.remove(mediaDraft.id)
-        appState.removeExerciseMediaDraft(id: mediaDraft.id)
+        guard added else { return }
+        draftSaved = false
     }
 
     private func evidenceSubmissionForm(_ session: ExerciseSession) -> some View {
@@ -746,48 +783,23 @@ struct CheckInView: View {
                     Text("提交运动凭证")
                         .font(BNBUFont.titleMedium)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("运动说明")
-                                .font(BNBUFont.titleMedium)
-                            Text("必填")
-                                .font(BNBUFont.labelMedium)
-                                .foregroundStyle(BNBUTheme.muted)
-                            Spacer()
-                            Text("\(note.count)/\(CheckInInputRule.maximumDescriptionLength)")
-                                .font(BNBUFont.labelMedium.monospacedDigit())
-                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                                .accessibilityLabel("已输入 \(note.count) 个字符，共可输入 \(CheckInInputRule.maximumDescriptionLength) 个字符")
-                            if focusedField == .note {
-                                Button {
-                                    focusedField = nil
-                                    dismissBNBUKeyboard()
-                                } label: {
-                                    Image(systemName: "keyboard.chevron.compact.down")
-                                        .font(BNBUFont.titleMedium)
-                                        .foregroundStyle(BNBUTheme.blue)
-                                        .frame(width: 34, height: 34)
-                                }
-                                .accessibilityLabel("收起键盘")
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        TextEditor(text: $note)
-                            .bnbuInputText()
-                            .accessibilityLabel("运动说明")
-                            .accessibilityHint("必填，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符")
-                            .focused($focusedField, equals: .note)
-                            .frame(minHeight: 100)
-                            .padding(8)
-                            .scrollContentBackground(.hidden)
-                            .background(BNBUTheme.pale)
-                            .bnbuOutlinedSurface()
-                            .onChange(of: note) { _, value in
-                                if value.count > CheckInInputRule.maximumDescriptionLength {
-                                    note = String(value.prefix(CheckInInputRule.maximumDescriptionLength))
-                                }
-                            }
-                    }
+                    BNBUTextArea(
+                        label: "运动说明",
+                        text: $note,
+                        placeholder: "说明本次运动内容",
+                        required: CheckInInputRule.isDescriptionRequired(for: session.category),
+                        helperText: CheckInInputRule.isDescriptionRequired(for: session.category)
+                            ? "自主运动必填；提交时校验，最多 \(CheckInInputRule.maximumDescriptionLength) 个字符。"
+                            : "课程相关运动可选；最多 \(CheckInInputRule.maximumDescriptionLength) 个字符。",
+                        errorText: noteTouched
+                            ? CheckInInputRule.validationMessage(note: note, for: session.category)
+                            : nil,
+                        characterLimit: CheckInInputRule.maximumDescriptionLength,
+                        enabled: !appState.isSubmittingCheckIn,
+                        onFocusChanged: { focused in if !focused { noteTouched = true } },
+                        focusBinding: $noteFocused,
+                        accessibilityIdentifier: "checkin.note"
+                    )
 
                     evidenceProofSection
 
@@ -805,7 +817,7 @@ struct CheckInView: View {
                         SecondaryActionButton(title: draftSaved ? "草稿已保存" : "保存草稿", systemImage: "tray.and.arrow.down") {
                             saveDraft()
                         }
-                        SecondaryActionButton(title: "清空凭证", systemImage: "trash") {
+                        SecondaryActionButton(title: "清空说明", systemImage: "text.badge.minus") {
                             clearDraftAndForm()
                         }
                     }
@@ -813,10 +825,18 @@ struct CheckInView: View {
                     DisabledAwareButton(
                         title: submissionButtonTitle,
                         systemImage: submissionButtonSystemImage,
-                        isDisabled: !canSubmit || appState.isLoading || appState.isSubmittingCheckIn,
+                        isDisabled: !canAttemptSubmit || appState.isLoading || appState.isSubmittingCheckIn,
                         accessibilityIdentifier: "checkin.submit.button"
                     ) {
-                        focusedField = nil
+                        noteTouched = true
+                        if CheckInInputRule.validationMessage(
+                            note: submissionNote(for: session),
+                            for: session.category
+                        ) != nil {
+                            noteFocused = true
+                            return
+                        }
+                        noteFocused = false
                         dismissBNBUKeyboard()
                         confirmSubmit = true
                     }
@@ -830,7 +850,7 @@ struct CheckInView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("打卡凭证")
                     .font(BNBUFont.titleMedium)
-                Text("至少选择 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 凭证只能通过相机实时拍摄，不支持从相册选择。")
+                Text("至少确认保留 1 张照片或 1 个视频；\(ProofUploadRule.summaryText) 全部已保留凭证会随本次记录提交，不能在此排除。")
                     .font(BNBUFont.bodySmall)
                     .foregroundStyle(BNBUTheme.muted)
             }
@@ -839,15 +859,10 @@ struct CheckInView: View {
                 title: "现场拍摄照片 / 视频",
                 accessibilityIdentifier: "checkin.capture.camera"
             ) { attachment in
-                handleCapturedAttachment(attachment, autoSelect: true)
+                handleCapturedAttachment(attachment)
             }
 
-            ExerciseProofSelectionPanel(
-                drafts: appState.exerciseMediaDrafts,
-                selectedDraftIDs: $selectedDraftIDs
-            ) { mediaDraft in
-                deleteDraft(mediaDraft)
-            }
+            ExerciseProofSelectionPanel(drafts: appState.currentExerciseMediaDrafts)
         }
         .padding(16)
         .background(BNBUTheme.blueSoft)
@@ -893,9 +908,12 @@ struct CheckInView: View {
               session.status == .completed,
               submissionContext != nil else { return false }
         let creditedHours = session.creditedHours()
-        return !appState.hasSubmittedCheckInToday() &&
+        return (appState.isRemoteMode || !appState.hasSubmittedCheckInToday()) &&
             (creditedHours == 1 || creditedHours == 2) &&
-            CheckInInputRule.validationMessage(note: submissionNote(for: session)) == nil &&
+            CheckInInputRule.validationMessage(
+                note: submissionNote(for: session),
+                for: session.category
+            ) == nil &&
             !proofAttachments.isEmpty &&
             ProofUploadRule.accepts(proofAttachments) &&
             (proofAttachments.allSatisfy(\.isValidForUpload) || canResumePendingUpload)
@@ -903,7 +921,7 @@ struct CheckInView: View {
 
     private var validationMessage: String? {
         guard let session = appState.exerciseSession else { return nil }
-        if appState.hasSubmittedCheckInToday() {
+        if !appState.isRemoteMode, appState.hasSubmittedCheckInToday() {
             return BNBUL10n.text("今日已打卡，每天只能提交一次。")
         }
         if submissionContext == nil {
@@ -912,11 +930,14 @@ struct CheckInView: View {
         if session.creditedHours() != 1 && session.creditedHours() != 2 {
             return BNBUL10n.text("运动不足 1 小时，不能提交。")
         }
-        if let inputMessage = CheckInInputRule.validationMessage(note: submissionNote(for: session)) {
+        if let inputMessage = CheckInInputRule.validationMessage(
+            note: submissionNote(for: session),
+            for: session.category
+        ) {
             return inputMessage
         }
         if proofAttachments.isEmpty {
-            return BNBUL10n.text("请至少选择或拍摄 1 张照片或 1 个视频作为凭证。")
+            return BNBUL10n.text("请至少拍摄并确认保留 1 张照片或 1 个视频作为凭证。")
         }
         if let proofLimitMessage = ProofUploadRule.validationMessage(for: proofAttachments) {
             return proofLimitMessage
@@ -1021,11 +1042,10 @@ struct CheckInView: View {
             return
         }
         note = appState.exerciseSession.map { submissionNote(draft.note, for: $0) } ?? ""
-        // Proof bytes live in the media draft pool; restore the selection by
-        // intersecting the saved attachment ids with what is still on disk.
-        let poolIDs = Set(appState.exerciseMediaDrafts.map(\.id))
-        selectedDraftIDs = Set(draft.proofAttachments.map(\.id)).intersection(poolIDs)
-        rebuildProofAttachments()
+        noteTouched = false
+        // Proof bytes live in the retained media pool. A saved form cannot
+        // restore a client-selected subset; every retained item remains in the
+        // submission set.
         selectedSegment = .submit
         draftSaved = false
     }
@@ -1047,20 +1067,18 @@ struct CheckInView: View {
     private func clearDraftAndForm() {
         appState.clearDraft()
         note = ""
+        noteTouched = false
         selectedSportType = nil
         customSportType = ""
-        selectedDraftIDs = []
-        proofAttachments = []
         draftSaved = false
     }
 
     private func resetFormAfterSubmit() {
         note = ""
+        noteTouched = false
         selectedSportType = nil
         selectedCategory = .general
         customSportType = ""
-        selectedDraftIDs = []
-        proofAttachments = []
         draftSaved = false
     }
 
@@ -1087,22 +1105,32 @@ struct CheckInView: View {
     }
 
     private var startValidationMessage: String? {
+        startBlockingMessage ?? sessionInputValidationMessage
+    }
+
+    private var startBlockingMessage: String? {
+        if appState.existingRemoteExerciseSession != nil {
+            return BNBUL10n.text("账号已有一条正在进行中的运动，请回原设备继续或刷新状态。")
+        }
         if !appState.isWriteAllowed {
             return appState.systemMode == .maintenance
                 ? BNBUL10n.text("系统当前处于维护模式，暂不能提交或修改内容。")
                 : BNBUL10n.text("系统当前处于只读模式，暂不能提交或修改内容。")
         }
-        if appState.hasSubmittedCheckInToday() {
+        if !appState.isRemoteMode, appState.hasSubmittedCheckInToday() {
             return "今日已打卡，每天只能开始一次计时。"
         }
-        if appState.enforcesCheckInTimeWindow, !CheckInTimeWindowRule.canStartExercise(at: Date()) {
-            return CheckInTimeWindowRule.startBlockedMessage
-        }
         if appState.currentExerciseCourse == nil {
-            return appState.hasPendingEnrollmentOnly
-                ? "课程加入申请审核中，通过后才能开始运动。"
-                : "当前学期没有在读体育课程。"
+            return "当前学期没有 ACTIVE 体育课程。"
         }
+        if appState.enforcesCheckInTimeWindow,
+           let message = appState.currentExerciseCourse?.checkInTimeWindow.blockingMessage(at: Date()) {
+            return message
+        }
+        return nil
+    }
+
+    private var sessionInputValidationMessage: String? {
         return ExerciseSessionInputRule.validationMessage(
             sportType: selectedSportType,
             customSportName: customSportType
@@ -1110,31 +1138,20 @@ struct CheckInView: View {
     }
 
     private func startExercise() {
+        startAttempted = true
         guard startValidationMessage == nil else { return }
+        customSportFocused = false
         appState.clearDraft()
-        // Retained media drafts from an earlier <1h attempt stay in the pool;
-        // only the form selection resets for the new session.
-        selectedDraftIDs = []
-        proofAttachments = []
+        // Retained media drafts from an earlier <1h attempt stay in the pool
+        // and cannot be silently excluded by starting another session.
         note = ""
         draftSaved = false
-        guard appState.startExerciseSession(
-            category: selectedCategory,
-            sportType: selectedSportType,
-            customSportName: customSportType
-        ) else { return }
-        // Business rule 5.5: the timer starts immediately; a single location
-        // fix is fetched in the background and attached if it arrives while
-        // the session is still running. Failure just leaves "未获取位置".
-        // UI tests skip the fetch (permission alerts break determinism)
-        // except the dedicated GPS test, which opts back in.
-        let arguments = ProcessInfo.processInfo.arguments
-        if !arguments.contains("-ui-testing-reset") || arguments.contains("-ui-testing-location-check") {
-            Task {
-                if let fix = await ExerciseLocationProvider.shared.requestCurrentLocation() {
-                    appState.attachExerciseSessionLocation(latitude: fix.latitude, longitude: fix.longitude)
-                }
-            }
+        Task {
+            _ = await appState.startExerciseSessionAuthoritatively(
+                category: selectedCategory,
+                sportType: selectedSportType,
+                customSportName: customSportType
+            )
         }
     }
 
@@ -1192,6 +1209,142 @@ struct CheckInView: View {
     private func formatDurationForVoiceOver(_ duration: TimeInterval) -> String {
         let seconds = max(Int(duration), 0)
         return "\(seconds / 3_600) 小时 \((seconds % 3_600) / 60) 分 \(seconds % 60) 秒"
+    }
+}
+
+/// A blocking, non-controlling view of a Session that may be running on
+/// another device. No pause/resume/cancel/takeover action is intentionally
+/// exposed here.
+private struct ExistingRemoteExerciseSessionPanel: View {
+    @Environment(\.locale) private var locale
+    let session: ExistingRemoteExerciseSession
+    let refreshAction: () -> Void
+    let homeAction: () -> Void
+
+    var body: some View {
+        SwissPanel {
+            VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
+                Label("已有运动正在进行", systemImage: "iphone.and.arrow.forward")
+                    .font(BNBUFont.titleMedium)
+                    .foregroundStyle(BNBUTheme.secondary)
+
+                Text("检测到账号已有一条 Active Session，可能是在另一台设备上创建的。本设备不会自动取消、覆盖或接管它。")
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                detailRow(title: "开始时间", value: session.startedAt.formatted(
+                    Date.FormatStyle().dateTime.hour().minute().locale(locale)
+                ))
+                detailRow(title: "当前状态", value: statusTitle)
+                if let requestId = session.requestId {
+                    detailRow(title: "诊断编号", value: requestId)
+                }
+
+                Text("请回到原设备继续或结束运动；如果原设备已处理完成，请刷新这里的状态。")
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: BNBUSpacing.space12) {
+                    SecondaryActionButton(title: "刷新状态", systemImage: "arrow.clockwise") {
+                        refreshAction()
+                    }
+                    .accessibilityIdentifier("checkin.existingSession.refresh")
+
+                    SecondaryActionButton(title: "返回首页", systemImage: "house") {
+                        homeAction()
+                    }
+                    .accessibilityIdentifier("checkin.existingSession.home")
+                }
+            }
+        }
+        .accessibilityIdentifier("checkin.existingSession.panel")
+    }
+
+    private var canAttemptSubmit: Bool {
+        guard appState.isWriteAllowed,
+              let session = appState.exerciseSession,
+              session.status == .completed,
+              submissionContext != nil else { return false }
+        let creditedHours = session.creditedHours()
+        return (appState.isRemoteMode || !appState.hasSubmittedCheckInToday()) &&
+            (creditedHours == 1 || creditedHours == 2) &&
+            !proofAttachments.isEmpty &&
+            ProofUploadRule.accepts(proofAttachments) &&
+            (proofAttachments.allSatisfy(\.isValidForUpload) || canResumePendingUpload)
+    }
+
+    private var addSixtyMinutesPanel: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            Label("增加运动时长", systemImage: "clock.badge.plus")
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(BNBUTheme.primary)
+            Text("每次增加 60 分钟，由服务器记录并返回当前权威运动时长。")
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                Task { await appState.addSixtyMinutesToExerciseSession() }
+            } label: {
+                HStack(spacing: BNBUSpacing.space8) {
+                    if appState.isAdvancingExerciseTestDuration {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "clock.badge.plus")
+                    }
+                    Text("增加 60 分钟")
+                        .font(BNBUFont.titleSmall)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, BNBUSpacing.space12)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(BNBUTheme.primary)
+            .background(BNBUTheme.primary.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
+                    .stroke(
+                        BNBUTheme.primary.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 1.5)
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
+            .disabled(appState.isAdvancingExerciseTestDuration)
+            .accessibilityIdentifier("checkin.add60Minutes")
+        }
+        .padding(BNBUSpacing.space12)
+        .background(BNBUTheme.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+        .accessibilityIdentifier("checkin.add60Minutes.panel")
+    }
+
+    private var statusTitle: String {
+        switch session.status {
+        case "PAUSED": return BNBUL10n.text("已暂停")
+        case "IN_PROGRESS": return BNBUL10n.text("运动中")
+        default: return BNBUL10n.text("进行中")
+        }
+    }
+
+    private func detailRow(title: String, value: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                Spacer(minLength: BNBUSpacing.space12)
+                Text(verbatim: value)
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+            }
+            VStack(alignment: .leading, spacing: BNBUSpacing.space4) {
+                Text(title)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                Text(verbatim: value)
+                    .textSelection(.enabled)
+            }
+        }
+        .font(BNBUFont.bodySmall)
     }
 }
 
@@ -1342,6 +1495,8 @@ private struct CheckInCategorySelector: View {
 private struct SportTypeSelector: View {
     @Binding var selected: ExerciseSportType?
     @Binding var customValue: String
+    let showValidationErrors: Bool
+    var customFocusBinding: FocusState<Bool>.Binding?
 
     private static let customNameLimit = 32
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
@@ -1376,28 +1531,32 @@ private struct SportTypeSelector: View {
             }
 
             if selected == .other {
-                VStack(alignment: .trailing, spacing: 4) {
-                    TextField("具体运动名称", text: $customValue)
-                        .bnbuInputText()
-                        .accessibilityLabel("其他运动项目")
-                        .accessibilityHint("最多 32 个字符")
-                        .padding(.horizontal, 16)
-                        .frame(height: BNBUSpacing.touchTarget)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous)
-                                .stroke(BNBUTheme.outlineVariant, lineWidth: 1)
+                BNBUFormField(
+                    label: "其他运动名称",
+                    placeholder: "例如：飞盘",
+                    text: $customValue,
+                    required: true,
+                    helperText: "请填写具体运动项目，最多 32 个字符。",
+                    errorText: showValidationErrors
+                        ? ExerciseSessionInputRule.validationMessage(
+                            sportType: selected,
+                            customSportName: customValue
                         )
-                        .onChange(of: customValue) { _, value in
-                            if value.count > Self.customNameLimit {
-                                customValue = String(value.prefix(Self.customNameLimit))
-                            }
-                        }
-
-                    Text(verbatim: "\(customValue.count)/\(Self.customNameLimit)")
-                        .font(BNBUFont.labelSmall)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                        : nil,
+                    characterLimit: Self.customNameLimit,
+                    submitLabel: .done,
+                    focusBinding: customFocusBinding,
+                    accessibilityIdentifier: "checkin.sport.otherName"
+                )
+            } else if showValidationErrors, selected == nil,
+                      let message = ExerciseSessionInputRule.validationMessage(
+                        sportType: selected,
+                        customSportName: customValue
+                      ) {
+                Label(message, systemImage: "exclamationmark.circle.fill")
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.error)
+                    .accessibilityIdentifier("checkin.sport.error")
             }
         }
     }

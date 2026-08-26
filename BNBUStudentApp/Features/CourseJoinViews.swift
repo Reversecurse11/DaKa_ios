@@ -3,23 +3,26 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Course join application entry (business rule 4.2). A student joins before
-/// signing in: scan the course QR code or type the invite code, confirm the
-/// course the invite resolves to, then supply identity details for the teacher
-/// to review. Only an approved application opens the main app.
+/// Public preview followed by the OpenAPI 2.0.13 Join Capability and atomic
+/// join. There is no client-side approval queue or locally fabricated course.
 struct CourseJoinSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
     /// Set by a scan entry so tapping it goes straight to the camera instead of
     /// asking the student to pick an entry point twice.
-    var autoPresentsScanner = false
+    let autoPresentsScanner: Bool
 
-    @State private var step: CourseJoinStep = .entry
+    @State private var step: CourseJoinStep
     @State private var code = ""
     @State private var isScannerPresented = false
     @State private var activeAlert: CourseJoinScannerAlert?
-    @FocusState private var isCodeFocused: Bool
+    @State private var codeTouched = false
+
+    init(autoPresentsScanner: Bool = false, startsWithFirstEmailBinding: Bool = false) {
+        self.autoPresentsScanner = autoPresentsScanner
+        _step = State(initialValue: startsWithFirstEmailBinding ? .firstEmailBinding : .entry)
+    }
 
     var body: some View {
         NavigationStack {
@@ -42,55 +45,45 @@ struct CourseJoinSheet: View {
                             appState.errorMessage = nil
                             step = .entry
                         },
-                        onContinue: { name, studentNumber in
-                            appState.errorMessage = nil
-                            step = .contactBinding(
-                                invite,
-                                name: name,
-                                studentNumber: studentNumber
-                            )
+                        onContinue: { name, studentNumber, gender, gradeYear in
+                            Task {
+                                guard let completion = await appState.joinCourseInvite(
+                                    invite,
+                                    name: name,
+                                    studentNumber: studentNumber,
+                                    gender: gender,
+                                    gradeYear: gradeYear
+                                ) else { return }
+                                switch completion {
+                                case .active:
+                                    dismiss()
+                                case .requiresFirstEmailBinding:
+                                    step = .firstEmailBinding
+                                }
+                            }
                         }
                     )
-                case let .contactBinding(invite, name, studentNumber):
-                    // Binding is not optional and has no way back: the student
-                    // has to be reachable before a teacher sees the request.
-                    ContactBindingView { phone, email in
-                        guard appState.submitCourseJoinRequest(
-                            invite: invite,
-                            name: name,
-                            studentNumber: studentNumber,
-                            phone: phone,
-                            email: email
-                        ) else { return }
-                        step = .submitted
+                case .firstEmailBinding:
+                    FirstEmailBindingView {
+                        dismiss()
                     }
-                case .submitted:
-                    JoinRequestStatusView(
-                        request: appState.courseJoinRequest,
-                        onBack: { dismiss() },
-                        onContactTeacher: { dismiss() },
-                        onEditAndResubmit: { _ in restartWithNewInvite() },
-                        onUseNewInvite: { restartWithNewInvite() },
-                        onApproved: { dismiss() }
-                    )
                 }
             }
             .navigationTitle("加入课程")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { dismiss() }
-                        .accessibilityIdentifier("course.join.close")
+                if !requiresFirstEmailBinding {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("关闭") { dismiss() }
+                            .accessibilityIdentifier("course.join.close")
+                    }
                 }
             }
         }
         .accessibilityIdentifier("screen.courseJoin")
+        .interactiveDismissDisabled(requiresFirstEmailBinding)
         .onAppear {
-            // A student who already filed an application lands on its status
-            // rather than being invited to file a second one.
-            if let request = appState.courseJoinRequest, request.status != .active {
-                step = .submitted
-            } else if autoPresentsScanner {
+            if autoPresentsScanner {
                 isScannerPresented = true
             }
         }
@@ -108,12 +101,17 @@ struct CourseJoinSheet: View {
         }
     }
 
+    private var requiresFirstEmailBinding: Bool {
+        if case .firstEmailBinding = step { return true }
+        return false
+    }
+
     private var scanPanel: some View {
         SwissPanel {
             VStack(alignment: .leading, spacing: 14) {
                 Text("扫描课程二维码")
                     .font(BNBUFont.titleMedium)
-                Text("扫描任课老师提供的课程二维码，核对课程信息后填写姓名和学号提交申请，老师审核通过后才能进入。")
+                Text("扫描任课老师提供的课程二维码，先读取服务器课程预览，再确认身份并直接加入。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     .lineSpacing(3)
@@ -133,19 +131,19 @@ struct CourseJoinSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("输入邀请码")
                     .font(BNBUFont.titleMedium)
-                TextField("例如：BNBU2026", text: $code)
-                    .bnbuInputText()
-                    .accessibilityLabel("课程邀请码")
-                    .accessibilityHint("填写老师提供的课程邀请码")
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .padding(12)
-                    .background(BNBUTheme.surface)
-                    .bnbuOutlinedSurface(lineWidth: 1.5)
-                    .focused($isCodeFocused)
-                    .submitLabel(.done)
-                    .onSubmit { lookUpInvite() }
-                    .accessibilityIdentifier("course.join.code.field")
+                BNBUFormField(
+                    label: "课程邀请码",
+                    placeholder: "输入老师提供的邀请码",
+                    text: $code,
+                    required: true,
+                    helperText: "支持合同允许的长邀请码；不会在日志中记录邀请码明文。",
+                    errorText: codeTouched ? CourseJoinCodeRule.validationMessage(for: code) : nil,
+                    characterLimit: 512,
+                    submitLabel: .done,
+                    onSubmit: { lookUpInvite() },
+                    onFocusChanged: { focused in if !focused { codeTouched = true } },
+                    accessibilityIdentifier: "course.join.code.field"
+                )
 
                 if let message = appState.errorMessage {
                     Text(verbatim: message)
@@ -167,17 +165,15 @@ struct CourseJoinSheet: View {
     }
 
     private func lookUpInvite() {
-        isCodeFocused = false
-        appState.errorMessage = nil
-        guard let invite = appState.lookupCourseInvite(rawCode: code) else { return }
-        step = .confirm(invite)
-        code = ""
-    }
-
-    private func restartWithNewInvite() {
-        appState.clearCourseJoinRequest()
-        appState.errorMessage = nil
-        step = .entry
+        Task {
+            codeTouched = true
+            dismissBNBUKeyboard()
+            appState.errorMessage = nil
+            guard CourseJoinCodeRule.validationMessage(for: code) == nil else { return }
+            guard let invite = await appState.previewCourseInvite(rawToken: code) else { return }
+            step = .confirm(invite)
+            code = ""
+        }
     }
 
     private func startScan() {
@@ -209,6 +205,11 @@ struct CourseJoinSheet: View {
     }
 
     private func handleScan(_ payload: String) {
+        if let components = URLComponents(string: payload), components.scheme != nil,
+           CourseInviteURLPolicy.resolvedAllowedHosts().isEmpty {
+            activeAlert = .urlHostNotConfigured
+            return
+        }
         guard let scanned = CourseJoinCodeRule.code(fromScannedPayload: payload) else {
             activeAlert = .unrecognized
             return
@@ -226,26 +227,26 @@ struct CourseJoinSheet: View {
 private enum CourseJoinStep: Hashable {
     case entry
     case confirm(CourseInvite)
-    case contactBinding(CourseInvite, name: String, studentNumber: String)
-    case submitted
+    case firstEmailBinding
 }
 
 /// Android's `CourseJoinConfirmScreen`: the invite's course is shown for
-/// confirmation, then the student supplies the identity the teacher reviews.
+/// confirmation, then the student supplies the identity bound into the
+/// one-time Join Capability.
 struct CourseJoinConfirmView: View {
     @EnvironmentObject private var appState: AppState
     let invite: CourseInvite
     let onBack: () -> Void
-    let onContinue: (_ name: String, _ studentNumber: String) -> Void
+    let onContinue: (_ name: String, _ studentNumber: String, _ gender: StudentGender, _ gradeYear: Int) -> Void
 
     @State private var name = ""
     @State private var studentNumber = ""
-    @FocusState private var focusedField: Field?
-
-    private enum Field: Hashable {
-        case name
-        case studentNumber
-    }
+    @State private var gender: StudentGender = .unknown
+    @State private var gradeYear = ""
+    @State private var submittedIdentity = false
+    @FocusState private var nameFocused: Bool
+    @FocusState private var studentNumberFocused: Bool
+    @FocusState private var gradeYearFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -264,7 +265,9 @@ struct CourseJoinConfirmView: View {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("完成") {
-                    focusedField = nil
+                    nameFocused = false
+                    studentNumberFocused = false
+                    gradeYearFocused = false
                     dismissBNBUKeyboard()
                 }
                 .font(BNBUFont.titleSmall)
@@ -282,7 +285,7 @@ struct CourseJoinConfirmView: View {
                 )
                 CourseJoinFact(label: "授课老师", value: invite.teacherName)
                 CourseJoinFact(label: "学期", value: invite.semester)
-                Text("请确认以上课程信息无误后再提交申请")
+                Text("请确认以上课程信息无误后再加入")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
             }
@@ -298,24 +301,63 @@ struct CourseJoinConfirmView: View {
                 }
 
                 CourseJoinField(
-                    label: "姓名（必填）",
+                    label: "姓名",
                     text: $name,
                     limit: CourseJoinRequestRule.maximumNameLength,
+                    errorText: submittedIdentity && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "请填写姓名。"
+                        : nil,
+                    focusBinding: $nameFocused,
                     identifier: "courseJoinConfirm.name"
                 )
-                .focused($focusedField, equals: .name)
 
                 CourseJoinField(
-                    label: "学号（必填）",
+                    label: "学号",
                     text: $studentNumber,
                     limit: CourseJoinRequestRule.maximumStudentNumberLength,
+                    errorText: submittedIdentity && studentNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "请填写学号。"
+                        : nil,
+                    focusBinding: $studentNumberFocused,
                     identifier: "courseJoinConfirm.studentNumber"
                 )
-                .focused($focusedField, equals: .studentNumber)
+
+                Picker("性别（必填）", selection: $gender) {
+                    Text("请选择").tag(StudentGender.unknown)
+                    Text("女").tag(StudentGender.female)
+                    Text("男").tag(StudentGender.male)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("courseJoinConfirm.gender")
+                if submittedIdentity && gender == .unknown {
+                    Label("请选择性别。", systemImage: "exclamationmark.circle.fill")
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.error)
+                        .accessibilityIdentifier("courseJoinConfirm.gender.error")
+                }
+
+                BNBUFormField(
+                    label: "入学年份",
+                    placeholder: "例如：2026",
+                    text: $gradeYear,
+                    required: true,
+                    helperText: "请输入四位入学年份。",
+                    errorText: submittedIdentity && (gradeYear.count != 4 || Int(gradeYear) == nil)
+                        ? "请输入有效的四位入学年份。"
+                        : nil,
+                    characterLimit: 4,
+                    keyboardType: .numberPad,
+                    submitLabel: .done,
+                    focusBinding: $gradeYearFocused,
+                    accessibilityIdentifier: "courseJoinConfirm.gradeYear"
+                )
+                .onChange(of: gradeYear) { _, value in
+                    gradeYear = String(value.filter(\.isNumber).prefix(4))
+                }
 
                 PrimaryActionButton(
-                    title: "下一步：绑定联系方式",
-                    systemImage: "arrow.right",
+                    title: "确认并加入课程",
+                    systemImage: "checkmark.circle.fill",
                     accessibilityIdentifier: "courseJoinConfirm.submit"
                 ) {
                     submit()
@@ -325,8 +367,19 @@ struct CourseJoinConfirmView: View {
     }
 
     private func submit() {
-        focusedField = nil
+        submittedIdentity = true
+        nameFocused = false
+        studentNumberFocused = false
+        gradeYearFocused = false
         dismissBNBUKeyboard()
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            nameFocused = true
+            return
+        }
+        if studentNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            studentNumberFocused = true
+            return
+        }
         if let validationMessage = CourseJoinRequestRule.validationMessage(
             name: name,
             studentNumber: studentNumber
@@ -334,59 +387,132 @@ struct CourseJoinConfirmView: View {
             appState.errorMessage = validationMessage
             return
         }
-        onContinue(name, studentNumber)
+        guard gender.courseJoinAPIValue != nil,
+              let parsedGradeYear = Int(gradeYear),
+              (1000...9999).contains(parsedGradeYear) else {
+            appState.errorMessage = BNBUL10n.text("请选择性别并填写四位入学年份。")
+            if Int(gradeYear) == nil || gradeYear.count != 4 {
+                gradeYearFocused = true
+            }
+            return
+        }
+        onContinue(name, studentNumber, gender, parsedGradeYear)
     }
 }
 
-/// Both contacts are bound before the application reaches the teacher: a
-/// student who reinstalls the app signs back in with a code sent to one of
-/// them, so registration is not complete until both are verified.
-struct ContactBindingView: View {
+struct FirstEmailBindingView: View {
     @EnvironmentObject private var appState: AppState
-    let onBound: (_ phone: String, _ email: String) -> Void
+    @Environment(\.locale) private var locale
+    let onComplete: () -> Void
 
-    @State private var phone = ""
     @State private var email = ""
-    @State private var verifiedPhone: String?
-    @State private var verifiedEmail: String?
+    @State private var code = ""
+    @State private var codeSent = false
+    @State private var emailTouched = false
+    @State private var codeTouched = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                SectionTitle(eyebrow: "ACCOUNT", title: "绑定手机号和邮箱")
-                Text("退出登录或更换设备后，用这里绑定的手机号或邮箱接收验证码即可找回本账号。两项都验证通过后才能提交加入申请。")
+                SectionTitle(eyebrow: "ACCOUNT", title: "绑定学校邮箱")
+                Text("课程已成功加入。完成首次邮箱验证后，账号才会变为 ACTIVE 并进入运动工作台。")
                     .font(BNBUFont.bodyMedium)
                     .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .lineSpacing(3)
 
-                ContactChannelPanel(
-                    channel: .phone,
-                    value: $phone,
-                    verifiedValue: $verifiedPhone
-                )
-                ContactChannelPanel(
-                    channel: .email,
-                    value: $email,
-                    verifiedValue: $verifiedEmail
-                )
+                SwissPanel {
+                    VStack(alignment: .leading, spacing: 14) {
+                        BNBUFormField(
+                            label: "学校邮箱",
+                            placeholder: "name@bnbu.edu.cn",
+                            text: $email,
+                            required: true,
+                            helperText: "完成验证后账号才会进入 ACTIVE 状态。",
+                            errorText: emailTouched && !ContactBindingRule.isValid(email, for: .email)
+                                ? "请输入有效的学校邮箱。"
+                                : nil,
+                            characterLimit: 254,
+                            keyboardType: .emailAddress,
+                            textContentType: .emailAddress,
+                            enabled: !appState.isLoading,
+                            submitLabel: .next,
+                            onSubmit: { if ContactBindingRule.isValid(email, for: .email) { requestCode() } },
+                            onFocusChanged: { focused in if !focused { emailTouched = true } },
+                            accessibilityIdentifier: "courseJoin.emailBinding.email"
+                        )
 
-                DisabledAwareButton(
-                    title: "提交加入申请",
-                    systemImage: "paperplane.fill",
-                    isDisabled: verifiedPhone == nil || verifiedEmail == nil,
-                    accessibilityIdentifier: "contactBinding.submit"
-                ) {
-                    guard let verifiedPhone, let verifiedEmail else { return }
-                    onBound(verifiedPhone, verifiedEmail)
+                        BNBUFormField(
+                            label: "邮箱验证码",
+                            placeholder: "4–10 位数字验证码",
+                            text: $code,
+                            required: true,
+                            helperText: codeSent ? "验证码已发送，请查看邮箱。" : "请先发送验证码。",
+                            errorText: codeTouched && !code.isEmpty && !ContactBindingRule.isValidStudentSignInCode(code)
+                                ? "请输入 4–10 位数字验证码。"
+                                : nil,
+                            characterLimit: 10,
+                            keyboardType: .numberPad,
+                            textContentType: .oneTimeCode,
+                            enabled: !appState.isLoading,
+                            submitLabel: .done,
+                            onSubmit: { if codeSent { verify() } },
+                            onFocusChanged: { focused in if !focused { codeTouched = true } },
+                            accessibilityIdentifier: "courseJoin.emailBinding.code"
+                        )
+                        .onChange(of: code) { _, value in
+                            code = String(value.filter(\.isNumber).prefix(10))
+                        }
+
+                        Button(codeSent ? "重新发送" : "发送验证码") {
+                            requestCode()
+                        }
+                        .frame(minHeight: BNBUSpacing.touchTarget)
+                        .disabled(!ContactBindingRule.isValid(email, for: .email) || appState.isLoading)
+                        .accessibilityIdentifier("courseJoin.emailBinding.send")
+
+                        if let message = appState.errorMessage {
+                            BNBUErrorPanel(message: message)
+                        }
+
+                        PrimaryActionButton(
+                            title: "验证并进入",
+                            systemImage: "envelope.badge.fill",
+                            accessibilityIdentifier: "courseJoin.emailBinding.verify"
+                        ) {
+                            verify()
+                        }
+                        .disabled(!codeSent || !ContactBindingRule.isValidStudentSignInCode(code) || appState.isLoading)
+                    }
                 }
             }
             .padding(BNBUSpacing.screen)
         }
-        .scrollDismissesKeyboard(.immediately)
-        .accessibilityIdentifier("screen.contactBinding")
+        .accessibilityIdentifier("screen.courseJoinEmailBinding")
+    }
+
+    private func requestCode() {
+        emailTouched = true
+        guard ContactBindingRule.isValid(email, for: .email) else { return }
+        Task {
+            let contractLocale = locale.identifier.hasPrefix("zh") ? "zh-CN" : "en"
+            if await appState.requestFirstEmailBinding(email: email, locale: contractLocale) {
+                codeSent = true
+                code = ""
+            }
+        }
+    }
+
+    private func verify() {
+        codeTouched = true
+        guard codeSent, ContactBindingRule.isValidStudentSignInCode(code) else { return }
+        Task {
+            if await appState.verifyFirstEmailBinding(code: code) {
+                onComplete()
+            }
+        }
     }
 }
 
+#if false // Retired phone/SMS and local verification presentation.
 /// One contact: enter it, request a code, then verify. The send button waits
 /// out the server's resend window before it can be used again.
 struct ContactChannelPanel: View {
@@ -560,6 +686,7 @@ struct ContactChannelPanel: View {
         notice = nil
     }
 }
+#endif
 
 private struct CourseJoinFact: View {
     let label: String
@@ -583,36 +710,22 @@ private struct CourseJoinField: View {
     @Binding var text: String
     var limit: Int?
     var keyboardType: UIKeyboardType = .default
+    var errorText: String?
+    var focusBinding: FocusState<Bool>.Binding?
     let identifier: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(LocalizedStringKey(label))
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-
-            TextField("", text: $text)
-                .bnbuInputText()
-                .keyboardType(keyboardType)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface(lineWidth: 1)
-                .accessibilityLabel(Text(LocalizedStringKey(label)))
-                .accessibilityIdentifier(identifier)
-                .onChange(of: text) { _, value in
-                    guard let limit, value.count > limit else { return }
-                    text = String(value.prefix(limit))
-                }
-
-            if let limit {
-                Text(verbatim: "\(text.count) / \(limit)")
-                    .font(BNBUFont.labelSmall)
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        }
+        BNBUFormField(
+            label: label,
+            placeholder: "",
+            text: $text,
+            required: true,
+            errorText: errorText,
+            characterLimit: limit,
+            keyboardType: keyboardType,
+            focusBinding: focusBinding,
+            accessibilityIdentifier: identifier
+        )
     }
 }
 
@@ -621,6 +734,7 @@ enum CourseJoinScannerAlert: String, Identifiable {
     case denied
     case restricted
     case unrecognized
+    case urlHostNotConfigured
 
     var id: String { rawValue }
 
@@ -649,6 +763,12 @@ enum CourseJoinScannerAlert: String, Identifiable {
             return Alert(
                 title: Text("二维码无法识别"),
                 message: Text("这不是有效的课程二维码，请向老师确认或改用邀请码加入课程。"),
+                dismissButton: .default(Text("好"))
+            )
+        case .urlHostNotConfigured:
+            return Alert(
+                title: Text("课程链接域名尚未配置"),
+                message: Text("CONTRACT DECISION REQUIRED：本地环境没有显式配置课程邀请 URL allowlist。请手动输入邀请码；App 不会猜测正式域名。"),
                 dismissButton: .default(Text("好"))
             )
         }

@@ -1,17 +1,9 @@
 import Foundation
 import SwiftUI
 
-private enum LoginFormField: Hashable {
-    case account
-    case password
-}
-
 private enum LoginRoute: Hashable {
     case chooser
     case emailVerification
-    case phoneVerification
-    case accountPassword
-    case recovery
 }
 
 enum BNBUPrivacyConsent {
@@ -65,14 +57,9 @@ struct LoginView: View {
         if arguments.contains("-ui-testing-login-email") {
             _route = State(initialValue: .emailVerification)
         } else if arguments.contains("-ui-testing-login-phone") {
-            _route = State(initialValue: .phoneVerification)
-        } else if arguments.contains("-ui-testing-login-recovery") {
-            _route = State(initialValue: .recovery)
-        } else if arguments.contains("-ui-testing-login-password") {
-            // Students no longer see this route; it stays reachable only for the
-            // remote end-to-end harness, which has no other way to authenticate
-            // against a real server until the verification-code API ships.
-            _route = State(initialValue: .accountPassword)
+            // OpenAPI 2.0.13 exposes EMAIL only; the old smoke argument now
+            // lands on the supported flow instead of simulating SMS.
+            _route = State(initialValue: .emailVerification)
         } else {
             _route = State(initialValue: .chooser)
         }
@@ -83,31 +70,15 @@ struct LoginView: View {
             switch route {
             case .chooser:
                 LoginMethodChooser(
-                    // An application under review is the student's only way in,
-                    // so the sign-in screen reports it until a teacher decides.
-                    joinRequest: appState.courseJoinRequest.flatMap {
-                        $0.status == .active ? nil : $0
-                    },
                     onEmail: { route = .emailVerification },
-                    onPhone: { route = .phoneVerification },
                     onJoin: { showCourseJoin = true },
-                    onRecovery: { route = .recovery },
-                    onMockLogin: { appState.demoLogin() }
+                    onLocalReview: localDemoLoginAction
                 )
             case .emailVerification:
                 VerificationLoginView(
                     initialMethod: .email,
                     onBack: { route = .chooser }
                 )
-            case .phoneVerification:
-                VerificationLoginView(
-                    initialMethod: .phone,
-                    onBack: { route = .chooser }
-                )
-            case .accountPassword:
-                AccountPasswordLoginView(onBack: { route = .chooser })
-            case .recovery:
-                RecoveryRequestView(onBack: { route = .chooser })
             }
         }
         .sheet(isPresented: $showCourseJoin) {
@@ -115,17 +86,23 @@ struct LoginView: View {
                 .environmentObject(appState)
         }
     }
+
+    private var localDemoLoginAction: (() -> Void)? {
+#if DEBUG
+        guard LocalDemoAccess.showsLoginOption else { return nil }
+        return { appState.demoLogin() }
+#else
+        return nil
+#endif
+    }
 }
 
 private struct LoginMethodChooser: View {
     @Environment(\.locale) private var locale
 
-    var joinRequest: CourseJoinRequest?
     let onEmail: () -> Void
-    let onPhone: () -> Void
     let onJoin: () -> Void
-    let onRecovery: () -> Void
-    let onMockLogin: () -> Void
+    let onLocalReview: (() -> Void)?
 
     var body: some View {
         ZStack {
@@ -163,14 +140,6 @@ private struct LoginMethodChooser: View {
                         .foregroundStyle(BNBUTheme.onSurfaceVariant)
                     }
 
-                    if let joinRequest {
-                        JoinRequestEntryPanel(
-                            request: joinRequest,
-                            identifier: "login.joinRequest.entry",
-                            onOpen: onJoin
-                        )
-                    }
-
                     SwissPanel {
                         VStack(alignment: .leading, spacing: BNBUSpacing.space12) {
                             Text(copy("选择登录方式", "Choose a sign-in method"))
@@ -186,14 +155,6 @@ private struct LoginMethodChooser: View {
                             )
                             .accessibilityIdentifier("login.email")
 
-                            LoginMethodRow(
-                                title: copy("手机验证码登录", "Sign in with mobile code"),
-                                subtitle: copy("使用已绑定的手机号", "Use your linked mobile number"),
-                                systemImage: "iphone",
-                                action: onPhone
-                            )
-                            .accessibilityIdentifier("login.phone")
-
                             Divider()
                                 .overlay(BNBUTheme.outlineVariant)
                                 .padding(.vertical, BNBUSpacing.space4)
@@ -204,33 +165,41 @@ private struct LoginMethodChooser: View {
 
                             LoginMethodRow(
                                 title: copy("扫码加入课程", "Join a course by scanning"),
-                                subtitle: copy("打开课程邀请并提交加入申请", "Open a course invitation and apply to join"),
+                                subtitle: copy("预览课程并直接加入 ACTIVE Enrollment", "Preview the course and join an ACTIVE enrollment"),
                                 systemImage: "qrcode.viewfinder",
                                 action: onJoin
                             )
                             .accessibilityIdentifier("login.courseJoin")
 
-                            LoginMethodRow(
-                                title: copy("使用 Mock 用户", "Use Mock user"),
-                                subtitle: copy("仅用于本地演示与调试", "Local demo and debugging only"),
-                                systemImage: "hammer.fill",
-                                action: onMockLogin
-                            )
-                            .accessibilityIdentifier("login.mockUser")
+#if DEBUG
+                            if let onLocalReview {
+                                Divider()
+                                    .overlay(BNBUTheme.outlineVariant)
+                                    .padding(.vertical, BNBUSpacing.space4)
+
+                                Text(copy("免登录测试入口", "Password-free review access"))
+                                    .font(BNBUFont.labelMedium)
+                                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+                                Text(copy(
+                                    "仅使用本地合成数据，不登录账号，也不会向真实 Backend 发送业务请求。",
+                                    "Uses local synthetic data only, without signing in or sending business requests to the real Backend."
+                                ))
+                                .font(BNBUFont.bodySmall)
+                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+
+                                LoginMethodRow(
+                                    title: copy("以测试学生身份进入", "Enter as test student"),
+                                    subtitle: copy("演示学生 · demo-student-001", "Demo student · demo-student-001"),
+                                    systemImage: "person.crop.circle.badge.checkmark",
+                                    action: onLocalReview
+                                )
+                                .accessibilityIdentifier("login.localReview")
+                            }
+#endif
                         }
                     }
 
-                    Button(action: onRecovery) {
-                        Text(copy(
-                            "无法使用绑定的手机号或邮箱？",
-                            "Can't use your linked mobile number or email?"
-                        ))
-                        .font(BNBUFont.labelLarge)
-                        .foregroundStyle(BNBUTheme.primary)
-                        .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
-                    }
-                    .buttonStyle(BNBUPressStyle())
-                    .accessibilityIdentifier("login.recoveryRequest")
                 }
                 .frame(maxWidth: 520)
                 .padding(.horizontal, BNBUSpacing.screen)
@@ -289,7 +258,6 @@ private struct LoginMethodRow: View {
 
 private enum VerificationMethod {
     case email
-    case phone
 }
 
 private struct VerificationLoginView: View {
@@ -303,6 +271,8 @@ private struct VerificationLoginView: View {
     @State private var notice: String?
     @State private var codeSent = false
     @State private var resendSeconds = 0
+    @State private var contactTouched = false
+    @State private var codeTouched = false
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -366,25 +336,6 @@ private struct VerificationLoginView: View {
                         }
                     }
 
-                    Button {
-                        method = method == .email ? .phone : .email
-                        contact = ""
-                        code = ""
-                        notice = nil
-                        codeSent = false
-                        resendSeconds = 0
-                    } label: {
-                        Label(
-                            method == .email
-                                ? copy("改用手机验证码登录", "Use mobile verification instead")
-                                : copy("改用邮箱验证码登录", "Use email verification instead"),
-                            systemImage: method == .email ? "iphone" : "envelope"
-                        )
-                        .font(BNBUFont.labelLarge)
-                        .foregroundStyle(BNBUTheme.primary)
-                        .frame(maxWidth: .infinity, minHeight: BNBUSpacing.touchTarget)
-                    }
-                    .buttonStyle(BNBUPressStyle())
                 }
                 .frame(maxWidth: 520)
                 .padding(.horizontal, BNBUSpacing.screen)
@@ -393,7 +344,7 @@ private struct VerificationLoginView: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .accessibilityIdentifier(method == .email ? "screen.login.email" : "screen.login.phone")
+        .accessibilityIdentifier("screen.login.email")
         .onReceive(ticker) { _ in
             if resendSeconds > 0 { resendSeconds -= 1 }
         }
@@ -406,87 +357,75 @@ private struct VerificationLoginView: View {
     }
 
     private var title: String {
-        method == .email
-            ? copy("使用邮箱登录", "Sign in with email")
-            : copy("使用手机号登录", "Sign in with mobile")
+        copy("使用邮箱登录", "Sign in with email")
     }
 
     private var subtitle: String {
-        method == .email
-            ? copy(
-                "输入学校邮箱后，我们会向你发送登录验证码。",
-                "Enter your university email and we will send you a sign-in code."
-            )
-            : copy(
-                "输入手机号后，我们会向你发送短信验证码。",
-                "Enter your mobile number and we will send you a verification code."
-            )
+        copy(
+            "输入学校邮箱后，我们会向你发送登录验证码。",
+            "Enter your university email and we will send you a sign-in code."
+        )
     }
 
     private var contactField: some View {
-        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
-            Text(method == .email ? copy("学校邮箱", "University email") : copy("手机号", "Mobile number"))
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-
-            HStack(spacing: BNBUSpacing.space12) {
-                Image(systemName: method == .email ? "envelope" : "iphone")
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                if method == .phone {
-                    Text(verbatim: "+86")
-                        .font(BNBUFont.titleSmall)
-                    Divider().frame(height: 28)
-                }
-                TextField(
-                    method == .email
-                        ? "name@bnbu.edu.cn"
-                        : copy("请输入 11 位手机号", "11-digit mobile number"),
-                    text: $contact
-                )
-                .textContentType(method == .email ? .emailAddress : .telephoneNumber)
-                .keyboardType(method == .email ? .emailAddress : .phonePad)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            }
-            .padding(.horizontal, BNBUSpacing.space16)
-            .frame(height: 56)
-            .background(BNBUTheme.surfaceContainerHigh)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .accessibilityIdentifier("verification.contact")
-        }
+        BNBUFormField(
+            label: copy("学校邮箱", "University email"),
+            placeholder: "name@bnbu.edu.cn",
+            text: $contact,
+            required: true,
+            helperText: copy("请输入学校分配的邮箱。", "Enter your university-issued email."),
+            errorText: contactTouched && !isContactValid
+                ? copy("请输入有效的学校邮箱。", "Enter a valid university email.")
+                : nil,
+            characterLimit: 254,
+            keyboardType: .emailAddress,
+            textContentType: .emailAddress,
+            enabled: !appState.isLoading,
+            submitLabel: .next,
+            onSubmit: { if canSend { sendCode() } },
+            onFocusChanged: { focused in if !focused { contactTouched = true } },
+            accessibilityIdentifier: "verification.contact"
+        )
     }
 
     private var codeField: some View {
         VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
-            Text(copy("验证码", "Verification code"))
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-
-            HStack(spacing: BNBUSpacing.space12) {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                TextField(copy("6 位数字", "6 digits"), text: $code)
-                    .keyboardType(.numberPad)
-                    .onChange(of: code) { _, value in
-                        code = String(value.filter(\.isNumber).prefix(6))
-                    }
-                Button(sendTitle) { sendCode() }
-                    .font(BNBUFont.labelMedium)
-                    .foregroundStyle(canSend ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant.opacity(0.55))
-                    .disabled(!canSend)
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("verification.sendCode")
+            BNBUFormField(
+                label: copy("验证码", "Verification code"),
+                placeholder: copy("4–10 位数字", "4–10 digits"),
+                text: $code,
+                required: true,
+                helperText: codeSent
+                    ? copy("验证码已发送，请查看邮箱。", "The code was sent to your email.")
+                    : copy("请先获取验证码。", "Request a code first."),
+                errorText: codeTouched && !code.isEmpty && !ContactBindingRule.isValidStudentSignInCode(code)
+                    ? copy("请输入 4–10 位数字验证码。", "Enter a 4–10 digit code.")
+                    : nil,
+                characterLimit: 10,
+                keyboardType: .numberPad,
+                textContentType: .oneTimeCode,
+                enabled: !appState.isLoading,
+                submitLabel: .done,
+                onSubmit: { if canSubmit { signIn() } },
+                onFocusChanged: { focused in if !focused { codeTouched = true } },
+                accessibilityIdentifier: "verification.code"
+            )
+            .onChange(of: code) { _, value in
+                code = String(value.filter(\.isNumber).prefix(10))
             }
-            .padding(.horizontal, BNBUSpacing.space16)
-            .frame(height: 56)
-            .background(BNBUTheme.surfaceContainerHigh)
-            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
-            .accessibilityIdentifier("verification.code")
+
+            Button(sendTitle) { sendCode() }
+                .font(BNBUFont.labelMedium)
+                .foregroundStyle(canSend ? BNBUTheme.primary : BNBUTheme.onSurfaceVariant.opacity(0.55))
+                .disabled(!canSend)
+                .buttonStyle(.plain)
+                .frame(minHeight: BNBUSpacing.touchTarget)
+                .accessibilityIdentifier("verification.sendCode")
         }
     }
 
     private var channel: ContactChannel {
-        method == .email ? .email : .phone
+        .email
     }
 
     private var sendTitle: String {
@@ -504,31 +443,36 @@ private struct VerificationLoginView: View {
     }
 
     private var canSubmit: Bool {
-        isContactValid && ContactBindingRule.isValidCode(code)
+        isContactValid && ContactBindingRule.isValidStudentSignInCode(code) && !appState.isLoading
     }
 
     private func sendCode() {
-        dismissBNBUKeyboard()
-        guard appState.sendLoginCode(to: contact, channel: channel) else {
-            notice = appState.errorMessage
-            return
+        Task {
+            dismissBNBUKeyboard()
+            let contractLocale = locale.identifier.hasPrefix("zh") ? "zh-CN" : "en"
+            guard await appState.requestEmailLoginCode(to: contact, locale: contractLocale) else {
+                notice = appState.errorMessage
+                return
+            }
+            codeSent = true
+            resendSeconds = ContactBindingRule.resendInterval
+            notice = nil
         }
-        codeSent = true
-        resendSeconds = ContactBindingRule.resendInterval
-        notice = nil
     }
 
     private func signIn() {
-        dismissBNBUKeyboard()
-        guard codeSent else {
-            notice = copy("请先获取验证码。", "Request a code first.")
-            return
+        Task {
+            dismissBNBUKeyboard()
+            guard codeSent else {
+                notice = copy("请先获取验证码。", "Request a code first.")
+                return
+            }
+            guard await appState.verifyEmailLoginCode(code, account: contact) else {
+                notice = appState.errorMessage
+                return
+            }
+            notice = nil
         }
-        guard appState.signInWithCode(code, contact: contact, channel: channel) else {
-            notice = appState.errorMessage
-            return
-        }
-        notice = nil
     }
 
     private func copy(_ chinese: String, _ english: String) -> String {
@@ -536,6 +480,7 @@ private struct VerificationLoginView: View {
     }
 }
 
+#if false // STUDENT password authentication is not part of OpenAPI 2.0.13.
 private struct AccountPasswordLoginView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.locale) private var locale
@@ -730,7 +675,9 @@ private struct AccountPasswordLoginView: View {
         locale.identifier.hasPrefix("zh") ? chinese : english
     }
 }
+#endif
 
+#if false // No account-recovery mutation exists in OpenAPI 2.0.13.
 private struct RecoveryRequestView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.locale) private var locale
@@ -958,19 +905,35 @@ private struct RecoveryField: View {
     @Binding var text: String
     var axis: Axis = .horizontal
 
+    @ViewBuilder
     var body: some View {
-        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
-            Text(title)
-                .font(BNBUFont.labelMedium)
-                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            TextField(placeholder, text: $text, axis: axis)
-                .lineLimit(axis == .vertical ? 4...7 : 1...1)
-                .padding(BNBUSpacing.space12)
-                .background(BNBUTheme.surface)
-                .bnbuOutlinedSurface()
+        if axis == .vertical {
+            BNBUTextArea(
+                label: title,
+                text: $text,
+                placeholder: placeholder,
+                required: true,
+                accessibilityIdentifier: "recovery.\(fieldIdentifier)"
+            )
+        } else {
+            BNBUFormField(
+                label: title,
+                placeholder: placeholder,
+                text: $text,
+                required: true,
+                accessibilityIdentifier: "recovery.\(fieldIdentifier)"
+            )
         }
     }
+
+    private var fieldIdentifier: String {
+        title.unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) }
+            .map { String($0) }
+            .joined()
+    }
 }
+#endif
 
 /// Renders the complete policy bundled with the app, mirroring Android's
 /// `PrivacyPolicyScreen`. Keeping the legal copy in a resource file lets

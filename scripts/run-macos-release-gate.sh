@@ -21,7 +21,7 @@ Usage:
   ./scripts/run-macos-release-gate.sh \
     --release-api-base-url 'https://<official-school-domain>/api/v1' \
     [--destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'] \
-    [--backend-root /path/to/BNBU-Sports-Android/backend] \
+    [--backend-root /path/to/BNBU-Sports-monorepo] \
     [--output-dir /path/to/gate-output]
 
 Environment equivalents:
@@ -508,7 +508,7 @@ select_simulator_destination() {
 }
 
 preflight() {
-  local default_backend_root="${IOS_ROOT}/../../BNBU-Sports-Android/backend"
+  local default_backend_root="${IOS_ROOT}/.."
 
   [[ "$(uname -s)" == "Darwin" ]] || {
     echo "error: this gate must run on macOS with full Xcode installed" >&2
@@ -534,7 +534,8 @@ preflight() {
     return 1
   }
   BACKEND_ROOT="$(CDPATH= cd -- "${BACKEND_ROOT}" && pwd -P)"
-  require_file "${BACKEND_ROOT}/openapi/openapi.yaml" || return 1
+  require_file "${BACKEND_ROOT}/backend/package.json" || return 1
+  require_file "${BACKEND_ROOT}/docs/backend-contracts/openapi.yaml" || return 1
 
   validate_release_api_url || return 1
 

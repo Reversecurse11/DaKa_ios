@@ -19,20 +19,26 @@ final class BNBUStudentModelTests: XCTestCase {
     // app language instead of leaking hard-coded Chinese in English mode.
     func testClientMessagesFollowAppLanguage() {
         BNBUL10n.localeOverride = Locale(identifier: "en")
-        XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "Enter an exercise note.")
         XCTAssertEqual(
-            CheckInInputRule.validationMessage(note: String(repeating: "a", count: 201)),
+            CheckInInputRule.validationMessage(note: "", for: ExerciseCategory.general),
+            "Enter an exercise note."
+        )
+        XCTAssertEqual(
+            CheckInInputRule.validationMessage(
+                note: String(repeating: "a", count: 201),
+                for: ExerciseCategory.courseRelated
+            ),
             "The exercise note cannot exceed 200 characters."
         )
-        XCTAssertEqual(
-            CheckInTimeWindowRule.startBlockedMessage,
-            "Outside the daily check-in window (06:00–22:00). You cannot start exercising right now."
-        )
-        XCTAssertEqual(RepositoryError.unauthorized.errorDescription, "Your session has expired. Please sign in again.")
+        XCTAssertFalse(CheckInTimeWindowPolicy.unavailable.displayText.isEmpty)
+        XCTAssertEqual(ClientErrorMapper.map(RepositoryError.unauthorized).code, "AUTH_SESSION_REQUIRED")
 
         BNBUL10n.localeOverride = Locale(identifier: "zh-Hans")
-        XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
-        XCTAssertEqual(RepositoryError.unauthorized.errorDescription, "登录已过期，请重新登录")
+        XCTAssertEqual(
+            CheckInInputRule.validationMessage(note: "", for: ExerciseCategory.general),
+            "请填写运动说明。"
+        )
+        XCTAssertEqual(ClientErrorMapper.map(RepositoryError.unauthorized).code, "AUTH_SESSION_REQUIRED")
     }
 
     func testRuntimeInterfaceValuesFollowAppLanguage() {
@@ -277,6 +283,10 @@ final class BNBUStudentModelTests: XCTestCase {
 
     // MARK: - Media draft pool (business rules 5.5/6.4/7)
 
+    func testExerciseVideoCaptureUsesAcceptedFifteenSecondLimit() {
+        XCTAssertEqual(ExerciseMediaDraftRule.maximumVideoDurationSeconds, 15)
+    }
+
     func testExercisePhotoDraftsCapAtSixAndVideosDoNotCount() throws {
         let appState = AppState(
             repository: MockStudentRepository(),
@@ -337,11 +347,46 @@ final class BNBUStudentModelTests: XCTestCase {
         ))
         XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([3]), thumbnailData: nil))
         XCTAssertEqual(appState.exerciseMediaDrafts.count, 3)
+        XCTAssertEqual(appState.currentExerciseMediaDrafts.count, 1)
+        XCTAssertEqual(appState.exercisePhotoDraftCount, 1, "旧 Session 素材不得占用新 Session 配额")
 
         // Abandoning clears only the current session's captures.
         appState.discardExerciseSession()
         XCTAssertNil(appState.exerciseSession)
         XCTAssertEqual(appState.exerciseMediaDrafts.count, 2, "放弃只清除本次会话拍摄的草稿")
+    }
+
+    func testCheckInCannotExcludeAnyConfirmedRetainedEvidence() async throws {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.enforcesCheckInTimeWindow = false
+        XCTAssertTrue(appState.startExerciseSession(
+            category: .general,
+            sportType: .running,
+            customSportName: ""
+        ))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([1]), thumbnailData: nil))
+        XCTAssertTrue(appState.addExercisePhotoDraft(imageData: Data([2]), thumbnailData: nil))
+        let session = try XCTUnwrap(appState.exerciseSession)
+        let callerSelectedSubset = [
+            try XCTUnwrap(appState.proofAttachment(from: appState.currentExerciseMediaDrafts[0]))
+        ]
+
+        let submitted = await appState.submitCheckIn(
+            creditType: .general,
+            courseId: nil,
+            hours: 1,
+            note: "Session retained evidence boundary",
+            sportType: ExerciseSportType.running.rawValue,
+            proofAttachments: callerSelectedSubset,
+            exerciseSession: session
+        )
+
+        XCTAssertTrue(submitted)
+        XCTAssertEqual(appState.workspace.records.first?.proofFiles.count, 2)
+        XCTAssertEqual(appState.workspace.records.first?.proofPhotoCount, 2)
     }
 
     func testSubmissionClearsAllMediaDraftsAndDraftsExpireNextDay() throws {
@@ -389,11 +434,20 @@ final class BNBUStudentModelTests: XCTestCase {
             )))
         }
 
-        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(5, 59)))
-        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(6, 0)))
-        XCTAssertTrue(CheckInTimeWindowRule.canStartExercise(at: try shanghai(21, 59)))
-        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(22, 0)))
-        XCTAssertFalse(CheckInTimeWindowRule.canStartExercise(at: try shanghai(23, 30)))
+        let policy = CheckInTimeWindowPolicy(
+            mode: "AVAILABLE",
+            startDate: "2026-07-01",
+            endDate: "2026-07-31",
+            dailyStartTime: "06:00",
+            dailyEndTime: "22:00",
+            excludedDates: [],
+            submissionDeadlineAt: nil
+        )
+        XCTAssertNotNil(policy.blockingMessage(at: try shanghai(5, 59)))
+        XCTAssertNil(policy.blockingMessage(at: try shanghai(6, 0)))
+        XCTAssertNil(policy.blockingMessage(at: try shanghai(21, 59)))
+        XCTAssertNil(policy.blockingMessage(at: try shanghai(22, 0)))
+        XCTAssertNotNil(policy.blockingMessage(at: try shanghai(23, 30)))
 
         let appState = AppState(
             repository: MockStudentRepository(),
@@ -452,21 +506,27 @@ final class BNBUStudentModelTests: XCTestCase {
 
     func testCourseJoinCodeValidationAndQRPayloadParsing() {
         XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "  "), "请输入课程邀请码。")
-        XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "ab"), "邀请码长度应为 4–32 位。")
-        XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "码码码码"), "邀请码只能包含字母和数字。")
-        XCTAssertNil(CourseJoinCodeRule.validationMessage(for: " bnbu-2026 "))
-        XCTAssertEqual(CourseJoinCodeRule.normalized(" bnbu-2026 "), "BNBU2026")
+        XCTAssertEqual(CourseJoinCodeRule.validationMessage(for: "ab"), "邀请码长度应为 16–512 位。")
+        let token = "BnBu-2026-token-A"
+        XCTAssertNil(CourseJoinCodeRule.validationMessage(for: " \(token) "))
+        XCTAssertEqual(CourseJoinCodeRule.normalized(" \(token) "), token)
 
-        XCTAssertEqual(CourseJoinCodeRule.code(fromScannedPayload: "BNBU2026"), "BNBU2026")
+        XCTAssertEqual(CourseJoinCodeRule.code(fromScannedPayload: token), token)
         XCTAssertEqual(
-            CourseJoinCodeRule.code(fromScannedPayload: "https://sports.bnbu.edu/join?code=bnbu2026"),
-            "BNBU2026"
+            CourseJoinCodeRule.code(
+                fromScannedPayload: "http://local.test/join?code=\(token)",
+                allowedURLHosts: ["local.test"]
+            ),
+            token
         )
-        XCTAssertEqual(
-            CourseJoinCodeRule.code(fromScannedPayload: "bnbu-sports://course/join/BNBU2026"),
-            "BNBU2026"
+        XCTAssertNil(
+            CourseJoinCodeRule.code(
+                fromScannedPayload: "https://unconfigured.example/join?code=\(token)",
+                allowedURLHosts: ["local.test"]
+            )
         )
-        XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: "https://sports.bnbu.edu/"))
+        XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: "https://local.test/join?code=\(token)"))
+        XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: "bnbu-sports://local.test/join/\(token)", allowedURLHosts: ["local.test"]))
         XCTAssertNil(CourseJoinCodeRule.code(fromScannedPayload: ""))
     }
 
@@ -479,25 +539,29 @@ final class BNBUStudentModelTests: XCTestCase {
         appState.demoLogin()
 
         let approvedCourse = try XCTUnwrap(appState.currentExerciseCourse)
-        XCTAssertTrue(appState.pendingEnrollmentCourses.isEmpty)
-
-        let invite = try XCTUnwrap(appState.lookupCourseInvite(rawCode: "bnbu-2026"))
-        XCTAssertTrue(appState.submitCourseJoinRequest(
+        let invite = CourseInvite(
+            code: "BnBu-2026-token-A",
+            classSectionID: "section-new",
+            courseName: "体育",
+            courseCode: "GEPE999",
+            section: "01",
+            teacherName: "教师",
+            semester: "2026 秋季学期"
+        )
+        XCTAssertNil(appState.lookupCourseInvite(rawCode: invite.code))
+        XCTAssertFalse(appState.submitCourseJoinRequest(
             invite: invite,
             name: "演示学生",
             studentNumber: "2400123456",
             phone: "13800138000",
             email: "demo@bnbu.edu.cn"
         ))
-        XCTAssertEqual(appState.pendingEnrollmentCourses.map(\.code), ["BNBU2026"])
-        let pendingCourse = try XCTUnwrap(appState.pendingEnrollmentCourses.first)
-
-        // A pending course is never picked up as the exercise course and can
-        // never back a submission.
+        XCTAssertEqual(appState.errorMessage, "课程必须通过服务器 Join Capability 原子加入，不能创建本地待审核记录。")
+        XCTAssertNil(appState.courseJoinRequest)
         XCTAssertEqual(appState.currentExerciseCourse?.id, approvedCourse.id)
         XCTAssertNil(appState.validatedSubmission(
             creditType: .courseRelated,
-            courseId: pendingCourse.id,
+            courseId: invite.classSectionID,
             hours: 1
         ))
         XCTAssertNotNil(appState.validatedSubmission(
@@ -506,12 +570,6 @@ final class BNBUStudentModelTests: XCTestCase {
             hours: 1
         ))
 
-        // Duplicate applications are refused at the invite lookup, before the
-        // student is asked for details a second time.
-        XCTAssertNil(appState.lookupCourseInvite(rawCode: "BNBU2026"))
-        XCTAssertEqual(appState.errorMessage, "该课程的加入申请正在审核中，请等待老师处理。")
-        XCTAssertNil(appState.lookupCourseInvite(rawCode: approvedCourse.code))
-        XCTAssertEqual(appState.errorMessage, "你已加入该课程，无需重复申请。")
     }
 
     func testStudentWithOnlyPendingEnrollmentCannotStartExercise() throws {
@@ -539,27 +597,27 @@ final class BNBUStudentModelTests: XCTestCase {
         ]
 
         XCTAssertNil(appState.currentExerciseCourse)
-        XCTAssertTrue(appState.hasPendingEnrollmentOnly)
         XCTAssertFalse(appState.startExerciseSession(
             category: .general,
             sportType: .running,
             customSportName: ""
         ))
-        XCTAssertEqual(appState.errorMessage, "课程加入申请正在审核中，通过后才能开始运动。")
+        XCTAssertEqual(appState.errorMessage, "当前学期没有 ACTIVE 体育课程，请使用有效邀请码加入或联系体育部。")
         XCTAssertNil(appState.exerciseSession)
     }
 
-    // MARK: - Teacher-configurable hour targets (business rule 4.4)
+    // MARK: - Local/demo hour-target compatibility
 
-    func testHourTargetsFollowTheServerAndFallBackToStandard() throws {
+    func testLocalDemoHourTargetsDecodeAndFallBackToStandard() throws {
         let decoder = JSONDecoder()
 
-        // Servers that publish nothing keep the shipped 10 + 10 rule.
+        // Local cached fixtures that publish nothing keep the shipped demo rule.
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         XCTAssertEqual(appState.hourRule, .standard)
+        XCTAssertFalse(SportHourRule.unavailable.isAvailable)
 
         let customized = try decoder.decode(SportHourRule.self, from: Data("""
         {"courseRequiredHours": 6, "otherRequired": 4, "dailyMaxHours": 3}
@@ -582,6 +640,31 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(appState.hourRule.total, 10)
         XCTAssertEqual(appState.courseRemaining, max(6 - appState.workspace.progress.course, 0))
         XCTAssertEqual(appState.completionRatio, min(appState.totalCompleted / 10, 1))
+    }
+
+    func testRemoteProgressUsesOnlyAuthoritativeStudentScoreTotal() {
+        let appState = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+        appState.workspace.hourRule = .standard
+        appState.workspace.progress.course = 12
+        appState.workspace.progress.general = 11
+        appState.workspace.progress.authoritativeTotalHours = 3.5
+        appState.workspace.progress.authoritativeQualificationStatus = "NOT_QUALIFIED"
+        appState.installRemoteContractFixtureForTesting()
+
+        XCTAssertEqual(appState.totalCompleted, 3.5)
+        XCTAssertEqual(appState.courseRemaining, 0)
+        XCTAssertEqual(appState.generalRemaining, 0)
+        XCTAssertEqual(appState.totalRemaining, 0)
+        XCTAssertEqual(appState.completionRatio, 0)
+        XCTAssertTrue(appState.hasAuthoritativeRemoteProgress)
+
+        appState.workspace.progress.authoritativeTotalHours = nil
+        appState.workspace.progress.authoritativeQualificationStatus = nil
+        XCTAssertEqual(appState.totalCompleted, 0)
+        XCTAssertFalse(appState.hasAuthoritativeRemoteProgress)
     }
 
     func testWorkspaceCachedBeforeHourTargetsStillDecodes() throws {
@@ -743,9 +826,25 @@ final class BNBUStudentModelTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
-    // A student joins before they have an account: the application itself is
-    // what the teacher reviews, so it must go through unauthenticated.
-    func testCourseJoinRequestIsFiledBeforeSignIn() throws {
+    func testPasswordFreeReviewModeIsLocalAndExplicit() async {
+        let state = AppState(
+            repository: MockStudentRepository(),
+            localStore: AppLocalStore(defaults: isolatedDefaults())
+        )
+
+        state.demoLogin()
+
+        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertTrue(state.isLocalReviewMode)
+        XCTAssertFalse(state.isRemoteMode)
+        XCTAssertEqual(state.workspace.student.email, "demo.student@example.invalid")
+
+        await state.logout()
+        XCTAssertFalse(state.isAuthenticated)
+        XCTAssertFalse(state.isLocalReviewMode)
+    }
+
+    func testLegacyCourseJoinRequestFailsClosedBeforeSignIn() throws {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -753,23 +852,25 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(state.isAuthenticated)
         XCTAssertNil(state.courseJoinRequest)
 
-        let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
-        XCTAssertTrue(state.submitCourseJoinRequest(
+        let invite = CourseInvite(
+            code: "PE9999-current-token",
+            classSectionID: "section-1",
+            courseName: "体育",
+            courseCode: "GEPE999",
+            section: "01",
+            teacherName: "教师",
+            semester: "2026 秋季学期"
+        )
+        XCTAssertNil(state.lookupCourseInvite(rawCode: invite.code))
+        XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
             phone: "13800138000",
             email: "lin@bnbu.edu.cn"
         ))
-        XCTAssertNil(state.errorMessage)
-
-        let filed = try XCTUnwrap(state.courseJoinRequest)
-        XCTAssertEqual(filed.status, .pending)
-        XCTAssertEqual(filed.studentName, "林同学")
-        XCTAssertEqual(filed.studentNumber, "2400987654")
-        XCTAssertEqual(filed.courseCode, invite.courseCode)
-        // Nothing was written into a workspace the student does not yet own.
-        XCTAssertTrue(state.pendingEnrollmentCourses.isEmpty)
+        XCTAssertEqual(state.errorMessage, "课程必须通过服务器 Join Capability 原子加入，不能创建本地待审核记录。")
+        XCTAssertNil(state.courseJoinRequest)
     }
 
     func testCourseJoinRequestRequiresANameAndStudentNumber() {
@@ -786,7 +887,7 @@ final class BNBUStudentModelTests: XCTestCase {
                 name: String(repeating: "林", count: CourseJoinRequestRule.maximumNameLength + 1),
                 studentNumber: "2400"
             ),
-            "姓名不能超过 64 个字符。"
+            "姓名不能超过 100 个字符。"
         )
         XCTAssertEqual(
             CourseJoinRequestRule.validationMessage(
@@ -798,14 +899,20 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(CourseJoinRequestRule.validationMessage(name: "林同学", studentNumber: "2400"))
     }
 
-    // A student who reinstalls signs back in with a code, so an application
-    // must not reach the teacher until both contacts are verified.
-    func testCourseJoinRequestRequiresBothContactsBound() throws {
+    func testLegacyCourseJoinRequestNeverCreatesTeacherApprovalState() throws {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
+        let invite = CourseInvite(
+            code: "PE9999-current-token",
+            classSectionID: "section-1",
+            courseName: "体育",
+            courseCode: "GEPE999",
+            section: "01",
+            teacherName: "教师",
+            semester: "2026 秋季学期"
+        )
 
         XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
@@ -814,7 +921,7 @@ final class BNBUStudentModelTests: XCTestCase {
             phone: "",
             email: "lin@bnbu.edu.cn"
         ))
-        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
+        XCTAssertEqual(state.errorMessage, "课程必须通过服务器 Join Capability 原子加入，不能创建本地待审核记录。")
 
         XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
@@ -823,18 +930,17 @@ final class BNBUStudentModelTests: XCTestCase {
             phone: "13800138000",
             email: ""
         ))
-        XCTAssertEqual(state.errorMessage, "请先完成手机号和邮箱绑定。")
+        XCTAssertEqual(state.errorMessage, "课程必须通过服务器 Join Capability 原子加入，不能创建本地待审核记录。")
         XCTAssertNil(state.courseJoinRequest)
 
-        XCTAssertTrue(state.submitCourseJoinRequest(
+        XCTAssertFalse(state.submitCourseJoinRequest(
             invite: invite,
             name: "林同学",
             studentNumber: "2400987654",
             phone: "138 0013 8000",
             email: "lin@bnbu.edu.cn"
         ))
-        XCTAssertEqual(state.courseJoinRequest?.phone, "13800138000")
-        XCTAssertEqual(state.courseJoinRequest?.email, "lin@bnbu.edu.cn")
+        XCTAssertNil(state.courseJoinRequest)
     }
 
     func testContactBindingChecksFormatAndCodeBeforeAccepting() {
@@ -848,14 +954,15 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(state.sendContactVerificationCode(to: "lin@", channel: .email))
         XCTAssertEqual(state.errorMessage, "请输入有效的邮箱")
 
-        XCTAssertTrue(state.sendContactVerificationCode(to: "13800138000", channel: .phone))
-        XCTAssertTrue(state.sendContactVerificationCode(to: "+86 138 0013 8000", channel: .phone))
-        XCTAssertTrue(state.sendContactVerificationCode(to: "lin@bnbu.edu.cn", channel: .email))
+        XCTAssertFalse(state.sendContactVerificationCode(to: "13800138000", channel: .phone))
+        XCTAssertFalse(state.sendContactVerificationCode(to: "+86 138 0013 8000", channel: .phone))
+        XCTAssertFalse(state.sendContactVerificationCode(to: "lin@bnbu.edu.cn", channel: .email))
+        XCTAssertEqual(state.errorMessage, "当前合同只支持 EMAIL，且已验证邮箱变更需要新旧邮箱双验证码；本地不会模拟成功。")
 
         XCTAssertFalse(state.verifyContactCode("123", for: "13800138000", channel: .phone))
         XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
-        XCTAssertTrue(state.verifyContactCode("123456", for: "13800138000", channel: .phone))
-        XCTAssertNil(state.errorMessage)
+        XCTAssertFalse(state.verifyContactCode("123456", for: "13800138000", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "联系方式验证码必须由服务器验证；本地不会模拟成功。")
     }
 
     func testNewSemesterWelcomeAppearsOnceWhenTheAcademicYearRollsOver() {
@@ -910,21 +1017,17 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(state.errorMessage, "系统当前处于只读模式，暂不能提交或修改内容。")
 
         state.errorMessage = nil
-        XCTAssertNil(
-            state.submitFeedback(
-                category: .functionality,
-                description: "打卡提交后一直卡在上传。",
-                email: "student@example.invalid",
-                phone: "13800138000",
-                screenshots: []
-            )
+        let feedbackResult = await state.submitFeedback(
+            category: .bug,
+            description: "打卡提交后一直卡在上传。"
         )
+        XCTAssertNil(feedbackResult)
         XCTAssertEqual(state.errorMessage, "系统当前处于只读模式，暂不能提交或修改内容。")
         XCTAssertTrue(state.feedbackTickets.isEmpty)
 
         state.errorMessage = nil
         XCTAssertFalse(state.sendContactVerificationCode(to: "13800138000", channel: .phone))
-        XCTAssertEqual(state.errorMessage, "系统当前处于只读模式，暂不能提交或修改内容。")
+        XCTAssertEqual(state.errorMessage, "当前合同只支持 EMAIL，且已验证邮箱变更需要新旧邮箱双验证码；本地不会模拟成功。")
     }
 
     @MainActor
@@ -1138,81 +1241,40 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(decodedLegacy.organization, "")
     }
 
-    func testFeedbackRequiresADescriptionAndReachableContacts() {
+    func testFeedbackRequiresOnlyPrivacyBoundedContent() {
         XCTAssertEqual(
-            FeedbackRule.validationMessage(description: "  ", email: "a@b.c", phone: "13800138000"),
+            FeedbackRule.validationMessage(description: "  "),
             "请填写问题描述。"
         )
         XCTAssertEqual(
             FeedbackRule.validationMessage(
-                description: String(repeating: "问", count: FeedbackRule.maximumDescriptionLength + 1),
-                email: "a@b.c",
-                phone: "13800138000"
+                description: String(repeating: "问", count: FeedbackRule.maximumDescriptionLength + 1)
             ),
             "问题描述最多 2000 字。"
         )
-        XCTAssertEqual(
-            FeedbackRule.validationMessage(description: "打不开", email: "", phone: "13800138000"),
-            "请留下邮箱，便于接收处理回复。"
-        )
-        XCTAssertEqual(
-            FeedbackRule.validationMessage(description: "打不开", email: "nope", phone: "13800138000"),
-            "请输入有效的邮箱地址。"
-        )
-        XCTAssertEqual(
-            FeedbackRule.validationMessage(description: "打不开", email: "a@b.c", phone: ""),
-            "请留下联系电话，便于跟进问题。"
-        )
-        XCTAssertEqual(
-            FeedbackRule.validationMessage(description: "打不开", email: "a@b.c", phone: "abc"),
-            "请输入有效的联系电话。"
-        )
-        XCTAssertNil(
-            FeedbackRule.validationMessage(description: "打不开", email: "a@b.c", phone: "138 0013 8000")
-        )
+        XCTAssertNil(FeedbackRule.validationMessage(description: "打不开"))
+        XCTAssertEqual(FeedbackCategory.privacy.apiValue, "PRIVACY")
+        XCTAssertEqual(FeedbackCategory.title(forAPIValue: "ACCESSIBILITY"), "无障碍使用")
     }
 
-    func testFilingFeedbackPrependsTheTicketAndRefusesTooManyScreenshots() {
+    @MainActor
+    func testFilingLocalFeedbackPrependsTheTicket() async {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
-        state.refreshFeedbackTickets()
+        await state.refreshFeedbackTickets()
         let seeded = state.feedbackTickets.count
         XCTAssertGreaterThan(seeded, 0)
 
-        let filed = state.submitFeedback(
-            category: .checkIn,
-            description: "提交打卡后一直转圈。",
-            email: "lin@bnbu.edu.cn",
-            phone: "13800138000",
-            screenshots: []
+        let filed = await state.submitFeedback(
+            category: .bug,
+            description: "提交打卡后一直转圈。"
         )
         XCTAssertNotNil(filed)
         XCTAssertEqual(state.feedbackTickets.count, seeded + 1)
         XCTAssertEqual(state.feedbackTickets.first?.id, filed?.id)
         XCTAssertEqual(state.feedbackTickets.first?.status, .pending)
-
-        let tooMany = (0...FeedbackRule.maximumScreenshots).map { index in
-            ProofAttachment(
-                id: "shot-\(index)",
-                type: .image,
-                fileName: "shot-\(index).jpg",
-                byteCount: 1024,
-                source: "library",
-                cosKey: nil,
-                mimeType: "image/jpeg",
-                contentDigest: nil
-            )
-        }
-        XCTAssertNil(state.submitFeedback(
-            category: .other,
-            description: "截图太多。",
-            email: "lin@bnbu.edu.cn",
-            phone: "13800138000",
-            screenshots: tooMany
-        ))
-        XCTAssertEqual(state.errorMessage, "截图最多 3 张。")
     }
 
     func testFeedbackStatusParsesEveryServerSpelling() {
@@ -1224,25 +1286,26 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(FeedbackTicketStatus.parsed("已驳回"), .rejected)
     }
 
-    // A reinstalled app signs back in with a code, so this is the only way in.
-    func testVerificationCodeSignInOpensTheWorkspace() {
+    func testLegacyPhoneCodeSignInFailsClosed() {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         XCTAssertFalse(state.sendLoginCode(to: "1380013800", channel: .phone))
         XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
-        XCTAssertTrue(state.sendLoginCode(to: "13800138000", channel: .phone))
+        XCTAssertFalse(state.sendLoginCode(to: "13800138000", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "验证码必须由服务器发送。")
 
         XCTAssertFalse(state.signInWithCode("12345", contact: "13800138000", channel: .phone))
         XCTAssertEqual(state.errorMessage, "请输入 6 位数字验证码")
         XCTAssertFalse(state.isAuthenticated)
 
-        XCTAssertTrue(state.signInWithCode("123456", contact: "13800138000", channel: .phone))
-        XCTAssertTrue(state.isAuthenticated)
+        XCTAssertFalse(state.signInWithCode("123456", contact: "13800138000", channel: .phone))
+        XCTAssertEqual(state.errorMessage, "验证码必须由服务器验证。")
+        XCTAssertFalse(state.isAuthenticated)
     }
 
-    func testRecoveryRequestNeedsAnIdentityAndOneReachableContact() {
+    func testUnpublishedRecoveryRequestFailsClosed() {
         let state = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
@@ -1250,22 +1313,11 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(state.submitRecoveryRequest(
             studentNumber: "", name: "林同学", description: "手机丢了", newPhone: "13800138000", newEmail: ""
         ))
-        XCTAssertEqual(state.errorMessage, "请填写学号。")
-
+        XCTAssertEqual(state.errorMessage, "账号恢复接口未在当前合同中发布；本地不会创建假申请。")
         XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请至少填写一个新的手机号或邮箱，供老师换绑。")
-
-        XCTAssertFalse(state.submitRecoveryRequest(
-            studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "138", newEmail: ""
-        ))
-        XCTAssertEqual(state.errorMessage, "请输入有效的手机号")
-
-        XCTAssertTrue(state.submitRecoveryRequest(
             studentNumber: "2400987654", name: "林同学", description: "手机丢了", newPhone: "", newEmail: "lin@bnbu.edu.cn"
         ))
-        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.errorMessage, "账号恢复接口未在当前合同中发布；本地不会创建假申请。")
     }
 
     func testBoundContactsAreShownMasked() {
@@ -1273,35 +1325,32 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(ContactBindingRule.masked("lin@bnbu.edu.cn", for: .email), "li***@bnbu.edu.cn")
     }
 
-    // The application is filed before sign-in, so it cannot ride in the
-    // workspace cache and needs to survive a relaunch on its own.
-    func testCourseJoinRequestSurvivesRelaunchBeforeSignIn() throws {
+    func testLegacyPendingCourseJoinCacheIsIgnoredOnRelaunch() throws {
         let defaults = isolatedDefaults()
         let store = AppLocalStore(defaults: defaults)
-        let state = AppState(repository: MockStudentRepository(), localStore: store)
-        let invite = try XCTUnwrap(state.lookupCourseInvite(rawCode: "PE9999"))
-        XCTAssertTrue(state.submitCourseJoinRequest(
-            invite: invite,
-            name: "林同学",
+        XCTAssertTrue(store.saveCourseJoinRequest(CourseJoinRequest(
+            id: "legacy-request",
+            inviteCode: "PE9999-current-token",
+            courseName: "体育",
+            courseCode: "GEPE999",
+            section: "01",
+            teacherName: "教师",
+            semester: "2026 秋季学期",
+            studentName: "林同学",
             studentNumber: "2400987654",
+            email: "lin@bnbu.edu.cn",
             phone: "13800138000",
-            email: "lin@bnbu.edu.cn"
-        ))
+            status: .pending,
+            reviewComment: "",
+            submittedAt: "2026-08-24T00:00:00Z",
+            reviewedAt: nil
+        )))
 
         let relaunched = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: defaults)
         )
-        XCTAssertEqual(relaunched.courseJoinRequest?.studentNumber, "2400987654")
-        XCTAssertEqual(relaunched.courseJoinRequest?.status, .pending)
-
-        relaunched.clearCourseJoinRequest()
-        XCTAssertNil(
-            AppState(
-                repository: MockStudentRepository(),
-                localStore: AppLocalStore(defaults: defaults)
-            ).courseJoinRequest
-        )
+        XCTAssertNil(relaunched.courseJoinRequest)
     }
 
     func testEnduranceRunStatusSeparatesExemptionAbsenceAndNoEntry() throws {
@@ -1365,18 +1414,14 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertEqual(GradeTimeFormatter.compact("  "), "")
     }
 
-    // MARK: - Best-effort location (business rules 5.5/10.3)
+    // MARK: - Location default deny
 
-    func testLocationAttachesOnlyToRunningSessionWithoutFix() throws {
+    func testExerciseSessionNeverCollectsLocation() throws {
         let appState = AppState(
             repository: MockStudentRepository(),
             localStore: AppLocalStore(defaults: isolatedDefaults())
         )
         appState.enforcesCheckInTimeWindow = false
-
-        // No session: attach is a no-op.
-        appState.attachExerciseSessionLocation(latitude: 22.35, longitude: 114.20)
-        XCTAssertNil(appState.exerciseSession)
 
         XCTAssertTrue(appState.startExerciseSession(
             category: .general,
@@ -1384,22 +1429,12 @@ final class BNBUStudentModelTests: XCTestCase {
             customSportName: ""
         ))
         XCTAssertEqual(appState.exerciseSession?.locationStatus, .unavailable)
-
-        // A late fix attaches to the running session and persists.
-        appState.attachExerciseSessionLocation(latitude: 22.35, longitude: 114.20)
-        XCTAssertEqual(appState.exerciseSession?.locationStatus, .available)
-        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
-        XCTAssertEqual(appState.exerciseSession?.longitude, 114.20)
-
-        // A second fix never overwrites the first.
-        appState.attachExerciseSessionLocation(latitude: 0, longitude: 0)
-        XCTAssertEqual(appState.exerciseSession?.latitude, 22.35)
-
-        // A completed session no longer accepts fixes.
+        XCTAssertNil(appState.exerciseSession?.latitude)
+        XCTAssertNil(appState.exerciseSession?.longitude)
         XCTAssertTrue(appState.endExerciseSession())
-        let endedLatitude = appState.exerciseSession?.latitude
-        appState.attachExerciseSessionLocation(latitude: 1, longitude: 1)
-        XCTAssertEqual(appState.exerciseSession?.latitude, endedLatitude)
+        XCTAssertEqual(appState.exerciseSession?.locationStatus, .unavailable)
+        XCTAssertNil(appState.exerciseSession?.latitude)
+        XCTAssertNil(appState.exerciseSession?.longitude)
     }
 
     func testDailyLimitUsesExerciseStartDateWhenSessionCrossesMidnight() async throws {
@@ -1454,25 +1489,106 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(appState.hasSubmittedCheckInToday(at: nextDay))
     }
 
-    func testDebugServerConfigDefaultsToTestAPI() {
+    func testDebugServerConfigDefaultsToLocalAPI() {
         let resolved = StudentServerConfig.resolvedBaseURL(arguments: ["BNBUStudent"], environment: [:])
 
-        XCTAssertEqual(resolved.absoluteString, "http://123.207.5.70:82/api/v1")
+        XCTAssertEqual(resolved.absoluteString, "http://127.0.0.1:13000/api/v1")
         XCTAssertEqual(StudentAPIClient().baseURL.absoluteString, resolved.absoluteString)
     }
 
     func testServerConfigAllowsArgumentAndEnvironmentOverrides() {
         let argumentURL = StudentServerConfig.resolvedBaseURL(
-            arguments: ["BNBUStudent", "-server-base-url", "http://127.0.0.1:8080/api/v1"],
-            environment: ["BNBU_API_BASE_URL": "http://123.207.5.70:82/api/v1"]
+            arguments: ["BNBUStudent", "-server-base-url", "http://127.0.0.1:18080/api/v1"],
+            environment: ["BNBU_API_BASE_URL": "http://127.0.0.1:13000/api/v1"]
         )
         let environmentURL = StudentServerConfig.resolvedBaseURL(
             arguments: ["BNBUStudent"],
-            environment: ["BNBU_API_BASE_URL": "http://123.207.5.70:82/api/v1"]
+            environment: ["BNBU_API_BASE_URL": "http://127.0.0.1:13000/api/v1"]
         )
 
-        XCTAssertEqual(argumentURL.absoluteString, "http://127.0.0.1:8080/api/v1")
-        XCTAssertEqual(environmentURL.absoluteString, "http://123.207.5.70:82/api/v1")
+        XCTAssertEqual(argumentURL.absoluteString, "http://127.0.0.1:18080/api/v1")
+        XCTAssertEqual(environmentURL.absoluteString, "http://127.0.0.1:13000/api/v1")
+    }
+
+    func testPublicClientCapabilitiesUseCanonicalContractRoutesAndDTOs() async throws {
+        CanonicalPublicCapabilityURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CanonicalPublicCapabilityURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try credentialStore.set(
+            Data("must-not-be-sent-to-public-endpoints".utf8),
+            forKey: RemoteStudentRepository.accessTokenKey(for: StudentServerConfig.testBaseURL)
+        )
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        let mode = await repository.loadSystemMode()
+        let requirement = await repository.loadUpdateRequirement(
+            currentVersion: "0.1.0",
+            currentBuildNumber: 1
+        )
+        let articles = try await repository.loadHelpArticles(locale: "en")
+
+        XCTAssertEqual(mode.mode, .readOnly)
+        XCTAssertEqual(requirement?.minimumVersion, "0.2.0")
+        XCTAssertEqual(requirement?.downloadURL, "https://apps.example.invalid/bnbu")
+        XCTAssertEqual(requirement?.updateMessage, "Update required")
+        XCTAssertEqual(articles.map(\.id), ["help-1", "help-2"])
+        XCTAssertEqual(articles.map(\.content), ["First body", "Second body"])
+        XCTAssertEqual(
+            CanonicalPublicCapabilityURLProtocol.paths,
+            ["/api/v1/system-mode", "/api/v1/app-release-policy", "/api/v1/help-articles"]
+        )
+        XCTAssertTrue(CanonicalPublicCapabilityURLProtocol.authorizationHeaders.allSatisfy { $0 == nil })
+        XCTAssertEqual(
+            CanonicalPublicCapabilityURLProtocol.queryValues(at: 1),
+            ["platform": "IOS", "currentVersion": "0.1.0", "currentBuildNumber": "1"]
+        )
+        XCTAssertEqual(CanonicalPublicCapabilityURLProtocol.queryValues(at: 2), ["locale": "en"])
+    }
+
+    func testEnduranceConversionFailsClosedUntilContractDecisionExists() async {
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: InMemoryCredentialStore(),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        do {
+            _ = try await repository.convertEndurance(
+                timeSeconds: 240,
+                gender: "female",
+                gradeLevel: "2026"
+            )
+            XCTFail("A client must not invent an endurance conversion rule")
+        } catch let error as RepositoryError {
+            XCTAssertTrue(error.localizedDescription.contains("CONTRACT DECISION REQUIRED"))
+        } catch {
+            XCTFail("Expected RepositoryError, got \(error)")
+        }
+    }
+
+    func testCursorListsDrainEveryPageWithoutRepeatingTheFirstCursor() async throws {
+        CursorPaginationURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CursorPaginationURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        let applications = try await repository.listExemptions()
+
+        XCTAssertEqual(applications.map(\.id), ["exemption-page-1", "exemption-page-2"])
+        XCTAssertEqual(CursorPaginationURLProtocol.observedCursors(), ["<first>", "page-2"])
     }
 
     func testProofAttachmentValidationCatchesSizeAndDurationLimits() {
@@ -1531,23 +1647,120 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(CheckInSubmissionPhase.idle.isActive)
     }
 
-    func testRepositoryErrorsUseActionableStudentMessages() {
-        XCTAssertEqual(
-            RepositoryError.httpError(409).localizedDescription,
-            "今天已提交过该任务。请先刷新打卡记录，勿重复提交。"
+    func testRepositoryErrorsUseSafeActionableStudentMessages() throws {
+        let statusCases: [(Int, ClientErrorContext, Bool)] = [
+            (401, .login, false),
+            (403, .join, false),
+            (409, .session, true),
+            (422, .record, false),
+            (429, .otp, true),
+            (503, .exemption, true),
+        ]
+        for (status, context, retryable) in statusCases {
+            let mapped = ClientErrorMapper.map(RepositoryError.httpError(status), context: context)
+            XCTAssertFalse(mapped.title.isEmpty)
+            XCTAssertFalse(mapped.message.isEmpty)
+            XCTAssertFalse(mapped.action.isEmpty)
+            XCTAssertEqual(mapped.retryable, retryable)
+            XCTAssertFalse(mapped.displayText.contains("Stack Trace"))
+        }
+
+        let detailsJSON = Data(#"""
+        {
+          "retryable":true,
+          "fieldErrors":[{"field":"account","code":"INVALID_FORMAT"}],
+          "startedAt":"2026-08-24T08:00:00Z",
+          "status":"IN_PROGRESS",
+          "startedOnCurrentAuthSession":false,
+          "ignored":{"token":"must-not-be-retained"}
+        }
+        """#.utf8)
+        let details = try JSONDecoder().decode(SafeContractErrorDetails.self, from: detailsJSON)
+        let active = RepositoryError.contractError(
+            statusCode: 409,
+            code: "SESSION_ALREADY_ACTIVE",
+            message: "raw server message token=secret",
+            requestId: "request-safe-1",
+            timestamp: "2026-08-24T08:00:00Z",
+            details: details
         )
-        XCTAssertEqual(
-            RepositoryError.httpError(413).localizedDescription,
-            "凭证文件超过服务器限制，请删除过大文件后重新选择。"
+        let mappedActive = ClientErrorMapper.map(active, context: .session)
+        XCTAssertEqual(mappedActive.code, "SESSION_ALREADY_ACTIVE")
+        XCTAssertEqual(mappedActive.requestId, "request-safe-1")
+        XCTAssertEqual(mappedActive.safeStatus, "IN_PROGRESS")
+        XCTAssertEqual(mappedActive.safeStartedAt, "2026-08-24T08:00:00Z")
+        XCTAssertEqual(mappedActive.startedOnCurrentAuthSession, false)
+        XCTAssertNotNil(mappedActive.fieldErrors["account"])
+        XCTAssertFalse(mappedActive.displayText.contains("raw server message"))
+        XCTAssertFalse(mappedActive.displayText.contains("secret"))
+
+        let unsafeMetadata = RepositoryError.contractError(
+            statusCode: 409,
+            code: "SESSION\nTOKEN_SECRET",
+            message: "do not expose",
+            requestId: String(repeating: "r", count: 65),
+            timestamp: "2026-08-24T08:00:00Z",
+            details: nil
         )
-        XCTAssertEqual(
-            RepositoryError.apiError("Check-in already submitted").localizedDescription,
-            "今天已提交过该任务。请先刷新打卡记录，勿重复提交。"
+        let sanitized = ClientErrorMapper.map(unsafeMetadata, context: .session)
+        XCTAssertEqual(sanitized.code, "HTTP_409")
+        XCTAssertNil(sanitized.requestId)
+        XCTAssertFalse(sanitized.displayText.contains("TOKEN_SECRET"))
+    }
+
+    func testStudentNumberNeverFallsBackToOpaqueInternalID() {
+        let profile = StudentProfile(
+            id: "3ea8d710-7df0-42e4-9b27-0acbeadead01",
+            studentNumber: nil,
+            name: "林同学",
+            email: "",
+            college: "",
+            className: "",
+            status: "ACTIVE",
+            enrollmentYear: nil,
+            gender: .unknown
         )
-        XCTAssertEqual(
-            RepositoryError.apiError("Task is outside date range").localizedDescription,
-            "当前不在任务允许的打卡时间内，请刷新任务并确认开始和截止时间。"
+        XCTAssertEqual(profile.displayStudentNumber, "待同步")
+        XCTAssertNotEqual(profile.displayStudentNumber, profile.id)
+    }
+
+    func testMatchingProtectedSessionIsRecoveredButOtherDeviceSessionIsReadOnlyConflict() async throws {
+        ActiveExerciseSessionURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ActiveExerciseSessionURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
         )
+
+        let recovered = try await repository.startOrRecoverExerciseSession(
+            preferredClassSectionId: "class-section-1",
+            recoverableLocalSessionId: "session-origin-device",
+            clientObservedAt: Date(timeIntervalSince1970: 1_777_000_000)
+        )
+        guard case .recovered(let recoveredSession, let recoveredRequestId) = recovered else {
+            XCTFail("The protected matching local mirror must recover")
+            return
+        }
+        XCTAssertEqual(recoveredSession.id, "session-origin-device")
+        XCTAssertEqual(recoveredRequestId, "ios-active-session-request")
+
+        let conflict = try await repository.startOrRecoverExerciseSession(
+            preferredClassSectionId: "class-section-1",
+            recoverableLocalSessionId: "different-device-session",
+            clientObservedAt: Date(timeIntervalSince1970: 1_777_000_000)
+        )
+        guard case .alreadyActive(let conflictSession, let conflictRequestId) = conflict else {
+            XCTFail("A different device's active Session must remain read-only")
+            return
+        }
+        XCTAssertEqual(conflictSession.id, "session-origin-device")
+        XCTAssertEqual(conflictRequestId, "ios-active-session-request")
+        XCTAssertEqual(ActiveExerciseSessionURLProtocol.postCount, 0)
     }
 
     func testIdempotencyConflictCodesRemainStructuredAndAmbiguous() async throws {
@@ -1568,12 +1781,14 @@ final class BNBUStudentModelTests: XCTestCase {
             )
             var capturedError: RepositoryError?
             do {
-                _ = try await repository.submitCheckIn(
-                    courseId: nil,
-                    creditType: "other",
-                    taskTitle: "running",
-                    hours: 1,
-                    note: "same logical request",
+                _ = try await repository.submitExerciseRecord(
+                    sessionId: "session-conflict",
+                    creditType: .general,
+                    sportType: .running,
+                    customSportName: nil,
+                    description: "same logical request",
+                    mediaIds: ["media-conflict"],
+                    clientRequestId: "ios-conflict-test-0001",
                     idempotencyKey: "ios-conflict-test-0001"
                 )
                 XCTFail("Expected \(code)")
@@ -1789,11 +2004,28 @@ final class BNBUStudentModelTests: XCTestCase {
             consentDefaults.string(forKey: BNBULanguage.defaultsKey),
             BNBULanguage.english.rawValue
         )
-        XCTAssertEqual(CheckInInputRule.validationMessage(note: ""), "请填写运动说明。")
-        XCTAssertEqual(CheckInInputRule.validationMessage(note: "  \n"), "请填写运动说明。")
-        XCTAssertNil(CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 200)))
         XCTAssertEqual(
-            CheckInInputRule.validationMessage(note: String(repeating: "跑", count: 201)),
+            CheckInInputRule.validationMessage(note: "", for: ExerciseCategory.general),
+            "请填写运动说明。"
+        )
+        XCTAssertEqual(
+            CheckInInputRule.validationMessage(note: "  \n", for: ExerciseCategory.general),
+            "请填写运动说明。"
+        )
+        XCTAssertNil(
+            CheckInInputRule.validationMessage(note: "", for: ExerciseCategory.courseRelated)
+        )
+        XCTAssertNil(
+            CheckInInputRule.validationMessage(
+                note: String(repeating: "跑", count: 200),
+                for: ExerciseCategory.general
+            )
+        )
+        XCTAssertEqual(
+            CheckInInputRule.validationMessage(
+                note: String(repeating: "跑", count: 201),
+                for: ExerciseCategory.courseRelated
+            ),
             "运动说明不能超过 200 个字符。"
         )
         XCTAssertEqual(
@@ -2062,19 +2294,14 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(expired.canSupplement)
     }
 
-    func testExemptionList404FallsBackToSportSummaryWithoutLoadingWorkspaceModules() async throws {
-        ExemptionRefreshURLProtocol.configure(.dedicatedRouteNotFound)
+    func testExemptionListUsesOnlyCurrentContractCollection() async throws {
+        ExemptionRefreshURLProtocol.configure(.success)
         let repository = makeExemptionRefreshRepository()
 
         let exemptions = try await repository.listExemptions()
 
         XCTAssertEqual(exemptions.map(\.id), ["summary-exemption"])
-        XCTAssertEqual(ExemptionRefreshURLProtocol.paths, [
-            "/api/v1/student/physical-test-exemptions",
-            "/api/v1/sport/summary"
-        ])
-        XCTAssertFalse(ExemptionRefreshURLProtocol.paths.contains("/api/v1/student/courses"))
-        XCTAssertFalse(ExemptionRefreshURLProtocol.paths.contains("/api/v1/sport/records"))
+        XCTAssertEqual(ExemptionRefreshURLProtocol.paths, ["/api/v1/exemption-applications"])
     }
 
     func testExemptionListMalformedDedicatedPayloadThrowsInsteadOfReturningEmptyList() async {
@@ -2098,7 +2325,7 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: AppLocalStore(defaults: defaults),
             remoteRepo: repository
         )
-        await appState.login(account: "s1", password: "test-password")
+        appState.installRemoteContractFixtureForTesting()
         XCTAssertTrue(appState.isRemoteMode)
         let cachedApplications = appState.workspace.exemptions
         ExemptionRefreshURLProtocol.resetRecordedPaths()
@@ -2110,7 +2337,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(appState.isLoadingExemptions)
         XCTAssertEqual(
             ExemptionRefreshURLProtocol.paths,
-            ["/api/v1/student/physical-test-exemptions"]
+            ["/api/v1/exemption-applications"]
         )
     }
 
@@ -2653,7 +2880,9 @@ final class BNBUStudentModelTests: XCTestCase {
         let defaults = isolatedDefaults()
         let credentialStore = InMemoryCredentialStore()
         let secureKey = RemoteStudentRepository.accessTokenKey(for: StudentServerConfig.testBaseURL)
+        let refreshIntentKey = RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
         try credentialStore.set(Data("short-lived-token".utf8), forKey: secureKey)
+        try credentialStore.set(Data("stale-refresh-intent".utf8), forKey: refreshIntentKey)
         let repository = RemoteStudentRepository(
             baseURL: StudentServerConfig.testBaseURL,
             credentialStore: credentialStore,
@@ -2667,9 +2896,172 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertTrue(securelyCleared)
         XCTAssertFalse(isAuthenticated)
         XCTAssertNil(try credentialStore.data(forKey: secureKey))
+        XCTAssertNil(try credentialStore.data(forKey: refreshIntentKey))
     }
 
-    func testLogoutInvalidatesLoginResponseThatFinishesLater() async throws {
+    func testProtected401OtherThanTokenExpiredDoesNotRefreshOrClearSession() async throws {
+        RefreshSessionURLProtocol.configure(
+            protectedStatus: 401,
+            protectedCode: "AUTH_REQUIRED",
+            refreshResponses: [.success]
+        )
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = makeRefreshRepository(credentialStore: credentialStore)
+
+        do {
+            _ = try await repository.listExemptions()
+            XCTFail("AUTH_REQUIRED must be surfaced without guessing that the token expired")
+        } catch let error as RepositoryError {
+            guard case .contractError(let statusCode, let code, _, _, _, _) = error else {
+                XCTFail("Expected the contract error, got \(error)")
+                return
+            }
+            XCTAssertEqual(statusCode, 401)
+            XCTAssertEqual(code, "AUTH_REQUIRED")
+        }
+
+        let isAuthenticated = await repository.isAuthenticated
+        XCTAssertTrue(isAuthenticated)
+        XCTAssertEqual(RefreshSessionURLProtocol.refreshKeys, [])
+        XCTAssertNil(try credentialStore.data(
+            forKey: RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
+        ))
+    }
+
+    func testRefreshAmbiguousFailuresRetainSessionAndPersistentIntent() async throws {
+        let cases: [RefreshFixtureResponse] = [
+            .networkLost,
+            .failure(statusCode: 409, code: "CONFLICT_REQUEST_IN_PROGRESS"),
+            .failure(statusCode: 429, code: "AUTH_RATE_LIMITED"),
+            .failure(statusCode: 503, code: "SYSTEM_SERVICE_UNAVAILABLE"),
+        ]
+        for response in cases {
+            RefreshSessionURLProtocol.configure(refreshResponses: [response])
+            let credentialStore = InMemoryCredentialStore()
+            try installCurrentContractSession(in: credentialStore)
+            let repository = makeRefreshRepository(credentialStore: credentialStore)
+
+            do {
+                _ = try await repository.listExemptions()
+                XCTFail("An ambiguous refresh failure must be surfaced")
+            } catch {
+                // The exact transient error remains visible to the caller.
+            }
+
+            let isAuthenticated = await repository.isAuthenticated
+            XCTAssertTrue(isAuthenticated)
+            XCTAssertNotNil(try credentialStore.data(
+                forKey: RemoteStudentRepository.contractSessionKey(for: StudentServerConfig.testBaseURL)
+            ))
+            let intentData = try XCTUnwrap(try credentialStore.data(
+                forKey: RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
+            ))
+            let intent = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: intentData) as? [String: Any]
+            )
+            let idempotencyKey = try XCTUnwrap(intent["idempotencyKey"] as? String)
+            let fingerprint = try XCTUnwrap(intent["sessionFingerprint"] as? String)
+            XCTAssertTrue(IdempotencyKeyPolicy.isValid(idempotencyKey))
+            XCTAssertEqual(fingerprint.count, 64)
+        }
+    }
+
+    func testRefreshIntentSurvivesRestartReusesKeyAndClearsAfterSuccess() async throws {
+        RefreshSessionURLProtocol.configure(refreshResponses: [
+            .failure(statusCode: 503, code: "SYSTEM_SERVICE_UNAVAILABLE"),
+            .success,
+        ])
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let firstRepository = makeRefreshRepository(credentialStore: credentialStore)
+        do {
+            _ = try await firstRepository.listExemptions()
+            XCTFail("The first refresh response is intentionally ambiguous")
+        } catch {
+            // Relaunch below must recover this exact intent.
+        }
+        XCTAssertNotNil(try credentialStore.data(
+            forKey: RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
+        ))
+
+        let restoredRepository = makeRefreshRepository(credentialStore: credentialStore)
+        let exemptions = try await restoredRepository.listExemptions()
+        XCTAssertTrue(exemptions.isEmpty)
+        XCTAssertEqual(RefreshSessionURLProtocol.refreshKeys.count, 2)
+        XCTAssertEqual(
+            RefreshSessionURLProtocol.refreshKeys.first,
+            RefreshSessionURLProtocol.refreshKeys.last
+        )
+        XCTAssertEqual(
+            RefreshSessionURLProtocol.refreshTokens,
+            ["current-contract-refresh-token", "current-contract-refresh-token"]
+        )
+        XCTAssertNil(try credentialStore.data(
+            forKey: RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
+        ))
+        let storedSessionData = try XCTUnwrap(try credentialStore.data(
+            forKey: RemoteStudentRepository.contractSessionKey(for: StudentServerConfig.testBaseURL)
+        ))
+        let storedSession = try JSONDecoder().decode(ContractAuthSession.self, from: storedSessionData)
+        XCTAssertEqual(storedSession.refreshToken, "rotated-refresh-token")
+    }
+
+    func testRefreshTerminalCredentialFailuresClearSessionAndIntent() async throws {
+        for (statusCode, code) in [
+            (401, "AUTH_CREDENTIAL_INVALID"),
+            (401, "AUTH_TOKEN_INVALID"),
+            (401, "AUTH_SESSION_REVOKED"),
+            (403, "AUTH_ACCOUNT_DISABLED"),
+        ] {
+            RefreshSessionURLProtocol.configure(refreshResponses: [
+                .failure(statusCode: statusCode, code: code),
+            ])
+            let credentialStore = InMemoryCredentialStore()
+            try installCurrentContractSession(in: credentialStore)
+            let repository = makeRefreshRepository(credentialStore: credentialStore)
+
+            do {
+                _ = try await repository.listExemptions()
+                XCTFail("\(code) must terminate the local session")
+            } catch {
+                // The terminal contract error is still surfaced.
+            }
+
+            let isAuthenticated = await repository.isAuthenticated
+            XCTAssertFalse(isAuthenticated)
+            XCTAssertNil(try credentialStore.data(
+                forKey: RemoteStudentRepository.contractSessionKey(for: StudentServerConfig.testBaseURL)
+            ))
+            XCTAssertNil(try credentialStore.data(
+                forKey: RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
+            ))
+        }
+    }
+
+    func testSuccessfulNewLoginClearsStaleRefreshIntent() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SuccessfulLoginURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        let refreshIntentKey = RemoteStudentRepository.refreshIntentKey(for: StudentServerConfig.testBaseURL)
+        try credentialStore.set(Data("stale-refresh-intent".utf8), forKey: refreshIntentKey)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        let student = try await repository.verifyStudentSignInCode(
+            challengeId: "challenge-current-contract",
+            code: "123456"
+        )
+
+        XCTAssertEqual(student.id, "s1")
+        XCTAssertNil(try credentialStore.data(forKey: refreshIntentKey))
+    }
+
+    func testLogoutInvalidatesOtpVerificationResponseThatFinishesLater() async throws {
         let credentialStore = InMemoryCredentialStore()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [DelayedLoginURLProtocol.self]
@@ -2682,7 +3074,10 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         let loginTask = Task {
-            try await repository.login(account: "s1", password: "not-persisted")
+            try await repository.verifyStudentSignInCode(
+                challengeId: "challenge-delayed",
+                code: "123456"
+            )
         }
         try await Task.sleep(for: .milliseconds(25))
         let securelyCleared = await repository.logout()
@@ -2702,7 +3097,7 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(try credentialStore.data(forKey: RemoteStudentRepository.accessTokenKey(for: StudentServerConfig.testBaseURL)))
     }
 
-    func testCourseRelatedSubmissionKeepsCourseReferenceWhileGeneralOmitsIt() async throws {
+    func testRecordCreateUsesAuthoritativeSessionAndContractCreditType() async throws {
         RecordingSportRecordURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RecordingSportRecordURLProtocol.self]
@@ -2718,19 +3113,25 @@ final class BNBUStudentModelTests: XCTestCase {
             legacyDefaults: isolatedDefaults()
         )
 
-        _ = try await repository.submitCheckIn(
-            courseId: "course-1",
-            creditType: "课程相关",
-            taskTitle: "课程相关运动打卡",
-            hours: 1,
-            note: "course related"
+        _ = try await repository.submitExerciseRecord(
+            sessionId: "session-course",
+            creditType: .courseRelated,
+            sportType: .running,
+            customSportName: nil,
+            description: "course related",
+            mediaIds: ["media-course"],
+            clientRequestId: "client-course",
+            idempotencyKey: "ios-record-course"
         )
-        _ = try await repository.submitCheckIn(
-            courseId: nil,
-            creditType: "其他运动",
-            taskTitle: "自主运动打卡",
-            hours: 1,
-            note: "autonomous"
+        _ = try await repository.submitExerciseRecord(
+            sessionId: "session-general",
+            creditType: .general,
+            sportType: .running,
+            customSportName: nil,
+            description: "autonomous",
+            mediaIds: ["media-general"],
+            clientRequestId: "client-general",
+            idempotencyKey: "ios-record-general"
         )
 
         let bodies = RecordingSportRecordURLProtocol.recordedBodies
@@ -2741,13 +3142,17 @@ final class BNBUStudentModelTests: XCTestCase {
         let generalBody = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try XCTUnwrap(bodies.last)) as? [String: Any]
         )
-        XCTAssertEqual(courseRelatedBody["courseId"] as? String, "course-1")
-        XCTAssertNil(courseRelatedBody["taskId"], "The legacy task reference must never be sent")
+        XCTAssertEqual(courseRelatedBody["sessionId"] as? String, "session-course")
+        XCTAssertEqual(courseRelatedBody["creditType"] as? String, "COURSE_RELATED")
+        XCTAssertEqual(generalBody["sessionId"] as? String, "session-general")
+        XCTAssertEqual(generalBody["creditType"] as? String, "GENERAL")
+        XCTAssertNil(courseRelatedBody["taskId"])
+        XCTAssertNil(courseRelatedBody["courseId"])
         XCTAssertNil(generalBody["taskId"])
         XCTAssertNil(generalBody["courseId"])
     }
 
-    func testProofUploadUsesOnlyFrozenV1EndpointAndCleansTemporaryBody() async throws {
+    func testProofUploadStartsOnlyAtCurrentMediaUploadEndpoint() async throws {
         RecordingNotFoundURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RecordingNotFoundURLProtocol.self]
@@ -2773,13 +3178,17 @@ final class BNBUStudentModelTests: XCTestCase {
         )
 
         do {
-            _ = try await repository.uploadProof(attachment: attachment)
+            _ = try await repository.uploadExerciseEvidence(
+                attachment: attachment,
+                sessionId: "session-upload",
+                idempotencyKey: "ios-media-upload-test"
+            )
             XCTFail("The 404 test transport must fail the upload")
         } catch {
             // The endpoint assertion below is the contract under test.
         }
 
-        XCTAssertEqual(RecordingNotFoundURLProtocol.recordedPaths, ["/api/v1/upload/proof"])
+        XCTAssertEqual(RecordingNotFoundURLProtocol.recordedPaths, ["/api/v1/media-uploads"])
         let uploadDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BNBUStudentUploads", isDirectory: true)
         let leftovers = (try? FileManager.default.contentsOfDirectory(
@@ -3011,6 +3420,7 @@ final class BNBUStudentModelTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [IdempotencyRetryURLProtocol.self]
         let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
         let defaults = isolatedDefaults()
         let remoteRepository = RemoteStudentRepository(
             baseURL: StudentServerConfig.testBaseURL,
@@ -3024,8 +3434,25 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: localStore,
             remoteRepo: remoteRepository
         )
-        await appState.login(account: "s1", password: "test-password")
+        appState.installRemoteContractFixtureForTesting()
         XCTAssertTrue(appState.isRemoteMode)
+        appState.workspace.records.insert(
+            CheckInRecord(
+                id: "device-local-today",
+                courseId: nil,
+                taskTitle: "设备本地当天记录",
+                creditType: .general,
+                hours: 1,
+                submittedAt: RecentTimestamp.justNow,
+                proofSummary: "1 张图片",
+                proofPhotoCount: 1,
+                proofVideoCount: 0,
+                proofFiles: [],
+                note: "仅验证远端不按本机日期拦截"
+            ),
+            at: 0
+        )
+        XCTAssertTrue(appState.hasSubmittedCheckInToday())
         let proof = ProofAttachment(
             id: "logical-proof",
             type: .image,
@@ -3042,7 +3469,8 @@ final class BNBUStudentModelTests: XCTestCase {
             hours: 1,
             note: "same logical attempt",
             sportType: "running",
-            proofAttachments: [proof]
+            proofAttachments: [proof],
+            exerciseSession: completedContractExerciseSession()
         )
         XCTAssertFalse(first)
         XCTAssertTrue(appState.canSafelyRetryCheckIn)
@@ -3064,7 +3492,8 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertNil(restoredProofs.first?.uploadData)
         XCTAssertEqual(restoredProofs.first?.contentDigest, proof.contentDigest)
         XCTAssertFalse(restoredProofs[0].isValidForUpload)
-        await restoredState.login(account: "s1", password: "test-password")
+        restoredState.installRemoteContractFixtureForTesting()
+        let progressBeforeServerRefresh = restoredState.workspace.progress
         XCTAssertTrue(restoredState.canResumePendingCheckIn(
             creditType: .general,
             courseId: nil,
@@ -3089,9 +3518,17 @@ final class BNBUStudentModelTests: XCTestCase {
             restoredState.workspace.records.first(where: { $0.id == "record-idempotent" })
         )
         let authoritativeProof = try XCTUnwrap(authoritativeRecord.proofFiles.first)
-        XCTAssertEqual(authoritativeProof.cosKey, "proofs/1.jpg")
-        XCTAssertTrue(authoritativeProof.source.hasPrefix("https://"))
-        XCTAssertTrue(authoritativeProof.source.contains("q-signature="))
+        XCTAssertEqual(authoritativeProof.cosKey, "media-1")
+        XCTAssertEqual(authoritativeProof.source, "Backend 2.0.13 media")
+        XCTAssertEqual(restoredState.workspace.progress.course, progressBeforeServerRefresh.course)
+        XCTAssertEqual(restoredState.workspace.progress.general, progressBeforeServerRefresh.general)
+        XCTAssertEqual(
+            restoredState.workspace.progress.authoritativeTotalHours,
+            progressBeforeServerRefresh.authoritativeTotalHours
+        )
+        XCTAssertTrue(restoredState.workspace.syncOperations.contains {
+            $0.type == .submitRecord && $0.status == .queued
+        })
         XCTAssertNil(localStore.readDraft().value)
         XCTAssertNil(defaults.data(forKey: AppLocalStore.pendingMutationStorageKey))
     }
@@ -3101,6 +3538,7 @@ final class BNBUStudentModelTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [AllMutationRetryURLProtocol.self]
         let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
         let defaults = isolatedDefaults()
         let localStore = AppLocalStore(defaults: defaults)
         let firstRepository = RemoteStudentRepository(
@@ -3114,7 +3552,7 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: localStore,
             remoteRepo: firstRepository
         )
-        await firstState.login(account: "s1", password: "test-password")
+        firstState.installRemoteContractFixtureForTesting()
         let proof = ProofAttachment(
             id: "secondary-logical-proof",
             type: .image,
@@ -3141,6 +3579,10 @@ final class BNBUStudentModelTests: XCTestCase {
         XCTAssertFalse(firstCreateExemptionResult)
         XCTAssertFalse(firstSupplementExemptionResult)
         XCTAssertEqual(AllMutationRetryURLProtocol.uploadCount, 2)
+        XCTAssertEqual(AllMutationRetryURLProtocol.uploadPaths, [
+            "/api/v1/exemption-applications/ex-new/media-uploads",
+            "/api/v1/exemption-applications/ex1/media-uploads",
+        ])
         XCTAssertEqual(firstState.pendingRemoteMutationSummaries.count, 2)
 
         let persisted = try XCTUnwrap(localStore.readPendingRemoteMutations().value)
@@ -3158,7 +3600,7 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: localStore,
             remoteRepo: restoredRepository
         )
-        await restoredState.login(account: "s1", password: "test-password")
+        restoredState.installRemoteContractFixtureForTesting()
         let restoredExemption = try XCTUnwrap(restoredState.workspace.exemptions.first(where: { $0.id == "ex1" }))
         let createRecovery = try XCTUnwrap(restoredState.pendingExemptionFormRecovery(applicationID: nil))
         let supplementRecovery = try XCTUnwrap(
@@ -3388,9 +3830,11 @@ final class BNBUStudentModelTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [IdempotencyRetryURLProtocol.self]
         let defaults = isolatedDefaults()
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
         let remoteRepository = RemoteStudentRepository(
             baseURL: StudentServerConfig.testBaseURL,
-            credentialStore: InMemoryCredentialStore(),
+            credentialStore: credentialStore,
             urlSession: URLSession(configuration: configuration),
             legacyDefaults: defaults
         )
@@ -3399,7 +3843,7 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: AppLocalStore(defaults: defaults),
             remoteRepo: remoteRepository
         )
-        await appState.login(account: "s1", password: "test-password")
+        appState.installRemoteContractFixtureForTesting()
         let proof = ProofAttachment(
             id: "logical-proof",
             type: .image,
@@ -3414,14 +3858,16 @@ final class BNBUStudentModelTests: XCTestCase {
             courseId: nil,
             hours: 1,
             note: "payload A",
-            proofAttachments: [proof]
+            proofAttachments: [proof],
+            exerciseSession: completedContractExerciseSession()
         )
         _ = await appState.submitCheckIn(
             creditType: .general,
             courseId: nil,
             hours: 1,
             note: "payload B",
-            proofAttachments: [proof]
+            proofAttachments: [proof],
+            exerciseSession: completedContractExerciseSession()
         )
 
         XCTAssertEqual(IdempotencyRetryURLProtocol.uploadCount, 2)
@@ -3436,9 +3882,11 @@ final class BNBUStudentModelTests: XCTestCase {
         configuration.protocolClasses = [IdempotencyRetryURLProtocol.self]
         let defaults = isolatedDefaults()
         let localStore = AppLocalStore(defaults: defaults)
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
         let remoteRepository = RemoteStudentRepository(
             baseURL: StudentServerConfig.testBaseURL,
-            credentialStore: InMemoryCredentialStore(),
+            credentialStore: credentialStore,
             urlSession: URLSession(configuration: configuration),
             legacyDefaults: defaults
         )
@@ -3447,7 +3895,7 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: localStore,
             remoteRepo: remoteRepository
         )
-        await appState.login(account: "s1", password: "test-password")
+        appState.installRemoteContractFixtureForTesting()
         let proof = ProofAttachment(
             id: "deterministic-proof",
             type: .image,
@@ -3462,7 +3910,8 @@ final class BNBUStudentModelTests: XCTestCase {
             courseId: nil,
             hours: 1,
             note: "invalid deterministic payload",
-            proofAttachments: [proof]
+            proofAttachments: [proof],
+            exerciseSession: completedContractExerciseSession()
         )
 
         XCTAssertFalse(result)
@@ -3567,7 +4016,10 @@ final class BNBUStudentModelTests: XCTestCase {
             XCTAssertEqual(MutationFailClosedURLProtocol.uploadCount, 0, flow.scope)
             XCTAssertTrue(MutationFailClosedURLProtocol.mutationPaths.isEmpty, flow.scope)
             XCTAssertNil(localStore.readPendingRemoteMutations().value?[flow.scope], flow.scope)
-            XCTAssertEqual(appState.errorMessage, RemoteMutationJournalError.writeFailed.localizedDescription)
+            XCTAssertEqual(
+                appState.errorMessage,
+                ClientErrorMapper.map(RemoteMutationJournalError.writeFailed, context: .record).displayText
+            )
         }
     }
 
@@ -3585,7 +4037,11 @@ final class BNBUStudentModelTests: XCTestCase {
             let result = try await submitFailClosedFlow(flow, on: appState)
 
             XCTAssertFalse(result, flow.scope)
-            XCTAssertEqual(MutationFailClosedURLProtocol.uploadCount, 1, flow.scope)
+            XCTAssertEqual(
+                MutationFailClosedURLProtocol.uploadCount,
+                flow == .createExemption ? 0 : 1,
+                flow.scope
+            )
             XCTAssertTrue(MutationFailClosedURLProtocol.mutationPaths.isEmpty, flow.scope)
             XCTAssertEqual(
                 appState.pendingRemoteMutationSummaries.first(where: { $0.scope == flow.scope })?.uploadedProofCount,
@@ -3597,7 +4053,10 @@ final class BNBUStudentModelTests: XCTestCase {
                 0,
                 flow.scope
             )
-            XCTAssertEqual(appState.errorMessage, RemoteMutationJournalError.writeFailed.localizedDescription)
+            XCTAssertEqual(
+                appState.errorMessage,
+                ClientErrorMapper.map(RemoteMutationJournalError.writeFailed, context: .record).displayText
+            )
         }
     }
 
@@ -3678,15 +4137,6 @@ final class BNBUStudentModelTests: XCTestCase {
             urlSession: URLSession(configuration: configuration),
             legacyDefaults: isolatedDefaults()
         )
-        let uploadedProof = ProofAttachment(
-            id: "proofs/a.jpg",
-            type: .image,
-            fileName: "a.jpg",
-            byteCount: 4,
-            source: "https://cos.example/proofs/a.jpg",
-            cosKey: "proofs/a.jpg",
-            mimeType: "image/jpeg"
-        )
         let application = ExemptionApplication(
             id: "exemption-1",
             studentId: "student-1",
@@ -3694,46 +4144,72 @@ final class BNBUStudentModelTests: XCTestCase {
             reason: "medical reason",
             detail: "doctor note",
             submittedAt: "2026-07-16T00:00:00Z",
-            status: .rejected,
+            status: .supplementRequired,
             proofFiles: [],
             teacherFeedback: "supplement",
             updatedAt: "2026-07-16T00:00:00Z"
         )
 
-        _ = try await repository.submitCheckIn(
-            courseId: nil,
-            creditType: "其他运动",
-            taskTitle: "自主运动",
-            hours: 1,
-            note: "record",
-            proofFiles: [uploadedProof],
+        _ = try await repository.submitExerciseRecord(
+            sessionId: "session-canonical",
+            creditType: .general,
+            sportType: .running,
+            customSportName: nil,
+            description: "record",
+            mediaIds: ["media-1"],
+            clientRequestId: "ios-record-0001",
             idempotencyKey: "ios-record-0001"
         )
-        _ = try await repository.submitExemption(
-            item: "800m",
+        let createdDraft = try await repository.createExemptionDraft(
+            enrollmentId: "enrollment-1",
+            item: .run800m,
             reason: "medical reason",
             detail: "doctor note",
-            proofFiles: ["proofs/a.jpg"],
+            organization: "",
             idempotencyKey: "ios-exemption-0001"
         )
-        _ = try await repository.supplementExemption(
+        _ = try await repository.updateAndSubmitCreatedExemption(
+            applicationId: createdDraft.applicationId,
+            item: .run800m,
+            reason: "medical reason",
+            detail: "doctor note",
+            organization: "",
+            preparedExpectedVersion: createdDraft.expectedVersion,
+            mediaIds: ["media-1"],
+            idempotencyKey: "ios-exemption-0001"
+        )
+        let supplementPlan = try await repository.prepareExemptionSupplement(
+            applicationId: application.id,
+            newMediaIds: ["media-2"]
+        )
+        _ = try await repository.updateAndSubmitExemption(
             application: application,
-            reason: "additional doctor note",
-            proofFiles: ["proofs/a.jpg"],
+            reason: "medical reason",
+            detail: "additional doctor note",
+            preparedExpectedVersion: supplementPlan.expectedVersion,
+            preparedMediaIds: supplementPlan.mediaIds,
             idempotencyKey: "ios-exemption-supplement-0001"
         )
 
         XCTAssertEqual(CanonicalMutationURLProtocol.paths, [
-            "/api/v1/sport/records",
-            "/api/v1/student/physical-test-exemptions",
-            "/api/v1/student/physical-test-exemptions/exemption-1/supplements"
+            "/api/v1/exercise-records",
+            "/api/v1/exercise-records/record-1/submit",
+            "/api/v1/exemption-applications",
+            "/api/v1/exemption-applications/exemption-created",
+            "/api/v1/exemption-applications/exemption-created/submit",
+            "/api/v1/exemption-applications/exemption-1",
+            "/api/v1/exemption-applications/exemption-1/submit"
         ])
         XCTAssertEqual(CanonicalMutationURLProtocol.keys, [
-            "ios-record-0001",
-            "ios-exemption-0001",
-            "ios-exemption-supplement-0001"
+            "ios-record-0001.record-create",
+            "ios-record-0001.record-submit",
+            "ios-exemption-0001.exemption-create",
+            "ios-exemption-0001.exemption-associate-media",
+            "ios-exemption-0001.exemption-submit",
+            "ios-exemption-supplement-0001.exemption-update",
+            "ios-exemption-supplement-0001.exemption-resubmit"
         ])
-        XCTAssertFalse(CanonicalMutationURLProtocol.paths.contains("/api/v1/student/exemptions"))
+        XCTAssertFalse(CanonicalMutationURLProtocol.paths.contains { $0.contains("/student/") })
     }
 
     func testAppStateSupplementsOnlyActionableExemptionStatuses() async {
@@ -3821,9 +4297,11 @@ final class BNBUStudentModelTests: XCTestCase {
     ) async -> AppState {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MutationFailClosedURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try? installCurrentContractSession(in: credentialStore)
         let remoteRepository = RemoteStudentRepository(
             baseURL: StudentServerConfig.testBaseURL,
-            credentialStore: InMemoryCredentialStore(),
+            credentialStore: credentialStore,
             urlSession: URLSession(configuration: configuration),
             legacyDefaults: defaults
         )
@@ -3832,7 +4310,7 @@ final class BNBUStudentModelTests: XCTestCase {
             localStore: localStore,
             remoteRepo: remoteRepository
         )
-        await appState.login(account: "s1", password: "test-password")
+        appState.installRemoteContractFixtureForTesting()
         XCTAssertTrue(appState.isRemoteMode)
         return appState
     }
@@ -3842,9 +4320,11 @@ final class BNBUStudentModelTests: XCTestCase {
     ) -> RemoteStudentRepository {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ExemptionRefreshURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try? installCurrentContractSession(in: credentialStore)
         return RemoteStudentRepository(
             baseURL: StudentServerConfig.testBaseURL,
-            credentialStore: InMemoryCredentialStore(),
+            credentialStore: credentialStore,
             urlSession: URLSession(configuration: configuration),
             legacyDefaults: defaults ?? isolatedDefaults()
         )
@@ -3878,7 +4358,8 @@ final class BNBUStudentModelTests: XCTestCase {
                 hours: 1,
                 note: "fail-closed record",
                 sportType: "running",
-                proofAttachments: [proof]
+                proofAttachments: [proof],
+                exerciseSession: completedContractExerciseSession()
             )
         case .createExemption:
             return await appState.submitExemption(
@@ -3898,16 +4379,1344 @@ final class BNBUStudentModelTests: XCTestCase {
         }
     }
 
+    func testStudentTestToolsRequireDebugAllowedEnvironmentAndExplicitFlag() {
+        XCTAssertTrue(StudentTestToolsConfig.permits(
+            appEnvironment: "local",
+            enabledValue: "true",
+            isDebugBuild: true
+        ))
+        XCTAssertTrue(StudentTestToolsConfig.permits(
+            appEnvironment: "test",
+            enabledValue: "1",
+            isDebugBuild: true
+        ))
+        XCTAssertTrue(StudentTestToolsConfig.permits(
+            appEnvironment: "staging",
+            enabledValue: "true",
+            isDebugBuild: true
+        ))
+        XCTAssertFalse(StudentTestToolsConfig.permits(
+            appEnvironment: "production",
+            enabledValue: "true",
+            isDebugBuild: true
+        ))
+        XCTAssertFalse(StudentTestToolsConfig.permits(
+            appEnvironment: "local",
+            enabledValue: "false",
+            isDebugBuild: true
+        ))
+        XCTAssertFalse(StudentTestToolsConfig.permits(
+            appEnvironment: "local",
+            enabledValue: "true",
+            isDebugBuild: false
+        ))
+    }
+
+    func testExerciseTestToolCapabilityUsesAuthenticatedInternalRead() async throws {
+        ExerciseTestToolURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ExerciseTestToolURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults(),
+            exerciseTestToolsEnabled: true
+        )
+
+        let capabilities = try await repository.exerciseTestToolCapabilities()
+
+        XCTAssertEqual(capabilities, [StudentTestToolsConfig.durationAdvanceCapability])
+        XCTAssertEqual(ExerciseTestToolURLProtocol.requests.map(\.path), [
+            "/api/v1/internal/test-tools/capabilities"
+        ])
+        XCTAssertEqual(ExerciseTestToolURLProtocol.requests.map(\.method), ["GET"])
+    }
+
+    func testExerciseTestToolPostsExpectedVersionThenRefreshesAuthoritativeState() async throws {
+        ExerciseTestToolURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ExerciseTestToolURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults(),
+            exerciseTestToolsEnabled: true
+        )
+
+        let refreshed = try await repository.advanceExerciseSessionTestDuration(
+            sessionId: "session-test-tool-1",
+            expectedVersion: 4
+        )
+
+        XCTAssertEqual(refreshed.id, "session-test-tool-1")
+        XCTAssertEqual(refreshed.actualDurationSeconds, 4_200)
+        XCTAssertEqual(refreshed.version, 5)
+        let requests = ExerciseTestToolURLProtocol.requests
+        XCTAssertEqual(requests.map(\.path), [
+            "/api/v1/internal/test-tools/exercise-sessions/session-test-tool-1/advance-duration",
+            "/api/v1/exercise-sessions/session-test-tool-1",
+        ])
+        XCTAssertEqual(requests.map(\.method), ["POST", "GET"])
+        XCTAssertEqual(requests[0].jsonBody?["expectedVersion"] as? Int, 4)
+        XCTAssertTrue(IdempotencyKeyPolicy.isValid(try XCTUnwrap(requests[0].idempotencyKey)))
+    }
+
+    func testExerciseDurationUsesAuthoritativeServerSnapshotWithoutChangingStartTime() {
+        let observedAt = Date(timeIntervalSince1970: 1_777_000_000)
+        let originalStart = observedAt.addingTimeInterval(-600)
+        let session = ExerciseSession(
+            id: "session-duration-authority",
+            studentID: "s1",
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: originalStart,
+            status: .active,
+            locationStatus: .unavailable,
+            serverVersion: 4
+        )
+
+        let advanced = session.applyingAuthoritativeDuration(
+            seconds: 4_200,
+            observedAt: observedAt,
+            remoteStatus: "IN_PROGRESS",
+            remoteEndedAt: nil,
+            serverVersion: 5
+        )
+
+        XCTAssertEqual(advanced.startTime, originalStart)
+        XCTAssertEqual(advanced.elapsed(at: observedAt), 4_200, accuracy: 0.001)
+        XCTAssertEqual(advanced.elapsed(at: observedAt.addingTimeInterval(60)), 4_260, accuracy: 0.001)
+        XCTAssertEqual(advanced.creditedHours(at: observedAt), 1)
+        XCTAssertEqual(advanced.serverVersion, 5)
+
+        let completed = advanced.applyingAuthoritativeDuration(
+            seconds: 7_200,
+            observedAt: observedAt,
+            remoteStatus: "COMPLETED",
+            remoteEndedAt: observedAt
+        )
+        XCTAssertEqual(completed.status, .completed)
+        XCTAssertEqual(completed.creditedHours(at: observedAt.addingTimeInterval(600)), 2)
+    }
+
+    func testRejectedAttemptContextRoundTripsWithoutMutatingHistory() throws {
+        let attemptContext = ExerciseRecordAttemptContext(
+            recordId: "record-attempt-2",
+            previousAttemptId: "record-attempt-1",
+            rootAttemptId: "record-attempt-1",
+            attemptNumber: 2
+        )
+        let record = CheckInRecord(
+            id: "record-attempt-2",
+            courseId: nil,
+            taskTitle: "重新补交",
+            creditType: .general,
+            hours: 1,
+            submittedAt: "2026-08-24T08:00:00Z",
+            validity: .valid,
+            invalidReason: nil,
+            proofSummary: "1 张照片",
+            proofPhotoCount: 1,
+            proofVideoCount: 0,
+            proofFiles: [],
+            note: "新 Session 的正式尝试",
+            attemptContext: attemptContext,
+            serverVersion: 3
+        )
+
+        let decoded = try JSONDecoder().decode(
+            CheckInRecord.self,
+            from: JSONEncoder().encode(record)
+        )
+
+        XCTAssertEqual(decoded.attemptContext, attemptContext)
+        XCTAssertEqual(decoded.attemptContext?.previousAttemptId, "record-attempt-1")
+        XCTAssertEqual(decoded.attemptContext?.attemptNumber, 2)
+        XCTAssertEqual(decoded.serverVersion, 3)
+    }
+
+    func testPendingMutationPersistsScopedExemptionTarget() throws {
+        var attempt = PendingRemoteMutationAttempt.create(
+            scope: "exemption:create:running-general",
+            fingerprint: "fingerprint-1",
+            serverIdentity: "server-1",
+            studentID: "s1",
+            authoritativeEnrollmentID: "enrollment-1"
+        )
+        attempt.bindTargetResource(id: "exemption-draft-1", expectedVersion: 4)
+
+        let decoded = try JSONDecoder().decode(
+            PendingRemoteMutationAttempt.self,
+            from: JSONEncoder().encode(attempt)
+        )
+
+        XCTAssertEqual(decoded.targetResourceID, "exemption-draft-1")
+        XCTAssertEqual(decoded.preparedExpectedVersion, 4)
+        XCTAssertEqual(decoded.authoritativeEnrollmentID, "enrollment-1")
+    }
+
+    func testAccountDeletionErrorsUseSafeSpecificActions() {
+        let cases: [(String, Int, Bool)] = [
+            ("ACCOUNT_DELETION_ACTIVE_SESSION", 409, true),
+            ("ACCOUNT_DELETION_PENDING_REVIEW", 409, false),
+            ("ACCOUNT_DELETION_REAUTH_REQUIRED", 401, true),
+        ]
+
+        for (code, status, retryable) in cases {
+            let mapped = ClientErrorMapper.map(
+                RepositoryError.contractError(
+                    statusCode: status,
+                    code: code,
+                    message: "internal SQL token=secret",
+                    requestId: "account-delete-request-1",
+                    timestamp: "2026-08-24T08:00:00Z",
+                    details: nil
+                ),
+                context: .accountDeletion
+            )
+            XCTAssertEqual(mapped.code, code)
+            XCTAssertEqual(mapped.requestId, "account-delete-request-1")
+            XCTAssertEqual(mapped.retryable, retryable)
+            XCTAssertFalse(mapped.displayText.contains("SQL"))
+            XCTAssertFalse(mapped.displayText.contains("secret"))
+        }
+    }
+
+    func testFeedbackUsesPrivacyBoundedListAndCreateContract() async throws {
+        FeedbackContractURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FeedbackContractURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        let existing = try await repository.listFeedback()
+        let created = try await repository.createFeedback(
+            category: .privacy,
+            content: "  请说明账号注销后的匿名化范围。  "
+        )
+
+        XCTAssertEqual(existing.count, 1)
+        XCTAssertEqual(existing.first?.category, FeedbackCategory.bug.title)
+        XCTAssertEqual(existing.first?.status, .processing)
+        XCTAssertEqual(created.id, "feedback-created-1")
+        XCTAssertEqual(created.category, FeedbackCategory.privacy.title)
+        XCTAssertEqual(created.description, "请说明账号注销后的匿名化范围。")
+
+        let requests = FeedbackContractURLProtocol.requests
+        XCTAssertEqual(requests.map(\.path), ["/api/v1/feedback", "/api/v1/feedback"])
+        XCTAssertEqual(requests.map(\.method), ["GET", "POST"])
+        XCTAssertNil(requests[0].idempotencyKey)
+        XCTAssertTrue(IdempotencyKeyPolicy.isValid(try XCTUnwrap(requests[1].idempotencyKey)))
+        let body = try XCTUnwrap(requests[1].jsonBody)
+        XCTAssertEqual(Set(body.keys), Set(["category", "content", "clientContext"]))
+        XCTAssertEqual(body["category"] as? String, "PRIVACY")
+        XCTAssertEqual(body["content"] as? String, "请说明账号注销后的匿名化范围。")
+        XCTAssertNil(body["email"])
+        XCTAssertNil(body["phone"])
+        XCTAssertNil(body["screenshots"])
+        XCTAssertNil(body["logs"])
+        let clientContext = try XCTUnwrap(body["clientContext"] as? [String: Any])
+        XCTAssertEqual(Set(clientContext.keys), Set(["platform", "appVersion", "osVersion"]))
+        XCTAssertEqual(clientContext["platform"] as? String, "IOS")
+        XCTAssertNil(clientContext["deviceId"])
+    }
+
+    func testFeedbackErrorMappingKeepsRequestIdAndHidesInternalCause() {
+        let mapped = ClientErrorMapper.map(
+            RepositoryError.contractError(
+                statusCode: 422,
+                code: "FEEDBACK_CONTENT_INVALID",
+                message: "SQL path=/internal token=secret",
+                requestId: "feedback-request-safe-1",
+                timestamp: "2026-08-24T08:00:00Z",
+                details: nil
+            ),
+            context: .feedback
+        )
+
+        XCTAssertEqual(mapped.code, "FEEDBACK_CONTENT_INVALID")
+        XCTAssertEqual(mapped.title, "请检查反馈内容")
+        XCTAssertEqual(mapped.requestId, "feedback-request-safe-1")
+        XCTAssertFalse(mapped.retryable)
+        XCTAssertFalse(mapped.displayText.contains("SQL"))
+        XCTAssertFalse(mapped.displayText.contains("secret"))
+        XCTAssertTrue(mapped.displayText.contains("诊断编号：feedback-request-safe-1"))
+    }
+
+    func testStudentAccountDeletionUsesFrozenTwoStepContractAndClearsCredentials() async throws {
+        AccountDeletionURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AccountDeletionURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        let challenge = try await repository.requestAccountDeletionChallenge(locale: "zh-CN")
+        XCTAssertEqual(challenge.challengeId, "account-deletion-challenge-1")
+        XCTAssertEqual(challenge.mode, "STUDENT_EMAIL_OTP")
+        XCTAssertEqual(challenge.version, 2)
+
+        let outcome = try await repository.confirmAccountDeletion(
+            challengeId: challenge.challengeId,
+            expectedVersion: challenge.version,
+            verificationCode: "123456"
+        )
+        XCTAssertEqual(outcome.result.status, "DELETED")
+        XCTAssertTrue(outcome.result.allSessionsRevoked)
+        XCTAssertTrue(outcome.result.newRegistrationRequired)
+        XCTAssertTrue(outcome.credentialsCleared)
+
+        let requests = AccountDeletionURLProtocol.requests
+        XCTAssertEqual(requests.map(\.path), [
+            "/api/v1/me",
+            "/api/v1/me/account-deletion-challenges",
+            "/api/v1/me/account-deletion-challenges/account-deletion-challenge-1/confirm",
+        ])
+        XCTAssertEqual(requests.map(\.method), ["GET", "POST", "POST"])
+        XCTAssertNil(requests[0].idempotencyKey)
+        XCTAssertTrue(IdempotencyKeyPolicy.isValid(try XCTUnwrap(requests[1].idempotencyKey)))
+        XCTAssertTrue(IdempotencyKeyPolicy.isValid(try XCTUnwrap(requests[2].idempotencyKey)))
+        XCTAssertEqual(requests[1].jsonBody?["expectedVersion"] as? Int, 1)
+        XCTAssertEqual(requests[1].jsonBody?["locale"] as? String, "zh-CN")
+        XCTAssertEqual(requests[2].jsonBody?["expectedVersion"] as? Int, 2)
+        XCTAssertEqual(requests[2].jsonBody?["verificationCode"] as? String, "123456")
+        XCTAssertNil(try credentialStore.data(
+            forKey: RemoteStudentRepository.contractSessionKey(for: StudentServerConfig.testBaseURL)
+        ))
+    }
+
+    func testRejectedRecordResubmissionCreatesNewAttemptAndNeverMutatesOldRecord() async throws {
+        ExerciseRecordResubmissionURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ExerciseRecordResubmissionURLProtocol.self]
+        let credentialStore = InMemoryCredentialStore()
+        try installCurrentContractSession(in: credentialStore)
+        let repository = RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+
+        let result = try await repository.submitExerciseRecord(
+            sessionId: "session-resubmission-2",
+            previousRecordId: "record-rejected-1",
+            creditType: .general,
+            sportType: .running,
+            customSportName: nil,
+            description: "第二次正式尝试",
+            mediaIds: ["media-resubmission-1"],
+            clientRequestId: "client-resubmission-2",
+            idempotencyKey: "ios-resubmission-source-test"
+        )
+
+        XCTAssertEqual(result.id, "record-resubmission-2")
+        XCTAssertEqual(result.attemptContext?.previousAttemptId, "record-rejected-1")
+        XCTAssertEqual(result.attemptContext?.rootAttemptId, "record-rejected-1")
+        XCTAssertEqual(result.attemptContext?.attemptNumber, 2)
+
+        let requests = ExerciseRecordResubmissionURLProtocol.requests
+        XCTAssertEqual(requests.map(\.path), [
+            "/api/v1/exercise-sessions/session-resubmission-2",
+            "/api/v1/exercise-records/record-rejected-1",
+            "/api/v1/exercise-records/record-rejected-1/resubmissions",
+            "/api/v1/exercise-records/record-resubmission-2/submit",
+        ])
+        XCTAssertEqual(requests.map(\.method), ["GET", "GET", "POST", "POST"])
+        XCTAssertFalse(requests.contains {
+            $0.path == "/api/v1/exercise-records/record-rejected-1" && $0.method != "GET"
+        })
+        XCTAssertEqual(requests[2].jsonBody?["expectedVersion"] as? Int, 4)
+        XCTAssertEqual(requests[2].jsonBody?["sessionId"] as? String, "session-resubmission-2")
+        XCTAssertEqual(requests[3].jsonBody?["mediaIds"] as? [String], ["media-resubmission-1"])
+        XCTAssertTrue(IdempotencyKeyPolicy.isValid(try XCTUnwrap(requests[2].idempotencyKey)))
+        XCTAssertTrue(IdempotencyKeyPolicy.isValid(try XCTUnwrap(requests[3].idempotencyKey)))
+    }
+
     private func isolatedDefaults() -> UserDefaults {
         let suiteName = "BNBUStudentTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
     }
+
+    private func installCurrentContractSession(
+        in credentialStore: InMemoryCredentialStore,
+        enrollmentId: String? = "enrollment-1"
+    ) throws {
+        let session = ContractAuthSession(
+            sessionId: "auth-session-1",
+            enrollmentId: enrollmentId,
+            accessToken: "current-contract-access-token",
+            refreshToken: "current-contract-refresh-token",
+            tokenType: "Bearer",
+            accessTokenExpiresAt: "2026-08-24T10:00:00Z",
+            refreshTokenExpiresAt: "2026-09-24T10:00:00Z",
+            user: ContractUser(
+                id: "s1",
+                organizationId: "organization-1",
+                role: "STUDENT",
+                status: "ACTIVE",
+                primaryEmailMasked: "s***@example.edu",
+                emailVerified: true,
+                version: 1
+            )
+        )
+        try credentialStore.set(
+            JSONEncoder().encode(session),
+            forKey: RemoteStudentRepository.contractSessionKey(for: StudentServerConfig.testBaseURL)
+        )
+    }
+
+    private func makeRefreshRepository(
+        credentialStore: InMemoryCredentialStore
+    ) -> RemoteStudentRepository {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RefreshSessionURLProtocol.self]
+        return RemoteStudentRepository(
+            baseURL: StudentServerConfig.testBaseURL,
+            credentialStore: credentialStore,
+            urlSession: URLSession(configuration: configuration),
+            legacyDefaults: isolatedDefaults()
+        )
+    }
+
+    private func completedContractExerciseSession(
+        id: String = "session-completed"
+    ) -> ExerciseSession {
+        let start = Date(timeIntervalSince1970: 1_775_000_000)
+        return ExerciseSession(
+            id: id,
+            studentID: "s1",
+            category: .general,
+            sportType: .running,
+            customSportName: nil,
+            courseID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(3_600),
+            status: .completed,
+            locationStatus: .unavailable,
+            latitude: nil,
+            longitude: nil
+        )
+    }
+}
+
+private func currentContractEnvelope(
+    _ value: Any,
+    requestId: String = "ios-contract-test-request"
+) -> Data {
+    try! JSONSerialization.data(withJSONObject: [
+        "data": value,
+        "meta": ["requestId": requestId]
+    ], options: [.sortedKeys])
+}
+
+private func currentContractError(
+    code: String,
+    message: String,
+    requestId: String = "ios-contract-test-request"
+) -> Data {
+    try! JSONSerialization.data(withJSONObject: [
+        "code": code,
+        "message": message,
+        "requestId": requestId,
+        "timestamp": "2026-08-24T08:00:00Z"
+    ], options: [.sortedKeys])
+}
+
+private struct RecordedContractRequest {
+    let path: String
+    let method: String
+    let idempotencyKey: String?
+    let jsonBody: [String: Any]?
+}
+
+private final class ExerciseTestToolURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var storedRequests: [RecordedContractRequest] = []
+
+    static var requests: [RecordedContractRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRequests
+    }
+
+    static func reset() {
+        lock.lock()
+        storedRequests = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let body = requestBodyData(request).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        let recorded = RecordedContractRequest(
+            path: request.url?.path ?? "",
+            method: request.httpMethod ?? "",
+            idempotencyKey: request.value(forHTTPHeaderField: "Idempotency-Key"),
+            jsonBody: body
+        )
+        Self.lock.lock()
+        Self.storedRequests.append(recorded)
+        Self.lock.unlock()
+
+        switch (request.httpMethod, request.url?.path) {
+        case ("GET", "/api/v1/internal/test-tools/capabilities"):
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope([
+                    "capabilities": [StudentTestToolsConfig.durationAdvanceCapability]
+                ])
+            )
+        case ("GET", "/api/v1/exercise-sessions/session-test-tool-1"):
+            var session = currentExerciseSessionProjection(
+                id: "session-test-tool-1",
+                status: "IN_PROGRESS",
+                version: 5
+            )
+            session["actualDurationSeconds"] = 4_200
+            send(statusCode: 200, data: currentContractEnvelope(session))
+        case ("POST", "/api/v1/internal/test-tools/exercise-sessions/session-test-tool-1/advance-duration"):
+            var advanced = currentExerciseSessionProjection(
+                id: "session-test-tool-1",
+                status: "IN_PROGRESS",
+                version: 5
+            )
+            advanced["actualDurationSeconds"] = 4_200
+            send(statusCode: 200, data: currentContractEnvelope(advanced))
+        default:
+            send(
+                statusCode: 404,
+                data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+        }
+    }
+
+    override func stopLoading() {}
+
+    private func send(statusCode: Int, data: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private final class AccountDeletionURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var storedRequests: [RecordedContractRequest] = []
+
+    static var requests: [RecordedContractRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRequests
+    }
+
+    static func reset() {
+        lock.lock()
+        storedRequests = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let body = requestBodyData(request).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        let recorded = RecordedContractRequest(
+            path: request.url?.path ?? "",
+            method: request.httpMethod ?? "",
+            idempotencyKey: request.value(forHTTPHeaderField: "Idempotency-Key"),
+            jsonBody: body
+        )
+        Self.lock.lock()
+        Self.storedRequests.append(recorded)
+        Self.lock.unlock()
+
+        switch request.url?.path {
+        case "/api/v1/me":
+            send(statusCode: 200, data: currentContractEnvelope([
+                "user": [
+                    "id": "s1",
+                    "organizationId": "organization-1",
+                    "role": "STUDENT",
+                    "status": "ACTIVE",
+                    "primaryEmailMasked": "s***@example.edu",
+                    "emailVerified": true,
+                    "version": 1,
+                ],
+                "studentProfile": NSNull(),
+            ]))
+        case "/api/v1/me/account-deletion-challenges":
+            send(statusCode: 202, data: currentContractEnvelope([
+                "challengeId": "account-deletion-challenge-1",
+                "mode": "STUDENT_EMAIL_OTP",
+                "expiresAt": "2026-08-24T09:00:00Z",
+                "version": 2,
+            ]))
+        case "/api/v1/me/account-deletion-challenges/account-deletion-challenge-1/confirm":
+            send(statusCode: 200, data: currentContractEnvelope([
+                "status": "DELETED",
+                "deletedAt": "2026-08-24T08:30:00Z",
+                "allSessionsRevoked": true,
+                "newRegistrationRequired": true,
+            ]))
+        default:
+            send(
+                statusCode: 404,
+                data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+        }
+    }
+
+    override func stopLoading() {}
+
+    private func send(statusCode: Int, data: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private final class ExerciseRecordResubmissionURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var storedRequests: [RecordedContractRequest] = []
+
+    static var requests: [RecordedContractRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRequests
+    }
+
+    static func reset() {
+        lock.lock()
+        storedRequests = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let body = requestBodyData(request).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        let recorded = RecordedContractRequest(
+            path: request.url?.path ?? "",
+            method: request.httpMethod ?? "",
+            idempotencyKey: request.value(forHTTPHeaderField: "Idempotency-Key"),
+            jsonBody: body
+        )
+        Self.lock.lock()
+        Self.storedRequests.append(recorded)
+        Self.lock.unlock()
+
+        switch request.url?.path {
+        case "/api/v1/exercise-sessions/session-resubmission-2":
+            send(statusCode: 200, data: currentContractEnvelope(
+                currentExerciseSessionProjection(id: "session-resubmission-2")
+            ))
+        case "/api/v1/exercise-records/record-rejected-1":
+            var previous = currentExerciseRecordProjection(
+                id: "record-rejected-1",
+                sessionId: "session-rejected-1",
+                status: "REVIEWED",
+                version: 4
+            )
+            previous["currentReview"] = [
+                "result": "INVALID",
+                "reasonCode": "INSUFFICIENT_EVIDENCE",
+                "publicComment": "请使用新的运动 Session 补交",
+            ]
+            send(statusCode: 200, data: currentContractEnvelope(previous))
+        case "/api/v1/exercise-records/record-rejected-1/resubmissions":
+            send(statusCode: 201, data: currentContractEnvelope([
+                "record": currentExerciseRecordProjection(
+                    id: "record-resubmission-2",
+                    sessionId: "session-resubmission-2",
+                    status: "DRAFT",
+                    description: "第二次正式尝试",
+                    version: 1
+                ),
+                "attemptContext": [
+                    "recordId": "record-resubmission-2",
+                    "previousAttemptId": "record-rejected-1",
+                    "rootAttemptId": "record-rejected-1",
+                    "attemptNumber": 2,
+                ],
+            ]))
+        case "/api/v1/exercise-records/record-resubmission-2/submit":
+            send(statusCode: 200, data: currentContractEnvelope(
+                currentExerciseRecordProjection(
+                    id: "record-resubmission-2",
+                    sessionId: "session-resubmission-2",
+                    status: "REVIEWED",
+                    description: "第二次正式尝试",
+                    version: 2
+                )
+            ))
+        default:
+            send(
+                statusCode: 404,
+                data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+        }
+    }
+
+    override func stopLoading() {}
+
+    private func send(statusCode: Int, data: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private final class ActiveExerciseSessionURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var recordedPostCount = 0
+
+    static var postCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedPostCount
+    }
+
+    static func reset() {
+        lock.lock()
+        recordedPostCount = 0
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        if request.httpMethod == "POST" {
+            Self.lock.lock()
+            Self.recordedPostCount += 1
+            Self.lock.unlock()
+        }
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        let data = currentContractEnvelope(
+            currentExerciseSessionProjection(
+                id: "session-origin-device",
+                status: "IN_PROGRESS"
+            ),
+            requestId: "ios-active-session-request"
+        )
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class CursorPaginationURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var cursors: [String] = []
+
+    static func reset() {
+        lock.lock()
+        cursors = []
+        lock.unlock()
+    }
+
+    static func observedCursors() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return cursors
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.path == "/api/v1/exemption-applications"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let cursor = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "cursor" })?
+            .value
+        Self.lock.lock()
+        Self.cursors.append(cursor ?? "<first>")
+        Self.lock.unlock()
+
+        let page = cursor == nil ? 1 : 2
+        let application: [String: Any] = [
+            "id": "exemption-page-\(page)",
+            "studentId": "student-1",
+            "enrollmentId": "enrollment-1",
+            "classSectionId": "section-1",
+            "applicationType": "PHYSICAL_TEST",
+            "applicationSubtype": "RUN_800M",
+            "organizationName": NSNull(),
+            "reason": "Local cursor test",
+            "mediaIds": [],
+            "status": "SUBMITTED",
+            "publicComment": NSNull(),
+            "submittedAt": "2026-08-24T08:00:00Z",
+            "decidedAt": NSNull(),
+            "version": 1
+        ]
+        let nextCursor: Any = page == 1 ? "page-2" : NSNull()
+        let body = try! JSONSerialization.data(withJSONObject: [
+            "data": [application],
+            "meta": [
+                "requestId": "ios-pagination-page-\(page)",
+                "pagination": ["nextCursor": nextCursor, "limit": 100]
+            ]
+        ], options: [.sortedKeys])
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class CanonicalPublicCapabilityURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var storedPaths: [String] = []
+    private static var storedQueries: [[String: String]] = []
+    private static var storedAuthorizationHeaders: [String?] = []
+
+    static var paths: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedPaths
+    }
+
+    static var authorizationHeaders: [String?] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedAuthorizationHeaders
+    }
+
+    static func queryValues(at index: Int) -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedQueries[index]
+    }
+
+    static func reset() {
+        lock.lock()
+        storedPaths = []
+        storedQueries = []
+        storedAuthorizationHeaders = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        Self.lock.lock()
+        Self.storedPaths.append(url.path)
+        Self.storedQueries.append(Dictionary(uniqueKeysWithValues: query.compactMap { item in
+            item.value.map { (item.name, $0) }
+        }))
+        Self.storedAuthorizationHeaders.append(request.value(forHTTPHeaderField: "Authorization"))
+        Self.lock.unlock()
+
+        let body: Data
+        switch url.path {
+        case "/api/v1/system-mode":
+            body = currentContractEnvelope([
+                "mode": "READ_ONLY",
+                "policyVersion": 2,
+                "updatedAt": "2026-08-24T08:00:00Z"
+            ])
+        case "/api/v1/app-release-policy":
+            body = currentContractEnvelope([
+                "platform": "IOS",
+                "minimumSupportedVersion": "0.2.0",
+                "latestVersion": "0.3.0",
+                "minimumSupportedBuildNumber": 2,
+                "latestBuildNumber": 3,
+                "enforcement": "REQUIRED",
+                "message": "Update required",
+                "downloadUrl": "https://apps.example.invalid/bnbu",
+                "effectiveAt": "2026-08-24T08:00:00Z",
+                "expiresAt": NSNull(),
+                "policyVersion": "ios-local-1"
+            ])
+        case "/api/v1/help-articles":
+            body = currentContractEnvelope([
+                [
+                    "id": "help-1",
+                    "category": "LOGIN",
+                    "locale": "en",
+                    "title": "First",
+                    "bodyMarkdown": "First body",
+                    "publishedAt": "2026-08-24T08:00:00Z",
+                    "version": 1
+                ],
+                [
+                    "id": "help-2",
+                    "category": "RECORD",
+                    "locale": "en",
+                    "title": "Second",
+                    "bodyMarkdown": "Second body",
+                    "publishedAt": "2026-08-24T08:01:00Z",
+                    "version": 1
+                ]
+            ])
+        default:
+            body = currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+        }
+        let statusCode = url.path.hasPrefix("/api/v1/") ? 200 : 404
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private enum RefreshFixtureResponse {
+    case success
+    case failure(statusCode: Int, code: String)
+    case networkLost
+}
+
+private final class RefreshSessionURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var protectedStatus = 401
+    private static var protectedCode = "AUTH_TOKEN_EXPIRED"
+    private static var queuedRefreshResponses: [RefreshFixtureResponse] = []
+    private static var recordedRefreshKeys: [String] = []
+    private static var recordedRefreshTokens: [String] = []
+
+    static var refreshKeys: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedRefreshKeys
+    }
+
+    static var refreshTokens: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedRefreshTokens
+    }
+
+    static func configure(
+        protectedStatus: Int = 401,
+        protectedCode: String = "AUTH_TOKEN_EXPIRED",
+        refreshResponses: [RefreshFixtureResponse]
+    ) {
+        lock.lock()
+        self.protectedStatus = protectedStatus
+        self.protectedCode = protectedCode
+        queuedRefreshResponses = refreshResponses
+        recordedRefreshKeys = []
+        recordedRefreshTokens = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        switch request.url?.path {
+        case "/api/v1/auth/refresh":
+            let body = requestJSONObject(request)
+            let response = Self.takeRefreshResponse(
+                key: request.value(forHTTPHeaderField: "Idempotency-Key") ?? "",
+                token: body["refreshToken"] as? String ?? ""
+            )
+            switch response {
+            case .networkLost:
+                client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+            case .failure(let statusCode, let code):
+                send(
+                    statusCode: statusCode,
+                    data: currentContractError(code: code, message: "refresh fixture failure")
+                )
+            case .success:
+                send(statusCode: 200, data: currentContractEnvelope(Self.rotatedSession))
+            }
+        case "/api/v1/exemption-applications":
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer rotated-access-token" {
+                send(statusCode: 200, data: currentContractEnvelope([[String: Any]]()))
+            } else {
+                let failure = Self.protectedFailure()
+                send(
+                    statusCode: failure.statusCode,
+                    data: currentContractError(code: failure.code, message: "protected fixture failure")
+                )
+            }
+        default:
+            send(
+                statusCode: 404,
+                data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+        }
+    }
+
+    override func stopLoading() {}
+
+    private static func takeRefreshResponse(
+        key: String,
+        token: String
+    ) -> RefreshFixtureResponse {
+        lock.lock()
+        defer { lock.unlock() }
+        recordedRefreshKeys.append(key)
+        recordedRefreshTokens.append(token)
+        guard !queuedRefreshResponses.isEmpty else {
+            return .failure(statusCode: 500, code: "SYSTEM_INTERNAL_ERROR")
+        }
+        return queuedRefreshResponses.removeFirst()
+    }
+
+    private static func protectedFailure() -> (statusCode: Int, code: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (protectedStatus, protectedCode)
+    }
+
+    private static var rotatedSession: [String: Any] { [
+        "sessionId": "auth-session-1",
+        "enrollmentId": "enrollment-1",
+        "accessToken": "rotated-access-token",
+        "refreshToken": "rotated-refresh-token",
+        "tokenType": "Bearer",
+        "accessTokenExpiresAt": "2026-08-24T11:00:00Z",
+        "refreshTokenExpiresAt": "2026-09-24T11:00:00Z",
+        "user": [
+            "id": "s1",
+            "organizationId": "organization-1",
+            "role": "STUDENT",
+            "status": "ACTIVE",
+            "primaryEmailMasked": "s***@example.edu",
+            "emailVerified": true,
+            "version": 1,
+        ],
+    ] }
+
+    private func send(statusCode: Int, data: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private final class SuccessfulLoginURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        switch request.url?.path {
+        case "/api/v1/auth/student-sign-in-codes/verify":
+            send(statusCode: 200, data: currentContractEnvelope([
+                "sessionId": "new-auth-session",
+                "enrollmentId": "enrollment-1",
+                "accessToken": "new-login-access-token",
+                "refreshToken": "new-login-refresh-token",
+                "tokenType": "Bearer",
+                "accessTokenExpiresAt": "2026-08-24T11:00:00Z",
+                "refreshTokenExpiresAt": "2026-09-24T11:00:00Z",
+                "user": Self.user,
+            ]))
+        case "/api/v1/me":
+            send(statusCode: 200, data: currentContractEnvelope([
+                "user": Self.user,
+                "studentProfile": [
+                    "id": "s1",
+                    "studentNumber": "20260001",
+                    "fullName": "Contract Student",
+                    "gender": "UNKNOWN",
+                    "gradeYear": 2026,
+                    "collegeName": "College",
+                    "majorName": NSNull(),
+                    "administrativeClassName": "Class 1",
+                    "status": "ACTIVE",
+                ],
+            ]))
+        default:
+            send(
+                statusCode: 404,
+                data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+        }
+    }
+
+    override func stopLoading() {}
+
+    private static var user: [String: Any] { [
+        "id": "s1",
+        "organizationId": "organization-1",
+        "role": "STUDENT",
+        "status": "ACTIVE",
+        "primaryEmailMasked": "s***@example.edu",
+        "emailVerified": true,
+        "version": 1,
+    ] }
+
+    private func send(statusCode: Int, data: Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private func currentExerciseSessionProjection(
+    id: String,
+    status: String = "COMPLETED",
+    enrollmentId: String = "enrollment-1",
+    classSectionId: String = "class-section-1",
+    version: Int = 2
+) -> [String: Any] {
+    let endedAt: Any
+    if status == "COMPLETED" {
+        endedAt = "2026-08-23T09:00:00Z"
+    } else {
+        endedAt = NSNull()
+    }
+    return [
+        "id": id,
+        "studentId": "s1",
+        "enrollmentId": enrollmentId,
+        "classSectionId": classSectionId,
+        "status": status,
+        "startedAt": "2026-08-23T08:00:00Z",
+        "endedAt": endedAt,
+        "actualDurationSeconds": status == "COMPLETED" ? 3600 : 0,
+        "pausedDurationSeconds": 0,
+        "businessDate": "2026-08-23",
+        "version": version
+    ]
+}
+
+private func currentExerciseRecordProjection(
+    id: String,
+    sessionId: String,
+    status: String,
+    creditType: String = "GENERAL",
+    description: String = "contract test record",
+    version: Int = 1
+) -> [String: Any] {
+    let submittedAt: Any
+    if status == "DRAFT" {
+        submittedAt = NSNull()
+    } else {
+        submittedAt = "2026-08-23T09:01:00Z"
+    }
+    let currentReview: Any
+    if status == "REVIEWED" {
+        currentReview = ["result": "VALID", "reasonCode": NSNull(), "publicComment": NSNull()]
+    } else {
+        currentReview = NSNull()
+    }
+    return [
+        "id": id,
+        "enrollmentId": "enrollment-1",
+        "courseId": "course-1",
+        "classSectionId": "class-section-1",
+        "sessionId": sessionId,
+        "businessDate": "2026-08-23",
+        "creditType": creditType,
+        "sportType": "RUNNING",
+        "sportName": NSNull(),
+        "description": description,
+        "actualDurationSeconds": 3600,
+        "pausedDurationSeconds": 0,
+        "creditedDurationSeconds": 3600,
+        "status": status,
+        "submittedAt": submittedAt,
+        "currentReview": currentReview,
+        "version": version
+    ]
+}
+
+private func currentMediaProjection(
+    id: String,
+    businessPurpose: String,
+    sessionId: String?,
+    enrollmentId: String?,
+    uploadStatus: String,
+    version: Int
+) -> [String: Any] {
+    let sessionValue: Any
+    if let sessionId {
+        sessionValue = sessionId
+    } else {
+        sessionValue = NSNull()
+    }
+    let enrollmentValue: Any
+    if let enrollmentId {
+        enrollmentValue = enrollmentId
+    } else {
+        enrollmentValue = NSNull()
+    }
+    return [
+        "id": id,
+        "sessionId": sessionValue,
+        "enrollmentId": enrollmentValue,
+        "businessPurpose": businessPurpose,
+        "mediaType": "IMAGE",
+        "declaredMimeType": "image/jpeg",
+        "verifiedMimeType": "image/jpeg",
+        "uploadStatus": uploadStatus,
+        "verifiedContentSha256": String(repeating: "a", count: 64),
+        "version": version
+    ]
+}
+
+private func currentExemptionProjection(
+    id: String,
+    status: String,
+    reason: String,
+    mediaIds: [String],
+    version: Int,
+    enrollmentId: String = "enrollment-1"
+) -> [String: Any] {
+    let publicComment: Any
+    if status == "SUPPLEMENT_REQUIRED" {
+        publicComment = "Please supplement"
+    } else {
+        publicComment = NSNull()
+    }
+    let submittedAt: Any
+    if status == "DRAFT" {
+        submittedAt = NSNull()
+    } else {
+        submittedAt = "2026-08-23T09:02:00Z"
+    }
+    return [
+        "id": id,
+        "studentId": "s1",
+        "enrollmentId": enrollmentId,
+        "classSectionId": "class-section-1",
+        "applicationType": "PHYSICAL_TEST",
+        "applicationSubtype": "RUN_800M",
+        "organizationName": NSNull(),
+        "reason": reason,
+        "mediaIds": mediaIds,
+        "status": status,
+        "publicComment": publicComment,
+        "submittedAt": submittedAt,
+        "decidedAt": NSNull(),
+        "version": version
+    ]
+}
+
+private func requestBodyData(_ request: URLRequest) -> Data? {
+    if let body = request.httpBody { return body }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while true {
+        let count = stream.read(&buffer, maxLength: buffer.count)
+        guard count > 0 else { break }
+        result.append(contentsOf: buffer.prefix(count))
+    }
+    return result
+}
+
+private func requestJSONObject(_ request: URLRequest) -> [String: Any] {
+    guard let data = requestBodyData(request),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return [:]
+    }
+    return object
 }
 
 private enum ExemptionRefreshResponseMode {
-    case dedicatedRouteNotFound
+    case success
     case malformedDedicatedPayload
     case serverFailure
 }
@@ -3948,83 +5757,38 @@ private final class ExemptionRefreshURLProtocol: URLProtocol, @unchecked Sendabl
         let mode = Self.responseMode
         Self.lock.unlock()
 
-        if path == "/api/v1/auth/login", method == "POST" {
-            send(
-                statusCode: 200,
-                data: Data(
-                    """
-                    {
-                      "token": "exemption-refresh-token",
-                      "user": {
-                        "id": "s1",
-                        "name": "Test Student",
-                        "email": "s1@example.edu",
-                        "college": "BNBU",
-                        "className": "2026A",
-                        "status": "正常"
-                      },
-                      "defaultRoute": "/student"
-                    }
-                    """.utf8
-                )
-            )
-            return
-        }
-
-        if path == "/api/v1/student/workspace", method == "GET" {
-            let workspace = MockStudentRepository().loadWorkspace()
-            send(statusCode: 200, data: (try? JSONEncoder().encode(workspace)) ?? Data("{}".utf8))
-            return
-        }
-
-        if path == "/api/v1/student/physical-test-exemptions", method == "GET" {
+        if path == "/api/v1/exemption-applications", method == "GET" {
             switch mode {
-            case .dedicatedRouteNotFound:
+            case .success:
                 send(
-                    statusCode: 404,
-                    data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+                    statusCode: 200,
+                    data: currentContractEnvelope([
+                        currentExemptionProjection(
+                            id: "summary-exemption",
+                            status: "SUBMITTED",
+                            reason: "medical reason",
+                            mediaIds: ["media-summary"],
+                            version: 2
+                        )
+                    ])
                 )
             case .malformedDedicatedPayload:
-                send(statusCode: 200, data: Data("{\"items\":{\"unexpected\":true}}".utf8))
+                send(statusCode: 200, data: currentContractEnvelope(["unexpected": true]))
             case .serverFailure:
                 send(
                     statusCode: 503,
-                    data: Data("{\"code\":\"SERVICE_UNAVAILABLE\",\"message\":\"temporarily unavailable\"}".utf8)
+                    data: currentContractError(
+                        code: "SERVICE_UNAVAILABLE",
+                        message: "temporarily unavailable"
+                    )
                 )
             }
             return
         }
 
-        if path == "/api/v1/sport/summary",
-           method == "GET",
-           case .dedicatedRouteNotFound = mode {
-            send(
-                statusCode: 200,
-                data: Data(
-                    """
-                    {
-                      "exemptions": [
-                        {
-                          "id": "summary-exemption",
-                          "studentId": "s1",
-                          "type": "800m",
-                          "reason": "medical reason",
-                          "detail": "doctor note",
-                          "createdAt": "2026-07-16T00:00:00Z",
-                          "status": "pending",
-                          "proofFiles": []
-                        }
-                      ]
-                    }
-                    """.utf8
-                )
-            )
-            return
-        }
-
         send(
             statusCode: 404,
-            data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+            data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
         )
     }
 
@@ -4110,15 +5874,21 @@ private enum MutationFailClosedUploadFailure {
 
 private final class MutationFailClosedURLProtocol: URLProtocol, @unchecked Sendable {
     private static let mutationRouteSet: Set<String> = [
-        "/api/v1/sport/records",
-        "/api/v1/sport/records/r1/supplements",
-        "/api/v1/student/physical-test-exemptions",
-        "/api/v1/student/physical-test-exemptions/ex1/supplements"
+        "/api/v1/exercise-records",
+        "/api/v1/exemption-applications/ex-fail-closed",
+        "/api/v1/exemption-applications/ex1"
     ]
     private static let lock = NSLock()
     private static var uploadFailure: MutationFailClosedUploadFailure = .none
     private static var storedUploadCount = 0
     private static var storedMutationPaths: [String] = []
+    private static var uploadPurpose = "EXERCISE_RECORD"
+    private static var uploadSessionId: String? = "session-completed"
+    private static var uploadEnrollmentId: String?
+    private static var supplementReason = "existing reason"
+    private static var supplementMediaIds: [String] = []
+    private static var createdReason = ""
+    private static var createdMediaIds: [String] = []
 
     static var uploadCount: Int {
         lock.lock()
@@ -4137,6 +5907,13 @@ private final class MutationFailClosedURLProtocol: URLProtocol, @unchecked Senda
         self.uploadFailure = uploadFailure
         storedUploadCount = 0
         storedMutationPaths = []
+        self.uploadPurpose = "EXERCISE_RECORD"
+        self.uploadSessionId = "session-completed"
+        self.uploadEnrollmentId = nil
+        supplementReason = "existing reason"
+        supplementMediaIds = []
+        createdReason = ""
+        createdMediaIds = []
         lock.unlock()
     }
 
@@ -4148,54 +5925,101 @@ private final class MutationFailClosedURLProtocol: URLProtocol, @unchecked Senda
         let path = request.url?.path ?? ""
         let method = request.httpMethod ?? "GET"
 
-        if path == "/api/v1/auth/login", method == "POST" {
+        if method == "GET", path.hasPrefix("/api/v1/exercise-sessions/") {
+            let sessionId = String(path.split(separator: "/").last ?? "session-completed")
             send(
                 statusCode: 200,
-                data: Data(
-                    """
-                    {
-                      "token": "fail-closed-test-token",
-                      "user": {
-                        "id": "s1",
-                        "name": "Test Student",
-                        "email": "s1@example.edu",
-                        "college": "BNBU",
-                        "className": "2026A",
-                        "status": "正常"
-                      },
-                      "defaultRoute": "/student"
-                    }
-                    """.utf8
-                )
+                data: currentContractEnvelope(currentExerciseSessionProjection(id: sessionId))
             )
             return
         }
 
-        if path == "/api/v1/student/workspace", method == "GET" {
-            let workspace = MockStudentRepository().loadWorkspace()
-            send(statusCode: 200, data: (try? JSONEncoder().encode(workspace)) ?? Data("{}".utf8))
+        if path == "/api/v1/exemption-applications/ex1", method == "GET" {
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex1",
+                    status: "SUPPLEMENT_REQUIRED",
+                    reason: "existing reason",
+                    mediaIds: [],
+                    version: 3
+                ))
+            )
             return
         }
 
-        if path == "/api/v1/upload/proof", method == "POST" {
+        if path == "/api/v1/exemption-applications/ex-fail-closed", method == "GET" {
+            Self.lock.lock()
+            let reason = Self.createdReason
+            let mediaIds = Self.createdMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex-fail-closed",
+                    status: "DRAFT",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: mediaIds.isEmpty ? 1 : 2
+                ))
+            )
+            return
+        }
+
+        if path == "/api/v1/exemption-applications", method == "POST" {
+            let json = requestJSONObject(request)
+            Self.lock.lock()
+            Self.createdReason = json["reason"] as? String ?? ""
+            Self.createdMediaIds = json["mediaIds"] as? [String] ?? []
+            let reason = Self.createdReason
+            let mediaIds = Self.createdMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 201,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex-fail-closed",
+                    status: "DRAFT",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: 1
+                ))
+            )
+            return
+        }
+
+        if (path == "/api/v1/media-uploads" ||
+            path == "/api/v1/exemption-applications/ex-fail-closed/media-uploads" ||
+            path == "/api/v1/exemption-applications/ex1/media-uploads"),
+           method == "POST" {
+            let json = requestJSONObject(request)
             Self.lock.lock()
             Self.storedUploadCount += 1
             let failure = Self.uploadFailure
+            let scopedExemption = path.contains("/exemption-applications/")
+            Self.uploadPurpose = scopedExemption
+                ? "EXEMPTION_APPLICATION"
+                : (json["businessPurpose"] as? String ?? "EXERCISE_RECORD")
+            Self.uploadSessionId = json["sessionId"] as? String
+            Self.uploadEnrollmentId = scopedExemption
+                ? "enrollment-1"
+                : json["enrollmentId"] as? String
             Self.lock.unlock()
             switch failure {
             case .none:
                 send(
-                    statusCode: 200,
-                    data: Data(
-                        """
-                        {"files":[{"url":"https://cos.example/proofs/fail-closed.jpg?q-signature=temporary","cosKey":"proofs/fail-closed.jpg","mediaType":"image","mimeType":"image/jpeg","size":4}]}
-                        """.utf8
-                    )
+                    statusCode: 201,
+                    data: currentContractEnvelope([
+                        "uploadSessionId": "fail-closed-upload",
+                        "mediaId": "fail-closed-media",
+                        "uploadUrl": "https://upload.example.test/signed/fail-closed-media",
+                        "uploadMethod": "PUT",
+                        "requiredHeaders": ["Content-Type": "image/jpeg"]
+                    ])
                 )
             case .http(let statusCode):
                 send(
                     statusCode: statusCode,
-                    data: Data("{\"code\":\"VALIDATION_ERROR\",\"message\":\"invalid upload\"}".utf8)
+                    data: currentContractError(code: "VALIDATION_ERROR", message: "invalid upload")
                 )
             case .network:
                 client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
@@ -4203,38 +6027,177 @@ private final class MutationFailClosedURLProtocol: URLProtocol, @unchecked Senda
             return
         }
 
-        if Self.mutationRouteSet.contains(path), method == "POST" {
+        if method == "PUT", path == "/signed/fail-closed-media" {
+            send(statusCode: 200, data: Data(), headers: ["ETag": "\"contract-etag\""])
+            return
+        }
+
+        if method == "POST", path == "/api/v1/media-uploads/fail-closed-upload/confirm" {
+            Self.lock.lock()
+            let purpose = Self.uploadPurpose
+            let sessionId = Self.uploadSessionId
+            let enrollmentId = Self.uploadEnrollmentId
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: "fail-closed-media",
+                    businessPurpose: purpose,
+                    sessionId: sessionId,
+                    enrollmentId: enrollmentId,
+                    uploadStatus: "UPLOADED",
+                    version: 1
+                ))
+            )
+            return
+        }
+
+        if method == "POST", path == "/api/v1/media/fail-closed-media/bind" {
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: "fail-closed-media",
+                    businessPurpose: "EXERCISE_RECORD",
+                    sessionId: "session-completed",
+                    enrollmentId: nil,
+                    uploadStatus: "BOUND",
+                    version: 2
+                ))
+            )
+            return
+        }
+
+        if method == "GET", path == "/api/v1/media/fail-closed-media" {
+            Self.lock.lock()
+            let purpose = Self.uploadPurpose
+            let sessionId = Self.uploadSessionId
+            let enrollmentId = Self.uploadEnrollmentId
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: "fail-closed-media",
+                    businessPurpose: purpose,
+                    sessionId: sessionId,
+                    enrollmentId: enrollmentId,
+                    uploadStatus: "AVAILABLE",
+                    version: 3
+                ))
+            )
+            return
+        }
+
+        if Self.mutationRouteSet.contains(path), (method == "POST" || method == "PATCH") {
             Self.lock.lock()
             Self.storedMutationPaths.append(path)
             Self.lock.unlock()
-            let body: Data
-            if path == "/api/v1/sport/records" {
-                body = Data("{\"id\":\"record-fail-closed\"}".utf8)
-            } else if path == "/api/v1/sport/records/r1/supplements" {
-                body = Data("{\"id\":\"r1\"}".utf8)
-            } else if path == "/api/v1/student/physical-test-exemptions" {
-                body = Data("{\"id\":\"ex-fail-closed\"}".utf8)
+            let json = requestJSONObject(request)
+            if path == "/api/v1/exercise-records" {
+                send(
+                    statusCode: 201,
+                    data: currentContractEnvelope(currentExerciseRecordProjection(
+                        id: "record-fail-closed",
+                        sessionId: json["sessionId"] as? String ?? "session-completed",
+                        status: "REVIEWED",
+                        creditType: json["creditType"] as? String ?? "GENERAL",
+                        description: json["description"] as? String ?? "",
+                        version: 2
+                    ))
+                )
+            } else if path == "/api/v1/exemption-applications/ex-fail-closed" {
+                let reason = json["reason"] as? String ?? ""
+                let mediaIds = json["mediaIds"] as? [String] ?? []
+                Self.lock.lock()
+                Self.createdReason = reason
+                Self.createdMediaIds = mediaIds
+                Self.lock.unlock()
+                send(
+                    statusCode: 200,
+                    data: currentContractEnvelope(currentExemptionProjection(
+                        id: "ex-fail-closed",
+                        status: "DRAFT",
+                        reason: reason,
+                        mediaIds: mediaIds,
+                        version: 2
+                    ))
+                )
             } else {
-                body = Data("{\"id\":\"ex1\"}".utf8)
+                let reason = json["reason"] as? String ?? ""
+                let mediaIds = json["mediaIds"] as? [String] ?? []
+                Self.lock.lock()
+                Self.supplementReason = reason
+                Self.supplementMediaIds = mediaIds
+                Self.lock.unlock()
+                send(
+                    statusCode: 200,
+                    data: currentContractEnvelope(currentExemptionProjection(
+                        id: "ex1",
+                        status: "SUPPLEMENT_REQUIRED",
+                        reason: reason,
+                        mediaIds: mediaIds,
+                        version: 4
+                    ))
+                )
             }
-            send(statusCode: 201, data: body)
+            return
+        }
+
+        if method == "POST", path == "/api/v1/exemption-applications/ex-fail-closed/submit" {
+            Self.lock.lock()
+            let reason = Self.createdReason
+            let mediaIds = Self.createdMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex-fail-closed",
+                    status: "SUBMITTED",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: 3
+                ))
+            )
+            return
+        }
+
+        if method == "POST", path == "/api/v1/exemption-applications/ex1/submit" {
+            Self.lock.lock()
+            let reason = Self.supplementReason
+            let mediaIds = Self.supplementMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex1",
+                    status: "SUBMITTED",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: 5
+                ))
+            )
             return
         }
 
         send(
             statusCode: 404,
-            data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+            data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
         )
     }
 
     override func stopLoading() {}
 
-    private func send(statusCode: Int, data: Data) {
+    private func send(
+        statusCode: Int,
+        data: Data,
+        headers: [String: String] = [:]
+    ) {
+        var responseHeaders = ["Content-Type": "application/json"]
+        headers.forEach { responseHeaders[$0.key] = $0.value }
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: responseHeaders
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
@@ -4251,22 +6214,40 @@ private final class DelayedLoginURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let body = Data(
-            """
-            {
-              "token": "late-token-must-be-discarded",
-              "user": {
+        guard request.url?.path == "/api/v1/auth/student-sign-in-codes/verify",
+              request.httpMethod == "POST" else {
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(
+                self,
+                didLoad: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        let body = currentContractEnvelope([
+            "sessionId": "late-auth-session",
+            "enrollmentId": "enrollment-1",
+            "accessToken": "late-token-must-be-discarded",
+            "refreshToken": "late-refresh-token-must-be-discarded",
+            "tokenType": "Bearer",
+            "accessTokenExpiresAt": "2026-08-24T10:00:00Z",
+            "refreshTokenExpiresAt": "2026-09-24T10:00:00Z",
+            "user": [
                 "id": "s1",
-                "name": "测试学生",
-                "email": "s1@example.edu",
-                "college": "BNBU",
-                "className": "2026A",
-                "status": "正常"
-              },
-              "defaultRoute": "/student"
-            }
-            """.utf8
-        )
+                "organizationId": "organization-1",
+                "role": "STUDENT",
+                "status": "ACTIVE",
+                "primaryEmailMasked": "s***@example.edu",
+                "emailVerified": true,
+                "version": 1
+            ]
+        ])
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.12) { [weak self] in
             guard let self, !self.isStopped else { return }
             let response = HTTPURLResponse(
@@ -4327,7 +6308,7 @@ private final class RecordingNotFoundURLProtocol: URLProtocol, @unchecked Sendab
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(
             self,
-            didLoad: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+            didLoad: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
         )
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -4356,40 +6337,72 @@ private final class RecordingSportRecordURLProtocol: URLProtocol, @unchecked Sen
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        if let body = Self.bodyData(from: request) {
+        let path = request.url?.path ?? ""
+        let method = request.httpMethod ?? "GET"
+        let responseValue: [String: Any]
+        let statusCode: Int
+
+        if method == "GET", path.hasPrefix("/api/v1/exercise-sessions/") {
+            let sessionId = String(path.split(separator: "/").last ?? "session-missing")
+            responseValue = currentExerciseSessionProjection(id: sessionId)
+            statusCode = 200
+        } else if path == "/api/v1/exercise-records", method == "POST" {
+            let body = requestBodyData(request) ?? Data()
             Self.lock.lock()
             Self.bodies.append(body)
             Self.lock.unlock()
+            let json = requestJSONObject(request)
+            let sessionId = json["sessionId"] as? String ?? "session-missing"
+            responseValue = currentExerciseRecordProjection(
+                id: "record-\(sessionId)",
+                sessionId: sessionId,
+                status: "DRAFT",
+                creditType: json["creditType"] as? String ?? "GENERAL",
+                description: json["description"] as? String ?? "",
+                version: 1
+            )
+            statusCode = 201
+        } else if method == "POST",
+                  path.hasPrefix("/api/v1/exercise-records/"),
+                  path.hasSuffix("/submit") {
+            let components = path.split(separator: "/")
+            let recordId = components.count >= 5 ? String(components[3]) : "record-session-missing"
+            let sessionId = String(recordId.dropFirst("record-".count))
+            responseValue = currentExerciseRecordProjection(
+                id: recordId,
+                sessionId: sessionId,
+                status: "REVIEWED",
+                version: 2
+            )
+            statusCode = 200
+        } else {
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 404,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(
+                self,
+                didLoad: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+            client?.urlProtocolDidFinishLoading(self)
+            return
         }
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{\"id\":\"record-1\"}".utf8))
+        client?.urlProtocol(self, didLoad: currentContractEnvelope(responseValue))
         client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}
 
-    private static func bodyData(from request: URLRequest) -> Data? {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var result = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while true {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            result.append(contentsOf: buffer.prefix(count))
-        }
-        return result
-    }
 }
 
 private final class IdempotencyRetryURLProtocol: URLProtocol, @unchecked Sendable {
@@ -4438,47 +6451,93 @@ private final class IdempotencyRetryURLProtocol: URLProtocol, @unchecked Sendabl
         let path = request.url?.path ?? ""
         let method = request.httpMethod ?? "GET"
 
-        if path == "/api/v1/auth/login", method == "POST" {
+        if method == "GET", path.hasPrefix("/api/v1/exercise-sessions/") {
+            let sessionId = String(path.split(separator: "/").last ?? "session-completed")
             send(
                 statusCode: 200,
-                data: Data(
-                    """
-                    {
-                      "token": "idempotency-test-token",
-                      "user": {
-                        "id": "s1",
-                        "name": "Test Student",
-                        "email": "s1@example.edu",
-                        "college": "BNBU",
-                        "className": "2026A",
-                        "status": "正常"
-                      },
-                      "defaultRoute": "/student"
-                    }
-                    """.utf8
-                )
+                data: currentContractEnvelope(currentExerciseSessionProjection(id: sessionId))
             )
             return
         }
 
-        if path == "/api/v1/upload/proof", method == "POST" {
+        if path == "/api/v1/media-uploads", method == "POST" {
             Self.lock.lock()
             Self.storedUploadCount += 1
             let uploadNumber = Self.storedUploadCount
             Self.lock.unlock()
             send(
-                statusCode: 200,
-                data: Data(
-                    """
-                    {"files":[{"url":"https://cos.example/proofs/\(uploadNumber).jpg","cosKey":"proofs/\(uploadNumber).jpg","mediaType":"image","mimeType":"image/jpeg","size":4}]}
-                    """.utf8
-                )
+                statusCode: 201,
+                data: currentContractEnvelope([
+                    "uploadSessionId": "upload-\(uploadNumber)",
+                    "mediaId": "media-\(uploadNumber)",
+                    "uploadUrl": "https://upload.example.test/signed/media-\(uploadNumber)",
+                    "uploadMethod": "PUT",
+                    "requiredHeaders": ["Content-Type": "image/jpeg"]
+                ])
             )
             return
         }
 
-        if path == "/api/v1/sport/records", method == "POST" {
-            let body = Self.bodyData(from: request) ?? Data()
+        if method == "PUT", path.hasPrefix("/signed/media-") {
+            send(statusCode: 200, data: Data(), headers: ["ETag": "\"contract-etag\""])
+            return
+        }
+
+        if method == "POST",
+           path.hasPrefix("/api/v1/media-uploads/upload-"),
+           path.hasSuffix("/confirm") {
+            let uploadId = String(path.split(separator: "/")[3])
+            let mediaId = uploadId.replacingOccurrences(of: "upload-", with: "media-")
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: mediaId,
+                    businessPurpose: "EXERCISE_RECORD",
+                    sessionId: "session-completed",
+                    enrollmentId: nil,
+                    uploadStatus: "UPLOADED",
+                    version: 1
+                ))
+            )
+            return
+        }
+
+        if method == "POST",
+           path.hasPrefix("/api/v1/media/media-"),
+           path.hasSuffix("/bind") {
+            let mediaId = String(path.split(separator: "/")[3])
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: mediaId,
+                    businessPurpose: "EXERCISE_RECORD",
+                    sessionId: "session-completed",
+                    enrollmentId: nil,
+                    uploadStatus: "BOUND",
+                    version: 2
+                ))
+            )
+            return
+        }
+
+        if method == "GET", path.hasPrefix("/api/v1/media/media-") {
+            let mediaId = String(path.split(separator: "/").last ?? "media-1")
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: mediaId,
+                    businessPurpose: "EXERCISE_RECORD",
+                    sessionId: "session-completed",
+                    enrollmentId: nil,
+                    uploadStatus: "AVAILABLE",
+                    version: 3
+                ))
+            )
+            return
+        }
+
+        if path == "/api/v1/exercise-records", method == "POST" {
+            let body = requestBodyData(request) ?? Data()
             let key = request.value(forHTTPHeaderField: "Idempotency-Key") ?? ""
             Self.lock.lock()
             Self.storedRecordBodies.append(body)
@@ -4491,7 +6550,7 @@ private final class IdempotencyRetryURLProtocol: URLProtocol, @unchecked Sendabl
                 if let failureStatusCode {
                     send(
                         statusCode: failureStatusCode,
-                        data: Data("{\"code\":\"VALIDATION_ERROR\",\"message\":\"invalid payload\"}".utf8)
+                        data: currentContractError(code: "VALIDATION_ERROR", message: "invalid payload")
                     )
                 } else {
                     client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
@@ -4500,103 +6559,90 @@ private final class IdempotencyRetryURLProtocol: URLProtocol, @unchecked Sendabl
                 Self.lock.lock()
                 Self.recordSucceeded = true
                 Self.lock.unlock()
-                send(statusCode: 201, data: Data("{\"id\":\"record-idempotent\"}".utf8))
+                let json = requestJSONObject(request)
+                send(
+                    statusCode: 201,
+                    data: currentContractEnvelope(currentExerciseRecordProjection(
+                        id: "record-idempotent",
+                        sessionId: json["sessionId"] as? String ?? "session-completed",
+                        status: "DRAFT",
+                        creditType: json["creditType"] as? String ?? "GENERAL",
+                        description: json["description"] as? String ?? "",
+                        version: 1
+                    ))
+                )
             }
             return
         }
 
-        if path == "/api/v1/student/workspace", method == "GET" {
-            var workspace = MockStudentRepository().loadWorkspace()
-            Self.lock.lock()
-            let recordSucceeded = Self.recordSucceeded
-            Self.lock.unlock()
-            if recordSucceeded {
-                let signedProof = ProofAttachment(
-                    id: "proofs/1.jpg",
-                    type: .image,
-                    fileName: "proof.jpg",
-                    byteCount: 4,
-                    source: "https://bnbu-sportsverified-1443273655.cos.ap-guangzhou.myqcloud.com/proofs/1.jpg?q-signature=test",
-                    cosKey: "proofs/1.jpg",
-                    mimeType: "image/jpeg"
-                )
-                workspace.records = [
-                    CheckInRecord(
-                        id: "record-idempotent",
-                        courseId: nil,
-                        taskTitle: "Self check-in",
-                        creditType: .general,
-                        hours: 1,
-                        submittedAt: "2026-07-16T08:00:00.000Z",
-                        validity: .valid,
-                        proofSummary: "1 image",
-                        proofPhotoCount: 1,
-                        proofVideoCount: 0,
-                        proofFiles: [signedProof],
-                        note: "same logical attempt",
-                        sportType: "running"
-                    )
-                ]
-            } else {
-                workspace.records.removeAll()
-            }
-            workspace.exemptions.removeAll()
-            send(statusCode: 200, data: (try? JSONEncoder().encode(workspace)) ?? Data("{}".utf8))
+        if path == "/api/v1/exercise-records/record-idempotent/submit", method == "POST" {
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExerciseRecordProjection(
+                    id: "record-idempotent",
+                    sessionId: "session-completed",
+                    status: "REVIEWED",
+                    version: 2
+                ))
+            )
             return
         }
 
         send(
             statusCode: 404,
-            data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+            data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
         )
     }
 
     override func stopLoading() {}
 
-    private func send(statusCode: Int, data: Data) {
+    private func send(
+        statusCode: Int,
+        data: Data,
+        headers: [String: String] = [:]
+    ) {
+        var responseHeaders = ["Content-Type": "application/json"]
+        headers.forEach { responseHeaders[$0.key] = $0.value }
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: responseHeaders
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    private static func bodyData(from request: URLRequest) -> Data? {
-        if let body = request.httpBody { return body }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var result = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while true {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            result.append(contentsOf: buffer.prefix(count))
-        }
-        return result
-    }
 }
 
 private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendable {
     static let mutationPaths = [
-        "/api/v1/student/physical-test-exemptions",
-        "/api/v1/student/physical-test-exemptions/ex1/supplements"
+        "/api/v1/exemption-applications/ex-new",
+        "/api/v1/exemption-applications/ex1"
     ]
 
     private static let lock = NSLock()
     private static var remainingFailurePaths = Set(AllMutationRetryURLProtocol.mutationPaths)
     private static var storedUploadCount = 0
+    private static var storedUploadPaths: [String] = []
     private static var storedBodies: [String: [Data]] = [:]
     private static var storedKeys: [String: [String]] = [:]
+    private static var lastSupplementReason = "existing reason"
+    private static var lastSupplementMediaIds: [String] = []
+    private static var lastCreatedReason = "膝关节损伤\n\n医生建议暂缓耐力跑。"
+    private static var lastCreatedMediaIds: [String] = []
 
     static var uploadCount: Int {
         lock.lock()
         defer { lock.unlock() }
         return storedUploadCount
+    }
+
+    static var uploadPaths: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedUploadPaths
     }
 
     static var bodies: [String: [Data]] {
@@ -4615,8 +6661,13 @@ private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendabl
         lock.lock()
         remainingFailurePaths = Set(mutationPaths)
         storedUploadCount = 0
+        storedUploadPaths = []
         storedBodies = [:]
         storedKeys = [:]
+        lastSupplementReason = "existing reason"
+        lastSupplementMediaIds = []
+        lastCreatedReason = "膝关节损伤\n\n医生建议暂缓耐力跑。"
+        lastCreatedMediaIds = []
         lock.unlock()
     }
 
@@ -4628,53 +6679,122 @@ private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendabl
         let path = request.url?.path ?? ""
         let method = request.httpMethod ?? "GET"
 
-        if path == "/api/v1/auth/login", method == "POST" {
-            send(
-                statusCode: 200,
-                data: Data(
-                    """
-                    {
-                      "token": "all-mutation-test-token",
-                      "user": {
-                        "id": "s1",
-                        "name": "Test Student",
-                        "email": "s1@example.edu",
-                        "college": "BNBU",
-                        "className": "2026A",
-                        "status": "正常"
-                      },
-                      "defaultRoute": "/student"
-                    }
-                    """.utf8
-                )
-            )
-            return
-        }
-
-        if path == "/api/v1/student/workspace", method == "GET" {
-            let workspace = MockStudentRepository().loadWorkspace()
-            send(statusCode: 200, data: (try? JSONEncoder().encode(workspace)) ?? Data("{}".utf8))
-            return
-        }
-
-        if path == "/api/v1/upload/proof", method == "POST" {
+        if (path == "/api/v1/exemption-applications/ex-new/media-uploads" ||
+            path == "/api/v1/exemption-applications/ex1/media-uploads"),
+           method == "POST" {
             Self.lock.lock()
             Self.storedUploadCount += 1
+            Self.storedUploadPaths.append(path)
             let uploadNumber = Self.storedUploadCount
             Self.lock.unlock()
             send(
-                statusCode: 200,
-                data: Data(
-                    """
-                    {"files":[{"url":"https://cos.example/proofs/secondary-\(uploadNumber).jpg?q-signature=temporary","cosKey":"proofs/secondary-\(uploadNumber).jpg","mediaType":"image","mimeType":"image/jpeg","size":4}]}
-                    """.utf8
-                )
+                statusCode: 201,
+                data: currentContractEnvelope([
+                    "uploadSessionId": "exemption-upload-\(uploadNumber)",
+                    "mediaId": "exemption-media-\(uploadNumber)",
+                    "uploadUrl": "https://upload.example.test/signed/exemption-media-\(uploadNumber)",
+                    "uploadMethod": "PUT",
+                    "requiredHeaders": ["Content-Type": "image/jpeg"]
+                ])
             )
             return
         }
 
-        if Self.mutationPaths.contains(path), method == "POST" {
-            let body = Self.bodyData(from: request) ?? Data()
+        if method == "PUT", path.hasPrefix("/signed/exemption-media-") {
+            send(statusCode: 200, data: Data(), headers: ["ETag": "\"contract-etag\""])
+            return
+        }
+
+        if method == "POST",
+           path.hasPrefix("/api/v1/media-uploads/exemption-upload-"),
+           path.hasSuffix("/confirm") {
+            let uploadId = String(path.split(separator: "/")[3])
+            let mediaId = uploadId.replacingOccurrences(of: "exemption-upload-", with: "exemption-media-")
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: mediaId,
+                    businessPurpose: "EXEMPTION_APPLICATION",
+                    sessionId: nil,
+                    enrollmentId: "enrollment-1",
+                    uploadStatus: "UPLOADED",
+                    version: 1
+                ))
+            )
+            return
+        }
+
+        if method == "GET", path.hasPrefix("/api/v1/media/") {
+            let mediaId = String(path.split(separator: "/").last ?? "exemption-media-1")
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentMediaProjection(
+                    id: mediaId,
+                    businessPurpose: "EXEMPTION_APPLICATION",
+                    sessionId: nil,
+                    enrollmentId: "enrollment-1",
+                    uploadStatus: "AVAILABLE",
+                    version: 2
+                ))
+            )
+            return
+        }
+
+        if path == "/api/v1/exemption-applications/ex1", method == "GET" {
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex1",
+                    status: "SUPPLEMENT_REQUIRED",
+                    reason: "existing reason",
+                    mediaIds: [],
+                    version: 3
+                ))
+            )
+            return
+        }
+
+        if path == "/api/v1/exemption-applications/ex-new", method == "GET" {
+            Self.lock.lock()
+            let reason = Self.lastCreatedReason
+            let mediaIds = Self.lastCreatedMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex-new",
+                    status: "DRAFT",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: mediaIds.isEmpty ? 1 : 2
+                ))
+            )
+            return
+        }
+
+        if path == "/api/v1/exemption-applications", method == "POST" {
+            let json = requestJSONObject(request)
+            Self.lock.lock()
+            Self.lastCreatedReason = json["reason"] as? String ?? ""
+            Self.lastCreatedMediaIds = json["mediaIds"] as? [String] ?? []
+            let reason = Self.lastCreatedReason
+            let mediaIds = Self.lastCreatedMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 201,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex-new",
+                    status: "DRAFT",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: 1
+                ))
+            )
+            return
+        }
+
+        if Self.mutationPaths.contains(path), (method == "POST" || method == "PATCH") {
+            let body = requestBodyData(request) ?? Data()
             let key = request.value(forHTTPHeaderField: "Idempotency-Key") ?? ""
             Self.lock.lock()
             Self.storedBodies[path, default: []].append(body)
@@ -4683,18 +6803,180 @@ private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendabl
             Self.lock.unlock()
             if shouldFail {
                 client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
-            } else if path == "/api/v1/student/physical-test-exemptions" {
-                send(statusCode: 201, data: Data("{\"id\":\"ex-new\"}".utf8))
             } else {
-                send(statusCode: 201, data: Data("{\"id\":\"ex1\"}".utf8))
+                let json = requestJSONObject(request)
+                let reason = json["reason"] as? String ?? ""
+                let mediaIds = json["mediaIds"] as? [String] ?? []
+                if path == "/api/v1/exemption-applications/ex-new" {
+                    Self.lock.lock()
+                    Self.lastCreatedReason = reason
+                    Self.lastCreatedMediaIds = mediaIds
+                    Self.lock.unlock()
+                    send(
+                        statusCode: 200,
+                        data: currentContractEnvelope(currentExemptionProjection(
+                            id: "ex-new",
+                            status: "DRAFT",
+                            reason: reason,
+                            mediaIds: mediaIds,
+                            version: 2
+                        ))
+                    )
+                } else {
+                    Self.lock.lock()
+                    Self.lastSupplementReason = reason
+                    Self.lastSupplementMediaIds = mediaIds
+                    Self.lock.unlock()
+                    send(
+                        statusCode: 200,
+                        data: currentContractEnvelope(currentExemptionProjection(
+                            id: "ex1",
+                            status: "SUPPLEMENT_REQUIRED",
+                            reason: reason,
+                            mediaIds: mediaIds,
+                            version: 4
+                        ))
+                    )
+                }
             }
+            return
+        }
+
+        if path == "/api/v1/exemption-applications/ex-new/submit", method == "POST" {
+            Self.lock.lock()
+            let reason = Self.lastCreatedReason
+            let mediaIds = Self.lastCreatedMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex-new",
+                    status: "SUBMITTED",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: 3
+                ))
+            )
+            return
+        }
+
+        if path == "/api/v1/exemption-applications/ex1/submit", method == "POST" {
+            Self.lock.lock()
+            let reason = Self.lastSupplementReason
+            let mediaIds = Self.lastSupplementMediaIds
+            Self.lock.unlock()
+            send(
+                statusCode: 200,
+                data: currentContractEnvelope(currentExemptionProjection(
+                    id: "ex1",
+                    status: "SUBMITTED",
+                    reason: reason,
+                    mediaIds: mediaIds,
+                    version: 5
+                ))
+            )
             return
         }
 
         send(
             statusCode: 404,
-            data: Data("{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"not found\"}".utf8)
+            data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
         )
+    }
+
+    override func stopLoading() {}
+
+    private func send(
+        statusCode: Int,
+        data: Data,
+        headers: [String: String] = [:]
+    ) {
+        var responseHeaders = ["Content-Type": "application/json"]
+        headers.forEach { responseHeaders[$0.key] = $0.value }
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: responseHeaders
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+}
+
+private final class FeedbackContractURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var storedRequests: [RecordedContractRequest] = []
+
+    static var requests: [RecordedContractRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRequests
+    }
+
+    static func reset() {
+        lock.lock()
+        storedRequests = []
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let method = request.httpMethod ?? "GET"
+        let path = request.url?.path ?? ""
+        let jsonBody = request.httpBody.map { data in
+            (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        } ?? nil
+        let recorded = RecordedContractRequest(
+            path: path,
+            method: method,
+            idempotencyKey: request.value(forHTTPHeaderField: "Idempotency-Key"),
+            jsonBody: jsonBody
+        )
+        Self.lock.lock()
+        Self.storedRequests.append(recorded)
+        Self.lock.unlock()
+
+        let value: Any
+        let statusCode: Int
+        switch (method, path) {
+        case ("GET", "/api/v1/feedback"):
+            value = [[
+                "id": "feedback-existing-1",
+                "category": "BUG",
+                "content": "运动记录刷新失败。",
+                "status": "IN_PROGRESS",
+                "publicReply": NSNull(),
+                "createdAt": "2026-08-24T08:00:00Z",
+                "updatedAt": "2026-08-24T08:10:00Z",
+                "version": 2,
+            ]]
+            statusCode = 200
+        case ("POST", "/api/v1/feedback"):
+            value = [
+                "id": "feedback-created-1",
+                "category": jsonBody?["category"] as? String ?? "OTHER",
+                "content": jsonBody?["content"] as? String ?? "",
+                "status": "OPEN",
+                "publicReply": NSNull(),
+                "createdAt": "2026-08-24T09:00:00Z",
+                "updatedAt": "2026-08-24T09:00:00Z",
+                "version": 1,
+            ]
+            statusCode = 201
+        default:
+            send(
+                statusCode: 404,
+                data: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+            )
+            return
+        }
+        send(statusCode: statusCode, data: currentContractEnvelope(value))
     }
 
     override func stopLoading() {}
@@ -4710,27 +6992,16 @@ private final class AllMutationRetryURLProtocol: URLProtocol, @unchecked Sendabl
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
-
-    private static func bodyData(from request: URLRequest) -> Data? {
-        if let body = request.httpBody { return body }
-        guard let stream = request.httpBodyStream else { return nil }
-        stream.open()
-        defer { stream.close() }
-        var result = Data()
-        var buffer = [UInt8](repeating: 0, count: 4_096)
-        while true {
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            guard count > 0 else { break }
-            result.append(contentsOf: buffer.prefix(count))
-        }
-        return result
-    }
 }
 
 private final class CanonicalMutationURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     private static var storedPaths: [String] = []
     private static var storedKeys: [String] = []
+    private static var supplementReason = "medical reason\n\ndoctor note"
+    private static var supplementMediaIds = ["media-1"]
+    private static var createdReason = "medical reason\n\ndoctor note"
+    private static var createdMediaIds: [String] = []
 
     static var paths: [String] {
         lock.lock()
@@ -4748,6 +7019,10 @@ private final class CanonicalMutationURLProtocol: URLProtocol, @unchecked Sendab
         lock.lock()
         storedPaths = []
         storedKeys = []
+        supplementReason = "medical reason\n\ndoctor note"
+        supplementMediaIds = ["media-1"]
+        createdReason = "medical reason\n\ndoctor note"
+        createdMediaIds = []
         lock.unlock()
     }
 
@@ -4756,30 +7031,180 @@ private final class CanonicalMutationURLProtocol: URLProtocol, @unchecked Sendab
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        Self.lock.lock()
-        Self.storedPaths.append(request.url?.path ?? "")
-        Self.storedKeys.append(request.value(forHTTPHeaderField: "Idempotency-Key") ?? "")
-        Self.lock.unlock()
-
         let path = request.url?.path ?? ""
-        let body: Data
-        if path.contains("physical-test-exemptions") {
-            body = Data("{\"id\":\"exemption-1\",\"status\":\"pending\",\"createdAt\":\"2026-07-16T00:00:00Z\"}".utf8)
-        } else {
-            body = Data("{\"id\":\"record-1\"}".utf8)
+        let method = request.httpMethod ?? "GET"
+        if let key = request.value(forHTTPHeaderField: "Idempotency-Key") {
+            Self.lock.lock()
+            Self.storedPaths.append(path)
+            Self.storedKeys.append(key)
+            Self.lock.unlock()
+        }
+        let value: Any
+        let statusCode: Int
+
+        switch (method, path) {
+        case ("GET", "/api/v1/exercise-sessions/session-canonical"):
+            value = currentExerciseSessionProjection(id: "session-canonical")
+            statusCode = 200
+        case ("POST", "/api/v1/exercise-records"):
+            value = currentExerciseRecordProjection(
+                id: "record-1",
+                sessionId: "session-canonical",
+                status: "DRAFT"
+            )
+            statusCode = 201
+        case ("POST", "/api/v1/exercise-records/record-1/submit"):
+            value = currentExerciseRecordProjection(
+                id: "record-1",
+                sessionId: "session-canonical",
+                status: "REVIEWED",
+                version: 2
+            )
+            statusCode = 200
+        case ("POST", "/api/v1/exemption-applications"):
+            let json = requestJSONObject(request)
+            let reason = json["reason"] as? String ?? "medical reason\n\ndoctor note"
+            let mediaIds = json["mediaIds"] as? [String] ?? []
+            Self.lock.lock()
+            Self.createdReason = reason
+            Self.createdMediaIds = mediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-created",
+                status: "DRAFT",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: 1
+            )
+            statusCode = 201
+        case ("GET", "/api/v1/exemption-applications/exemption-created"):
+            Self.lock.lock()
+            let reason = Self.createdReason
+            let mediaIds = Self.createdMediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-created",
+                status: "DRAFT",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: mediaIds.isEmpty ? 1 : 2
+            )
+            statusCode = 200
+        case ("PATCH", "/api/v1/exemption-applications/exemption-created"):
+            let json = requestJSONObject(request)
+            let reason = json["reason"] as? String ?? ""
+            let mediaIds = json["mediaIds"] as? [String] ?? []
+            Self.lock.lock()
+            Self.createdReason = reason
+            Self.createdMediaIds = mediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-created",
+                status: "DRAFT",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: 2
+            )
+            statusCode = 200
+        case ("POST", "/api/v1/exemption-applications/exemption-created/submit"):
+            Self.lock.lock()
+            let reason = Self.createdReason
+            let mediaIds = Self.createdMediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-created",
+                status: "SUBMITTED",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: 3
+            )
+            statusCode = 200
+        case ("GET", "/api/v1/exemption-applications/exemption-1"):
+            Self.lock.lock()
+            let reason = Self.supplementReason
+            let mediaIds = Self.supplementMediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-1",
+                status: "SUPPLEMENT_REQUIRED",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: 3
+            )
+            statusCode = 200
+        case ("PATCH", "/api/v1/exemption-applications/exemption-1"):
+            let json = requestJSONObject(request)
+            let reason = json["reason"] as? String ?? ""
+            let mediaIds = json["mediaIds"] as? [String] ?? []
+            Self.lock.lock()
+            Self.supplementReason = reason
+            Self.supplementMediaIds = mediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-1",
+                status: "SUPPLEMENT_REQUIRED",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: 4
+            )
+            statusCode = 200
+        case ("POST", "/api/v1/exemption-applications/exemption-1/submit"):
+            Self.lock.lock()
+            let reason = Self.supplementReason
+            let mediaIds = Self.supplementMediaIds
+            Self.lock.unlock()
+            value = currentExemptionProjection(
+                id: "exemption-1",
+                status: "SUBMITTED",
+                reason: reason,
+                mediaIds: mediaIds,
+                version: 5
+            )
+            statusCode = 200
+        default:
+            if method == "GET", path.hasPrefix("/api/v1/media/") {
+                let mediaId = String(path.split(separator: "/").last ?? "media-1")
+                value = currentMediaProjection(
+                    id: mediaId,
+                    businessPurpose: "EXEMPTION_APPLICATION",
+                    sessionId: nil,
+                    enrollmentId: "enrollment-1",
+                    uploadStatus: "AVAILABLE",
+                    version: 3
+                )
+                statusCode = 200
+            } else {
+                sendError(statusCode: 404)
+                return
+            }
         }
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 201,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocol(self, didLoad: currentContractEnvelope(value))
         client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}
+
+    private func sendError(statusCode: Int) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(
+            self,
+            didLoad: currentContractError(code: "RESOURCE_NOT_FOUND", message: "not found")
+        )
+        client?.urlProtocolDidFinishLoading(self)
+    }
 }
 
 private final class IdempotencyConflictURLProtocol: URLProtocol, @unchecked Sendable {
@@ -4797,13 +7222,31 @@ private final class IdempotencyConflictURLProtocol: URLProtocol, @unchecked Send
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        let path = request.url?.path ?? ""
+        if request.httpMethod == "GET", path == "/api/v1/exercise-sessions/session-conflict" {
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(
+                self,
+                didLoad: currentContractEnvelope(
+                    currentExerciseSessionProjection(id: "session-conflict")
+                )
+            )
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         Self.lock.lock()
         let code = Self.responseCode
         Self.lock.unlock()
-        let body = try! JSONSerialization.data(withJSONObject: [
-            "code": code,
-            "message": "The idempotency request is still processing or the key was reused."
-        ])
+        let body = currentContractError(
+            code: code,
+            message: "The idempotency request is still processing or the key was reused."
+        )
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: 409,

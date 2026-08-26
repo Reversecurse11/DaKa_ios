@@ -23,7 +23,8 @@ struct GradesView: View {
                     )
                     CheckInHoursCard(
                         progress: appState.workspace.progress,
-                        rule: appState.workspace.hourRule
+                        rule: appState.workspace.hourRule,
+                        isRemoteMode: appState.isRemoteMode
                     )
                 }
                 .padding(BNBUSpacing.screen)
@@ -136,6 +137,7 @@ private struct EnduranceRunCard: View {
 private struct CheckInHoursCard: View {
     let progress: StudentProgress
     let rule: SportHourRule
+    let isRemoteMode: Bool
 
     var body: some View {
         SwissPanel {
@@ -147,17 +149,19 @@ private struct CheckInHoursCard: View {
                 )
 
                 HStack(alignment: .bottom, spacing: 0) {
-                    Text(verbatim: GradeHourFormatter.number(completed))
+                    Text(verbatim: primaryHoursText)
                         .font(BNBUFont.headlineMedium.weight(.semibold))
                         .foregroundStyle(BNBUTheme.onSurface)
-                    Text(verbatim: BNBUL10n.formatted(" / %@ 小时", GradeHourFormatter.number(required)))
-                        .font(BNBUFont.bodyLarge)
-                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                        .padding(.leading, BNBUSpacing.space4)
-                        .padding(.bottom, 3)
+                    if !isRemoteMode {
+                        Text(verbatim: BNBUL10n.formatted(" / %@ 小时", GradeHourFormatter.number(required)))
+                            .font(BNBUFont.bodyLarge)
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .padding(.leading, BNBUSpacing.space4)
+                            .padding(.bottom, 3)
+                    }
                 }
 
-                if required > 0 {
+                if !isRemoteMode, required > 0 {
                     HourProgressBar(value: completed, total: required)
                 }
 
@@ -165,25 +169,48 @@ private struct CheckInHoursCard: View {
                     GradeHourBreakdown(
                         label: BNBUL10n.text("课程相关"),
                         completed: progress.course,
-                        required: rule.courseRequired
+                        required: isRemoteMode ? nil : rule.courseRequired
                     )
                     GradeHourBreakdown(
                         label: BNBUL10n.text("其他运动"),
                         completed: progress.general,
-                        required: rule.generalRequired
+                        required: isRemoteMode ? nil : rule.generalRequired
                     )
                 }
             }
         }
     }
 
-    private var completed: Double { max(progress.course + progress.general, 0) }
+    private var completed: Double {
+        if isRemoteMode {
+            return max(progress.authoritativeTotalHours ?? 0, 0)
+        }
+        return max(progress.course + progress.general, 0)
+    }
     private var required: Double { max(rule.total, 0) }
     private var remaining: Double { max(required - completed, 0) }
     private var isComplete: Bool { required > 0 && completed >= required }
 
+    private var primaryHoursText: String {
+        guard !isRemoteMode else {
+            let total = progress.authoritativeTotalHours ?? (progress.course + progress.general)
+            return BNBUL10n.formatted("%@ 小时", GradeHourFormatter.number(total))
+        }
+        return GradeHourFormatter.number(completed)
+    }
+
     private var supportingText: String {
-        isComplete
+        if isRemoteMode {
+            switch progress.authoritativeQualificationStatus {
+            case "QUALIFIED":
+                return BNBUL10n.text("已按有效打卡累计；服务端已确认达标")
+            case "NOT_QUALIFIED":
+                return BNBUL10n.text("已按有效打卡累计；服务端确认进行中")
+            default:
+                return BNBUL10n.text("已按有效打卡记录累计")
+            }
+        }
+        return isComplete
             ? BNBUL10n.text("已完成本学期打卡要求")
             : BNBUL10n.formatted("还需 %@ 小时", GradeHourFormatter.number(remaining))
     }
@@ -220,18 +247,20 @@ private struct GradeCardTitle: View {
 private struct GradeHourBreakdown: View {
     let label: String
     let completed: Double
-    let required: Double
+    let required: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: label)
                 .font(BNBUFont.labelMedium)
                 .foregroundStyle(BNBUTheme.onSurfaceVariant)
-            Text(verbatim: BNBUL10n.formatted(
-                "%@ / %@ 小时",
-                GradeHourFormatter.number(completed),
-                GradeHourFormatter.number(required)
-            ))
+            Text(verbatim: required.map {
+                BNBUL10n.formatted(
+                    "%@ / %@ 小时",
+                    GradeHourFormatter.number(completed),
+                    GradeHourFormatter.number($0)
+                )
+            } ?? BNBUL10n.formatted("%@ 小时（仅分类）", GradeHourFormatter.number(completed)))
                 .font(BNBUFont.bodyMedium.weight(.medium))
                 .foregroundStyle(BNBUTheme.onSurface)
                 .fixedSize(horizontal: false, vertical: true)
@@ -457,13 +486,16 @@ struct ExemptionApplicationSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let mode: ExemptionSheetMode
-    @FocusState private var focusedField: ExemptionFormField?
+    @FocusState private var organizationFocused: Bool
+    @FocusState private var reasonFocused: Bool
+    @FocusState private var detailFocused: Bool
     @State private var selectedItem: ExemptionItem
     @State private var reason: String
     @State private var detail: String
     @State private var organization: String
     @State private var proofAttachments: [ProofAttachment]
     @State private var recoveryNotice: String?
+    @State private var submittedForm = false
     private let livePhotoPolicy = ExemptionLivePhotoPolicy(
         maxAttachmentCount: ExemptionProofRule.maxAttachmentCount
     )
@@ -510,10 +542,25 @@ struct ExemptionApplicationSheet: View {
                                 ? exemptionText("提交中…", "Submitting…")
                                 : mode.submitTitle,
                             systemImage: mode.systemImage,
-                            isDisabled: !canSubmit || appState.isSubmittingExemption,
+                            isDisabled: !canAttemptSubmit || appState.isSubmittingExemption,
                             accessibilityIdentifier: "exemption.submit.button"
                         ) {
-                            focusedField = nil
+                            submittedForm = true
+                            if needsOrganization {
+                                organizationFocused = true
+                                return
+                            }
+                            if trimmedReason.count < 2 {
+                                reasonFocused = true
+                                return
+                            }
+                            if trimmedDetail.isEmpty {
+                                detailFocused = true
+                                return
+                            }
+                            organizationFocused = false
+                            reasonFocused = false
+                            detailFocused = false
                             dismissBNBUKeyboard()
                             Task {
                                 if await submit() {
@@ -531,7 +578,9 @@ struct ExemptionApplicationSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {
-                        focusedField = nil
+                        organizationFocused = false
+                        reasonFocused = false
+                        detailFocused = false
                         dismissBNBUKeyboard()
                         dismiss()
                     }
@@ -540,7 +589,9 @@ struct ExemptionApplicationSheet: View {
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("完成") {
-                        focusedField = nil
+                        organizationFocused = false
+                        reasonFocused = false
+                        detailFocused = false
                         dismissBNBUKeyboard()
                     }
                     .font(BNBUFont.titleSmall)
@@ -605,23 +656,19 @@ struct ExemptionApplicationSheet: View {
                     }
 
                     if selectedItem.isCheckInExemption {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("组织名称")
-                                .font(BNBUFont.labelMedium)
-                                .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                            TextField("填写校队或社团名称", text: $organization)
-                                .bnbuInputText()
-                                .padding(12)
-                                .background(BNBUTheme.surface)
-                                .bnbuOutlinedSurface(lineWidth: 1.5)
-                                .disabled(appState.isSubmittingExemption)
-                                .onChange(of: organization) { _, value in
-                                    guard value.count > ExemptionItem.maximumOrganizationLength else { return }
-                                    organization = String(value.prefix(ExemptionItem.maximumOrganizationLength))
-                                }
-                                .accessibilityLabel("组织名称")
-                                .accessibilityIdentifier("exemption.organization.field")
-                        }
+                        BNBUFormField(
+                            label: "组织名称",
+                            placeholder: "填写校队或社团名称",
+                            text: $organization,
+                            required: true,
+                            helperText: "填写当前校队或社团的正式名称。",
+                            errorText: submittedForm && needsOrganization ? "请填写校队或社团名称。" : nil,
+                            characterLimit: ExemptionItem.maximumOrganizationLength,
+                            enabled: !appState.isSubmittingExemption,
+                            submitLabel: .next,
+                            focusBinding: $organizationFocused,
+                            accessibilityIdentifier: "exemption.organization.field"
+                        )
                         .padding(.top, 4)
                     }
 
@@ -637,116 +684,44 @@ struct ExemptionApplicationSheet: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("申请原因")
-                        .font(BNBUFont.titleSmall)
-                    TextField("例如：膝关节运动损伤", text: $reason)
-                        .bnbuInputText()
-                        .accessibilityLabel("申请原因")
-                        .accessibilityHint("至少 2 个字符，与情况说明合计最多 2000 个字符")
-                        .textInputAutocapitalization(.never)
-                        .padding(12)
-                        .background(BNBUTheme.surface)
-                        .bnbuOutlinedSurface(lineWidth: 1.5)
-                        .focused($focusedField, equals: .reason)
-                        .submitLabel(.done)
-                        .disabled(appState.isSubmittingExemption)
-                        .onSubmit {
-                            focusedField = .detail
-                        }
-                        .accessibilityIdentifier("exemption.reason.field")
-                }
+                BNBUFormField(
+                    label: "申请原因",
+                    placeholder: "例如：膝关节运动损伤",
+                    text: $reason,
+                    required: true,
+                    helperText: "至少 2 个字符；与情况说明合计最多 2000 个字符。",
+                    errorText: submittedForm && trimmedReason.count < 2 ? "申请原因至少需要 2 个字符。" : nil,
+                    characterLimit: 2000,
+                    enabled: !appState.isSubmittingExemption,
+                    submitLabel: .next,
+                    onSubmit: { detailFocused = true },
+                    focusBinding: $reasonFocused,
+                    accessibilityIdentifier: "exemption.reason.field"
+                )
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("情况说明")
-                        .font(BNBUFont.titleSmall)
-                    TextEditor(text: $detail)
-                        .bnbuInputText()
-                        .accessibilityLabel("情况说明")
-                        .accessibilityHint("必填，与申请原因合计最多 2000 个字符")
-                        .frame(minHeight: 118)
-                        .padding(8)
-                        .scrollContentBackground(.hidden)
-                        .background(BNBUTheme.surface)
-                        .bnbuOutlinedSurface(lineWidth: 1.5)
-                        .focused($focusedField, equals: .detail)
-                        .disabled(appState.isSubmittingExemption)
-                        .accessibilityIdentifier("exemption.detail.editor")
-                    Text(verbatim: proofHint(selectedItem))
-                        .font(BNBUFont.bodySmall)
-                        .foregroundStyle(BNBUTheme.muted)
-                }
+                BNBUTextArea(
+                    label: "情况说明",
+                    text: $detail,
+                    placeholder: "说明申请情况和需要审核的事实",
+                    required: true,
+                    helperText: proofHint(selectedItem),
+                    errorText: submittedForm && trimmedDetail.isEmpty ? "请填写情况说明。" : nil,
+                    characterLimit: 2000,
+                    enabled: !appState.isSubmittingExemption,
+                    focusBinding: $detailFocused,
+                    accessibilityIdentifier: "exemption.detail.editor"
+                )
             }
         }
     }
 
     private var livePhotoPanel: some View {
-        SwissPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: exemptionText("证明材料", "Supporting documents"))
-                            .font(BNBUFont.titleSmall)
-                        Text(verbatim: exemptionText(
-                            "仅接受本机摄像头现场拍摄的照片；不可选择相册或视频，每张不超过 8MB。",
-                            "Only live photos from this device's camera are accepted. Library files and videos are not allowed; each photo must be 8 MB or smaller."
-                        ))
-                            .font(BNBUFont.bodySmall)
-                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 8)
-                    StatusBadge(text: "\(proofAttachments.count)/\(livePhotoPolicy.maxAttachmentCount)")
-                }
-
-                ExerciseCameraCaptureButton(
-                    title: isAtPhotoLimit
-                        ? exemptionText("已达到照片上限", "Photo limit reached")
-                        : exemptionText("现场拍照", "Take live photo"),
-                    purpose: .exemption,
-                    initialCaptureMode: .photo,
-                    isDisabled: isAtPhotoLimit || appState.isSubmittingExemption,
-                    accessibilityIdentifier: "exemption.proof.camera"
-                ) { attachment in
-                    guard isLiveCameraPhoto(attachment), !isAtPhotoLimit else { return }
-                    proofAttachments.append(attachment)
-                }
-
-                if proofAttachments.isEmpty {
-                    Text(verbatim: exemptionText("尚未拍摄证明", "No proof photo captured"))
-                        .font(BNBUFont.bodySmall)
-                        .foregroundStyle(BNBUTheme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                } else {
-                    ForEach(proofAttachments) { attachment in
-                        HStack(spacing: 10) {
-                            proofThumbnail(attachment)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(verbatim: attachment.fileName)
-                                    .font(BNBUFont.labelMedium)
-                                    .lineLimit(1)
-                                Text(verbatim: formattedByteCount(attachment.byteCount))
-                                    .font(BNBUFont.bodySmall)
-                                    .foregroundStyle(BNBUTheme.muted)
-                            }
-                            Spacer()
-                            Button(role: .destructive) {
-                                remove(attachment)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .frame(width: 44, height: 44)
-                            }
-                            .disabled(appState.isSubmittingExemption)
-                            .accessibilityLabel(Text(verbatim: exemptionText("删除照片", "Delete photo")))
-                        }
-                        .padding(8)
-                        .background(BNBUTheme.surfaceVariant)
-                        .clipShape(RoundedRectangle(cornerRadius: BNBURadius.small, style: .continuous))
-                    }
-                }
-            }
-        }
+        ProofAttachmentPanel(
+            attachments: $proofAttachments,
+            maxAttachmentCount: ExemptionProofRule.maxAttachmentCount,
+            summaryText: ExemptionProofRule.summaryText
+        )
+        .disabled(appState.isSubmittingExemption)
     }
 
     @ViewBuilder
@@ -769,14 +744,23 @@ struct ExemptionApplicationSheet: View {
 
     private var canSubmit: Bool {
         let hasValidProof = !proofAttachments.isEmpty
-            && proofAttachments.count <= ExemptionProofRule.maxAttachmentCount
-            && proofAttachments.allSatisfy(isLiveCameraPhoto)
+            && ExemptionProofRule.accepts(proofAttachments)
             && proofAttachments.allSatisfy(\.isValidForUpload)
         return appState.isRemoteMode
             && appState.isWriteAllowed
             && !hasPendingSameType
             && !needsOrganization
             && ExemptionInputRule.validationMessage(reason: trimmedReason, detail: trimmedDetail) == nil
+            && (hasValidProof || canResumePendingAttempt)
+    }
+
+    private var canAttemptSubmit: Bool {
+        let hasValidProof = !proofAttachments.isEmpty
+            && ExemptionProofRule.accepts(proofAttachments)
+            && proofAttachments.allSatisfy(\.isValidForUpload)
+        return appState.isRemoteMode
+            && appState.isWriteAllowed
+            && !hasPendingSameType
             && (hasValidProof || canResumePendingAttempt)
     }
 
@@ -809,14 +793,8 @@ struct ExemptionApplicationSheet: View {
         }
         if proofAttachments.isEmpty {
             return exemptionText(
-                "请至少现场拍摄 1 张医院证明、校医室证明或诊断材料。",
-                "Take at least one live photo of a hospital certificate, campus-clinic certificate, or diagnostic document."
-            )
-        }
-        if proofAttachments.contains(where: { !isLiveCameraPhoto($0) }) {
-            return exemptionText(
-                "免测证明只接受现场拍摄的照片；视频、相册文件和占位凭证不能提交。",
-                "Exemption proof accepts live photos only. Videos, photo-library files, and placeholders cannot be submitted."
+                "请至少通过相机或文件选择添加 1 项证明材料。",
+                "Add at least one supporting document using the camera or file picker."
             )
         }
         if proofAttachments.contains(where: { !$0.isValidForUpload }) {
@@ -872,6 +850,7 @@ struct ExemptionApplicationSheet: View {
             item: selectedItem,
             reason: trimmedReason,
             detail: trimmedDetail,
+            organization: trimmedOrganization,
             proofAttachments: proofAttachments
         )
     }
@@ -959,22 +938,11 @@ struct ExemptionApplicationSheet: View {
         selectedItem = recovery.item
         reason = recovery.reason
         detail = recovery.detail
-        let livePhotos = recovery.sourceProofs.filter(isLiveCameraPhoto)
-        proofAttachments = livePhotos
-        if livePhotos.count != recovery.sourceProofs.count {
-            recoveryNotice = exemptionText(
-                "上次提交中不符合“仅现场照片”要求的材料已移除，请重新拍摄证明。",
-                "Documents from the previous attempt that were not live photos were removed. Take new proof photos."
-            )
-        }
+        organization = recovery.organization
+        proofAttachments = recovery.sourceProofs
     }
 }
 
 private struct ExemptionLivePhotoPolicy {
     let maxAttachmentCount: Int
-}
-
-private enum ExemptionFormField: Hashable {
-    case reason
-    case detail
 }

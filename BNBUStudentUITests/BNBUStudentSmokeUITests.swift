@@ -1,4 +1,3 @@
-import CoreLocation
 import UIKit
 import XCTest
 
@@ -509,7 +508,6 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         attachScreenshot(named: "S3-feedback-tickets")
         app.buttons["feedback.tab.submit"].tap()
         focusAndType(app.textViews["feedback.description"], text: "打卡提交后凭证上传卡住。")
-        focusAndType(app.textFields["feedback.phone"], text: "13800138000")
         app.buttons["feedback.submit"].tap()
         XCTAssertTrue(screen("screen.feedbackSubmitted").waitForExistence(timeout: 5))
         attachScreenshot(named: "S4-feedback-submitted")
@@ -522,12 +520,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         scrollToAndTap(app.buttons["settings.contactBinding"])
         XCTAssertTrue(screen("screen.contactManagement").waitForExistence(timeout: 5))
         attachScreenshot(named: "S6-contact-management")
-        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
-        app.buttons["contactBinding.phone.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
-        app.buttons["contactBinding.phone.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 5))
-        attachScreenshot(named: "S7-contact-phone-verified")
+        XCTAssertTrue(screen("contactBinding.status.email").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["contactBinding.phone.value"].exists)
+        XCTAssertFalse(app.buttons["contactBinding.phone.sendCode"].exists)
+        attachScreenshot(named: "S7-contact-email-status")
     }
 
     func testTempShotsNewPagesBaseline() throws {
@@ -546,45 +542,22 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
         attachScreenshot(named: "02-guide-step1")
         app.buttons["guide.next"].tap()
-        XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["确认并直接加入"].waitForExistence(timeout: 3))
         attachScreenshot(named: "03-guide-step2")
 
-        // Joining a course: invite entry, course confirmation, review status.
+        // Public course joining now previews a server invite and atomically
+        // creates an ACTIVE enrollment. This local UI baseline verifies only
+        // the entry surface; the current-contract repository tests cover the
+        // server preview/capability/join chain without fabricating approval UI.
         relaunch(["-ui-testing-reset"])
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 8))
         app.staticTexts["扫码加入课程"].firstMatch.tap()
         XCTAssertTrue(screen("screen.courseJoin").waitForExistence(timeout: 5))
         attachScreenshot(named: "04-course-join-entry")
-
-        focusAndType(app.textFields["course.join.code.field"], text: "BNBU2026")
-        app.buttons["course.join.submit"].tap()
-        XCTAssertTrue(screen("screen.courseJoinConfirm").waitForExistence(timeout: 5))
-        attachScreenshot(named: "05-course-join-confirm")
-
-        focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
-        focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
-        app.buttons["courseJoinConfirm.submit"].tap()
-        XCTAssertTrue(screen("screen.contactBinding").waitForExistence(timeout: 5))
-        attachScreenshot(named: "05b-contact-binding-empty")
-
-        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
-        app.buttons["contactBinding.phone.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
-        app.buttons["contactBinding.phone.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 5))
-        focusAndType(app.textFields["contactBinding.email.value"], text: "lin@bnbu.edu.cn")
-        app.buttons["contactBinding.email.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
-        app.buttons["contactBinding.email.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 5))
-        attachScreenshot(named: "05c-contact-binding-verified")
-
-        app.buttons["contactBinding.submit"].tap()
-        XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 5))
-        attachScreenshot(named: "06-course-join-pending")
-        app.buttons["nav.back"].tap()
-        XCTAssertTrue(app.buttons["login.joinRequest.entry"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "06b-login-with-pending-request")
+        XCTAssertTrue(app.staticTexts["扫描任课老师提供的课程二维码，先读取服务器课程预览，再确认身份并直接加入。"].exists)
+        XCTAssertFalse(screen("screen.joinRequestStatus").exists)
+        XCTAssertFalse(app.buttons["login.joinRequest.entry"].exists)
+        app.buttons["course.join.close"].tap()
 
         func openProfile() {
             relaunch(["-ui-testing-reset", "-ui-testing-authenticated"])
@@ -694,7 +667,7 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.guide.pre-login").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["先加入课程"].exists)
         app.buttons["guide.next"].tap()
-        XCTAssertTrue(app.staticTexts["确认并提交申请"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["确认并直接加入"].waitForExistence(timeout: 3))
         app.buttons["guide.skip"].tap()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
@@ -728,6 +701,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["profile.settings.button"].tap()
         XCTAssertTrue(screen("screen.profileSettings").waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["账户与安全"].exists)
+        XCTAssertTrue(app.buttons["settings.contactBinding"].exists)
+        XCTAssertTrue(app.staticTexts["绑定或更换登录邮箱"].exists)
+        XCTAssertTrue(app.buttons["settings.accountDeletion"].exists)
+        XCTAssertTrue(app.staticTexts["注销账户"].exists)
         XCTAssertTrue(app.staticTexts["偏好设置"].exists)
         XCTAssertTrue(app.staticTexts["帮助与支持"].exists)
 
@@ -968,49 +945,6 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["checkin.exercise.start"].waitForExistence(timeout: 5))
     }
 
-    // Business rules 5.5/10.3: starting exercise fetches one best-effort GPS
-    // fix and attaches it to the running session. Runs against a simulated
-    // device location, driving the real CoreLocation permission + fix path.
-    func testExerciseStartAttachesSimulatedGPSFix() throws {
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments = ["-ui-testing-reset", "-ui-testing-authenticated", "-ui-testing-location-check", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
-
-        XCUIDevice.shared.location = XCUILocation(
-            location: CLLocation(latitude: 22.3364, longitude: 114.1655)
-        )
-        let monitor = addUIInterruptionMonitor(withDescription: "Location permission") { alert in
-            for label in ["Allow While Using App", "Allow Once", "使用App时允许", "允许一次", "允许"] {
-                let button = alert.buttons[label]
-                if button.exists {
-                    button.tap()
-                    return true
-                }
-            }
-            return false
-        }
-        defer { removeUIInterruptionMonitor(monitor) }
-
-        app.launch()
-        login()
-        openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.buttons["运动"].firstMatch.tap()
-
-        scrollToAndTap(app.buttons["跑步"])
-        scrollToAndTap(app.buttons["checkin.exercise.start"])
-        XCTAssertTrue(app.staticTexts["记录中"].waitForExistence(timeout: 5))
-
-        // Interruption monitors only fire on interaction; nudge the app while
-        // polling so the permission alert gets answered, then wait for the
-        // fix to attach and render in the session detail rows.
-        let attached = app.staticTexts["已获取位置"]
-        for _ in 0..<12 where !attached.exists {
-            app.staticTexts["记录中"].firstMatch.tap()
-            _ = attached.waitForExistence(timeout: 2)
-        }
-        XCTAssertTrue(attached.exists, "开始运动后应附加一次 GPS 定位并显示“已获取位置”")
-    }
-
     func testSubmittedHistoryNoticeReadAndLogoutFlow() throws {
         login()
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
@@ -1081,59 +1015,14 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertFalse(next.isEnabled)
 
         codeField.tap()
-        codeField.typeText("BNBU2026")
+        codeField.typeText("bnbu-contract-invite-token")
         XCTAssertTrue(next.isEnabled)
-        next.tap()
-
-        // The invite resolves to a course the student confirms before typing
-        // any identity details.
-        XCTAssertTrue(screen("screen.courseJoinConfirm").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["确认课程信息"].exists)
-        XCTAssertTrue(app.staticTexts["PE1024 / Section S02"].exists)
-        XCTAssertTrue(app.staticTexts["陈老师"].exists)
-
-        let submit = app.buttons["courseJoinConfirm.submit"]
-        submit.tap()
-        XCTAssertTrue(app.staticTexts["请填写姓名。"].waitForExistence(timeout: 3))
-
-        focusAndType(app.textFields["courseJoinConfirm.name"], text: "林同学")
-        submit.tap()
-        XCTAssertTrue(app.staticTexts["请填写学号。"].waitForExistence(timeout: 3))
-
-        focusAndType(app.textFields["courseJoinConfirm.studentNumber"], text: "2400987654")
-        submit.tap()
-
-        // Binding both contacts is mandatory before a teacher sees the request,
-        // because a reinstalled app signs back in with a code sent to one.
-        XCTAssertTrue(screen("screen.contactBinding").waitForExistence(timeout: 3))
-        let apply = app.buttons["contactBinding.submit"]
-        XCTAssertTrue(apply.waitForExistence(timeout: 3))
-        XCTAssertFalse(apply.isEnabled)
-
-        focusAndType(app.textFields["contactBinding.phone.value"], text: "13800138000")
-        app.buttons["contactBinding.phone.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.phone.code"], text: "123456")
-        app.buttons["contactBinding.phone.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.phone.verified").waitForExistence(timeout: 3))
-        XCTAssertFalse(apply.isEnabled)
-
-        focusAndType(app.textFields["contactBinding.email.value"], text: "lin@bnbu.edu.cn")
-        app.buttons["contactBinding.email.sendCode"].tap()
-        focusAndType(app.textFields["contactBinding.email.code"], text: "123456")
-        app.buttons["contactBinding.email.verify"].tap()
-        XCTAssertTrue(screen("contactBinding.email.verified").waitForExistence(timeout: 3))
-
-        XCTAssertTrue(apply.isEnabled)
-        apply.tap()
-
-        // Submitting lands on the review status; only approval opens the app.
-        XCTAssertTrue(screen("screen.joinRequestStatus").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["申请状态：待教师审核"].exists)
-        app.buttons["nav.back"].tap()
-
-        // The sign-in screen reports the application until a teacher decides.
+        XCTAssertTrue(app.staticTexts["扫描任课老师提供的课程二维码，先读取服务器课程预览，再确认身份并直接加入。"].exists)
+        XCTAssertFalse(app.textFields["contactBinding.phone.value"].exists)
+        XCTAssertFalse(screen("screen.joinRequestStatus").exists)
+        app.buttons["course.join.close"].tap()
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["login.joinRequest.entry"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["login.joinRequest.entry"].exists)
 
         app.terminate()
         app = XCUIApplication()
@@ -1158,9 +1047,10 @@ final class BNBUStudentSmokeUITests: XCTestCase {
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["login.email"].exists)
-        XCTAssertTrue(app.buttons["login.phone"].exists)
+        XCTAssertFalse(app.buttons["login.phone"].exists)
         XCTAssertFalse(app.buttons["login.password.route"].exists)
-        XCTAssertTrue(app.buttons["login.recoveryRequest"].exists)
+        XCTAssertFalse(app.buttons["login.recoveryRequest"].exists)
+        XCTAssertTrue(app.buttons["login.localReview"].exists)
 
         app.buttons["login.email"].tap()
         XCTAssertTrue(screen("screen.login.email").waitForExistence(timeout: 3))
@@ -1169,10 +1059,15 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         app.buttons["nav.back"].tap()
 
         XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 3))
-        app.buttons["login.recoveryRequest"].tap()
-        XCTAssertTrue(screen("screen.recoveryRequest").waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["recovery.submit"].isEnabled)
-        app.buttons["nav.back"].tap()
+
+#if DEBUG
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-ui-testing-reset", "-bnbu-local-demo", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["login.localReview"].exists)
+#endif
 
         app.terminate()
         app = XCUIApplication()
@@ -1188,43 +1083,15 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(screen("screen.profile").waitForExistence(timeout: 3))
     }
 
-    // Temporary remote E2E check driven by env credentials; skipped when env is absent.
-    func testRemoteRealLoginFlow() throws {
-        guard let account = ProcessInfo.processInfo.environment["BNBU_TEST_ACCOUNT"],
-              let password = ProcessInfo.processInfo.environment["BNBU_TEST_PASSWORD"],
-              !account.isEmpty, !password.isEmpty else {
-            throw XCTSkip("BNBU_TEST_ACCOUNT / BNBU_TEST_PASSWORD not provided")
-        }
-
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments = [
-            "-ui-testing-reset",
-            "-ui-testing-login-password",
-            "-AppleLanguages", "(zh-Hans)",
-            "-AppleLocale", "zh_CN"
-        ]
-        app.launch()
-
-        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
-        focusAndType(app.textFields["login.email.field"], text: account)
-        focusAndType(app.secureTextFields["login.password.field"], text: password)
-        acceptPrivacyIfNeeded()
-        let dismissKeyboard = app.toolbars.buttons["完成"]
-        if dismissKeyboard.waitForExistence(timeout: 2) {
-            dismissKeyboard.tap()
-        }
-        let submitButton = app.buttons["login.submit.button"]
-        XCTAssertTrue(submitButton.waitForExistence(timeout: 3))
-        submitButton.tap()
-
-        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 30))
-        dismissSavePasswordPromptIfNeeded()
-        attachScreenshot(named: "remote-dashboard")
+    // Local-only E2E check. The one-time code is read from local Mailpit after
+    // the app requests it; no password or fixed test OTP is accepted.
+    func testLocalRealLoginFlow() async throws {
+        try await launchAndSignInWithLocalEmail()
+        attachScreenshot(named: "local-dashboard")
 
         openTab(label: "课程", screenIdentifier: "screen.courses")
         XCTAssertTrue(app.staticTexts["我的课程"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "remote-courses")
+        attachScreenshot(named: "local-courses")
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
         XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 5))
@@ -1232,120 +1099,36 @@ final class BNBUStudentSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["待审核"].exists)
-        attachScreenshot(named: "remote-records")
+        attachScreenshot(named: "local-records")
 
         openTab(label: "运动进度", screenIdentifier: "screen.grades")
         XCTAssertTrue(app.staticTexts["成绩进度"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "remote-grades")
+        attachScreenshot(named: "local-grades")
 
         openTab(label: "我的", screenIdentifier: "screen.profile")
         XCTAssertTrue(app.staticTexts["常用服务"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "remote-profile")
+        attachScreenshot(named: "local-profile")
     }
 
-    // Temporary remote E2E write check driven by env credentials; skipped when env is absent.
-    // Writes one real check-in record to the configured Debug server.
-    func testRemoteRealCheckInSubmitAndReadBackFlow() throws {
-        guard let account = ProcessInfo.processInfo.environment["BNBU_TEST_ACCOUNT"],
-              let password = ProcessInfo.processInfo.environment["BNBU_TEST_PASSWORD"],
-              !account.isEmpty, !password.isEmpty else {
-            throw XCTSkip("BNBU_TEST_ACCOUNT / BNBU_TEST_PASSWORD not provided")
-        }
-
-        app.terminate()
-        app = XCUIApplication()
-        // The remote hook installs a completed 1h exercise session after the
-        // real login succeeds, so the new timer-based submit flow is testable
-        // against the live server without waiting an hour.
-        app.launchArguments = [
-            "-ui-testing-reset",
-            "-ui-testing-login-password",
-            "-ui-testing-remote-completed-exercise",
-            "-AppleLanguages", "(zh-Hans)",
-            "-AppleLocale", "zh_CN"
-        ]
-        app.launch()
-
-        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
-        focusAndType(app.textFields["login.email.field"], text: account)
-        focusAndType(app.secureTextFields["login.password.field"], text: password)
-        acceptPrivacyIfNeeded()
-        let dismissKeyboard = app.toolbars.buttons["完成"]
-        if dismissKeyboard.waitForExistence(timeout: 2) {
-            dismissKeyboard.tap()
-        }
-        app.buttons["login.submit.button"].tap()
-        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 30))
-        dismissSavePasswordPromptIfNeeded()
-
-        openTab(label: "打卡", screenIdentifier: "screen.checkin")
-        app.buttons["运动"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["本次运动"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["运动已结束"].waitForExistence(timeout: 5))
-
-        let noteEditor = app.textViews["运动说明"]
-        if noteEditor.waitForExistence(timeout: 3) {
-            noteEditor.tap()
-            noteEditor.typeText("iOS联调测试 20260719 提交读回闭环，可忽略或清理")
-            let doneButton = app.toolbars.buttons["完成"]
-            if doneButton.waitForExistence(timeout: 2) {
-                doneButton.tap()
-            }
-        }
-
-        XCTAssertFalse(app.buttons["proof.demo.add"].exists)
-        attachScreenshot(named: "remote-submit-form")
-
-        scrollToAndTap(app.buttons["checkin.submit.button"])
-        XCTAssertTrue(app.staticTexts["确认提交打卡"].waitForExistence(timeout: 5))
-        app.buttons.matching(identifier: "checkin.confirm.button").firstMatch.tap()
-
-        // Real upload + record submission against the live server.
-        let success = app.staticTexts["提交成功"].waitForExistence(timeout: 60)
-        if !success {
-            attachScreenshot(named: "remote-submit-failure")
-        }
-        XCTAssertTrue(success)
-        attachScreenshot(named: "remote-submit-success")
-        app.buttons["查看记录"].tap()
-
-        XCTAssertTrue(app.staticTexts["打卡记录"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["计入学时"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.staticTexts["待审核"].exists)
-        attachScreenshot(named: "remote-submit-records-readback")
+    // A real remote write check needs a server-owned completed Session fixture.
+    // The App cannot manufacture server time or replace the authoritative
+    // Session after EMAIL OTP login. Keep this gate red until the local E2E
+    // harness provisions that fixture and passes its identity to the App.
+    func testLocalRealCheckInSubmitAndReadBackFlow() async throws {
+        XCTFail(
+            "BLOCKED: local E2E must provision a real Backend-completed ExerciseSession; " +
+            "the former remote-completed launch argument was never handled by the App."
+        )
     }
 
-    // Read-only remote check: the note passed via BNBU_EXPECT_NOTE must be visible
-    // in the records list. Skipped unless env credentials and the note are provided.
-    func testRemoteRecordsShowExpectedNote() throws {
-        guard let account = ProcessInfo.processInfo.environment["BNBU_TEST_ACCOUNT"],
-              let password = ProcessInfo.processInfo.environment["BNBU_TEST_PASSWORD"],
-              let expectedNote = ProcessInfo.processInfo.environment["BNBU_EXPECT_NOTE"],
-              !account.isEmpty, !password.isEmpty, !expectedNote.isEmpty else {
-            throw XCTSkip("BNBU_TEST_ACCOUNT / BNBU_TEST_PASSWORD / BNBU_EXPECT_NOTE not provided")
+    // Read-only local check: a synthetic note supplied by the harness must be
+    // visible after a fresh EMAIL OTP session.
+    func testLocalRecordsShowExpectedNote() async throws {
+        guard let expectedNote = ProcessInfo.processInfo.environment["BNBU_EXPECT_NOTE"],
+              !expectedNote.isEmpty else {
+            throw XCTSkip("BNBU_EXPECT_NOTE not provided")
         }
-
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments = [
-            "-ui-testing-reset",
-            "-ui-testing-login-password",
-            "-AppleLanguages", "(zh-Hans)",
-            "-AppleLocale", "zh_CN"
-        ]
-        app.launch()
-
-        XCTAssertTrue(screen("screen.login").waitForExistence(timeout: 5))
-        focusAndType(app.textFields["login.email.field"], text: account)
-        focusAndType(app.secureTextFields["login.password.field"], text: password)
-        acceptPrivacyIfNeeded()
-        let dismissKeyboard = app.toolbars.buttons["完成"]
-        if dismissKeyboard.waitForExistence(timeout: 2) {
-            dismissKeyboard.tap()
-        }
-        app.buttons["login.submit.button"].tap()
-        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 30))
-        dismissSavePasswordPromptIfNeeded()
+        try await launchAndSignInWithLocalEmail()
 
         openTab(label: "打卡", screenIdentifier: "screen.checkin")
         app.buttons["记录"].firstMatch.tap()
@@ -1362,7 +1145,142 @@ final class BNBUStudentSmokeUITests: XCTestCase {
             found = noteMatch.waitForExistence(timeout: 1)
         }
         XCTAssertTrue(found)
-        attachScreenshot(named: "remote-records-note-visible")
+        attachScreenshot(named: "local-records-note-visible")
+    }
+
+    private func launchAndSignInWithLocalEmail(
+        extraLaunchArguments: [String] = []
+    ) async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let account = environment["BNBU_TEST_ACCOUNT"], !account.isEmpty else {
+            throw XCTSkip("BNBU_TEST_ACCOUNT not provided")
+        }
+        let apiBaseURL = try localOnlyURL(
+            environment["BNBU_TEST_API_BASE_URL"] ?? "http://127.0.0.1:13000/api/v1",
+            requiredPath: "/api/v1"
+        )
+        let mailpitURL = try localOnlyURL(
+            environment["BNBU_TEST_MAILPIT_URL"] ?? "http://127.0.0.1:18025",
+            requiredPath: ""
+        )
+        let organizationCode = environment["BNBU_TEST_ORGANIZATION_CODE"] ?? "BNBU"
+        guard organizationCode.range(
+            of: "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+            options: .regularExpression
+        ) != nil else {
+            XCTFail("BNBU_TEST_ORGANIZATION_CODE does not satisfy the contract")
+            return
+        }
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = [
+            "-ui-testing-reset",
+            "-ui-testing-login-email",
+            "-server-base-url", apiBaseURL.absoluteString,
+            "-organization-code", organizationCode,
+            "-AppleLanguages", "(zh-Hans)",
+            "-AppleLocale", "zh_CN"
+        ] + extraLaunchArguments
+        app.launch()
+
+        XCTAssertTrue(screen("screen.login.email").waitForExistence(timeout: 8))
+        focusAndType(app.textFields["verification.contact"], text: account)
+        let sendButton = app.buttons["verification.sendCode"]
+        XCTAssertTrue(sendButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(sendButton.isEnabled)
+        let requestedAt = Date()
+        sendButton.tap()
+
+        let code = try await waitForLocalMailpitCode(
+            account: account,
+            requestedAt: requestedAt,
+            mailpitURL: mailpitURL
+        )
+        focusAndType(app.textFields["verification.code"], text: code)
+        let submitButton = app.buttons["verification.submit"]
+        XCTAssertTrue(submitButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(submitButton.isEnabled)
+        submitButton.tap()
+        XCTAssertTrue(screen("screen.dashboard").waitForExistence(timeout: 30))
+    }
+
+    private func localOnlyURL(_ rawValue: String, requiredPath: String) throws -> URL {
+        guard let url = URL(string: rawValue),
+              url.scheme == "http",
+              let host = url.host?.lowercased(),
+              ["127.0.0.1", "localhost", "::1"].contains(host),
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.replacingOccurrences(of: "/+$", with: "", options: .regularExpression) == requiredPath else {
+            throw XCTSkip("Local iOS E2E accepts loopback-only HTTP endpoints")
+        }
+        return url
+    }
+
+    private func waitForLocalMailpitCode(
+        account: String,
+        requestedAt: Date,
+        mailpitURL: URL
+    ) async throws -> String {
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            var listComponents = URLComponents(
+                url: mailpitURL.appendingPathComponent("api/v1/messages"),
+                resolvingAgainstBaseURL: false
+            )!
+            listComponents.queryItems = [URLQueryItem(name: "limit", value: "50")]
+            var listRequest = URLRequest(url: listComponents.url!)
+            listRequest.timeoutInterval = 3
+            if let (listData, listResponse) = try? await URLSession.shared.data(for: listRequest),
+               (listResponse as? HTTPURLResponse)?.statusCode == 200,
+               let list = try? JSONSerialization.jsonObject(with: listData) as? [String: Any],
+               let messages = list["messages"] as? [[String: Any]] {
+                for message in messages {
+                    guard let id = message["ID"] as? String,
+                          let createdRaw = message["Created"] as? String,
+                          let createdAt = Self.mailpitDate(createdRaw),
+                          createdAt.timeIntervalSince(requestedAt) >= -2,
+                          let recipientsData = try? JSONSerialization.data(withJSONObject: message["To"] ?? []),
+                          String(decoding: recipientsData, as: UTF8.self)
+                            .lowercased().contains(account.lowercased()) else {
+                        continue
+                    }
+                    var detailRequest = URLRequest(
+                        url: mailpitURL
+                            .appendingPathComponent("api/v1/message")
+                            .appendingPathComponent(id)
+                    )
+                    detailRequest.timeoutInterval = 3
+                    guard let (detailData, detailResponse) = try? await URLSession.shared.data(for: detailRequest),
+                          (detailResponse as? HTTPURLResponse)?.statusCode == 200,
+                          let detail = try? JSONSerialization.jsonObject(with: detailData) as? [String: Any],
+                          let text = detail["Text"] as? String else {
+                        continue
+                    }
+                    let expression = try NSRegularExpression(
+                        pattern: "(?:code is|验证码是)\\s*(\\d{4,10})",
+                        options: [.caseInsensitive]
+                    )
+                    let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+                    if let match = expression.firstMatch(in: text, range: fullRange),
+                       let codeRange = Range(match.range(at: 1), in: text) {
+                        return String(text[codeRange])
+                    }
+                }
+            }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        XCTFail("Local Mailpit did not receive a fresh sign-in code")
+        throw URLError(.timedOut)
+    }
+
+    private static func mailpitDate(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
     private func focusAndType(_ field: XCUIElement, text: String) {

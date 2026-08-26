@@ -2,7 +2,7 @@
 
 SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透明化，不包含老师端或管理端功能。
 
-> **现行口径（2026-07-16）**：Debug 使用 `http://123.207.5.70:82/api/v1`；Release 必须由学校确认的 HTTPS 域名提供 `/api/v1`。本页后半部分按轮次保留的是历史开发记录，其中的 3333/96 端口、`/api` 前缀、旧上传路径和历史测试结论不得再作为构建或部署说明。当前执行入口以 [`IOS_QA_RUNBOOK.md`](IOS_QA_RUNBOOK.md)、`scripts/ios-contract-audit.mjs` 和 `scripts/run-macos-release-gate.sh` 为准。
+> **现行本地口径（2026-08-26）**：本轮只连接隔离的本机 Docker。Debug 默认使用 `http://127.0.0.1:13000/api/v1`，组织码为 `BNBU`；唯一合同是 monorepo 根目录的 `docs/backend-contracts/openapi.yaml`（本地候选 `3.0.0-contract`）。不得使用旧 IP、旧密码登录、Staging 或 Production。可执行步骤以 [`IOS_QA_RUNBOOK.md`](IOS_QA_RUNBOOK.md)、根目录 `tools/local-integration/README.md` 和两个 Node 审计脚本为准。本页后续按轮次记录均是历史资料，出现旧端口、旧路由或旧业务描述时不得作为当前执行口径。
 
 > **主线切换（2026-07-19）**：本目录源自负责人 7.18 回传的反馈版源码（`7.18 Feedback/BNBUStudent-iOS-Source-20260717-Aligned-API-Version.zip`），经编译修复、68 项单元测试、UI 冒烟和真实服务器提交/读回闭环验证后升级为主线。旧 3333/96 主线保留在 `../ios-app-legacy-20260715/`，仅作归档不再开发。2026-07-19 验证记录：`test-evidence-20260718/`；Debug 演示图片凭证已携带真实字节，可在真实服务器模式走通上传与提交（演示视频仍为预览占位）。
 
@@ -22,7 +22,7 @@ SwiftUI 原生学生端 MVP，第一阶段聚焦体育打卡与体育成绩透�
 
 ## 数据与后端对齐
 
-App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测试服，Release 必须显式注入正式 HTTPS 地址；本地 Mock 仅用于自动化测试。模型命名与字段语义以三端共用 OpenAPI 为准：
+App 的学生可见流程使用真实学生 API。Debug 默认连接本机 `127.0.0.1:13000` 的 R01 Docker Backend；本地 Mock 仅用于隔离的 UI 展示测试。模型命名与字段语义以 monorepo 唯一 OpenAPI 为准：
 
 - `Course`
 - `StudentProgress`
@@ -39,7 +39,24 @@ App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测�
 
 ## 构建与门禁
 
-正式候选优先在 Mac 的 `ios-app` 目录执行一条完整门禁（尖括号内容必须替换）：
+本轮本地联调先在 monorepo 根目录执行静态合同门禁：
+
+```bash
+node BNBU-Sports-iOS/scripts/p0-contract-flow-audit.mjs
+node BNBU-Sports-iOS/scripts/ios-contract-audit.mjs
+```
+
+然后在 Mac 上使用本机 Simulator 执行 Debug build 与测试：
+
+```bash
+xcodebuild test \
+  -project BNBU-Sports-iOS/BNBUStudent.xcodeproj \
+  -scheme BNBUStudent \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=<本机可用 iPhone>'
+```
+
+`scripts/run-macos-release-gate.sh` 是独立的 Release 门禁，要求学校确认的 HTTPS 地址，不属于本轮本地 Docker 联调，也不能拿本地 HTTP 冒充 Release：
 
 ```bash
 ./scripts/run-macos-release-gate.sh \
@@ -49,19 +66,19 @@ App 的学生可见流程使用真实学生 API。Debug 默认连接 IP:82 测�
 需要单独调试 Xcode 时再使用下面的底层命令：
 
 ```bash
-xcodebuild -project ios-app/BNBUStudent.xcodeproj -scheme BNBUStudent -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' build
+xcodebuild -project BNBU-Sports-iOS/BNBUStudent.xcodeproj -scheme BNBUStudent -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=<本机可用 iPhone>' build
 ```
 
 UI smoke test bundle 编译：
 
 ```bash
-xcodebuild -project ios-app/BNBUStudent.xcodeproj -target BNBUStudentUITests -configuration Debug -sdk iphonesimulator build
+xcodebuild -project BNBU-Sports-iOS/BNBUStudent.xcodeproj -target BNBUStudentUITests -configuration Debug -sdk iphonesimulator build
 ```
 
 当本机 Xcode SDK 与已安装 Simulator runtime 匹配时，可运行：
 
 ```bash
-xcodebuild test -project ios-app/BNBUStudent.xcodeproj -scheme BNBUStudent -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+xcodebuild test -project BNBU-Sports-iOS/BNBUStudent.xcodeproj -scheme BNBUStudent -destination 'platform=iOS Simulator,name=<本机可用 iPhone>'
 ```
 
 Bundle ID:
@@ -73,7 +90,7 @@ edu.bnbu.student.mvp
 ## 当前可证明的验证状态
 
 - Windows 静态契约审计已覆盖 API、任务 fail-closed、缓存隔离、Keychain、ATS、隐私清单、上传临时文件、Release 配置及 XCTest 回归点。
-- 当前源码包含 48 个 XCTest 方法和 5 个 UI Test 方法；**它们尚未在本轮当前源码上通过 Mac/Xcode 实际执行，因此不能写成已通过**。
+- 当前源码中的 XCTest/XCUITest 在 Windows 仅能做静态收录；**没有 Mac/Xcode 的实际执行结果就不能写成已通过**。
 - Debug clean build、XCTest、XCUITest、无签名 Release build/analyze 必须由 `run-macos-release-gate.sh` 七步全部 PASS 才算完成；签名 Archive 与 iPhone 真机仍需另行验收。
 - 打卡记录学生 UI 已在静态契约中禁止审核筛选、审核状态和教师反馈；真实私有 COS 图片仍需用同一 `recordId` 在 Edge、Android 真机和 iPhone 真机共同读回。
 

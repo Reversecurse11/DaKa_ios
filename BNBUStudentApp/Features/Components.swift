@@ -53,17 +53,67 @@ extension View {
 }
 
 struct BNBUErrorPanel: View {
+    private let title: String?
     let message: String
+    private let actionText: String?
+    private let requestId: String?
     var retryTitle = "重试"
     var retryAction: (() -> Void)?
+
+    /// Compatibility initializer for validation and other explicitly authored
+    /// local-safe copy only. Backend/Repository failures must use
+    /// `init(error:)` so raw messages cannot reach the UI.
+    init(
+        message: String,
+        retryTitle: String = "重试",
+        retryAction: (() -> Void)? = nil
+    ) {
+        title = nil
+        self.message = message
+        actionText = nil
+        requestId = nil
+        self.retryTitle = retryTitle
+        self.retryAction = retryAction
+    }
+
+    init(
+        error: UserFacingError,
+        retryTitle: String = "重试",
+        retryAction: (() -> Void)? = nil
+    ) {
+        title = error.title
+        message = error.message
+        actionText = error.action
+        requestId = error.requestId
+        self.retryTitle = retryTitle
+        self.retryAction = error.retryable ? retryAction : nil
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(BNBUTheme.error)
-            Text(message)
-                .font(BNBUFont.bodyMedium)
-                .foregroundStyle(BNBUTheme.onSurface)
+            VStack(alignment: .leading, spacing: BNBUSpacing.space4) {
+                if let title {
+                    Text(verbatim: title)
+                        .font(BNBUFont.titleMedium)
+                        .foregroundStyle(BNBUTheme.onSurface)
+                }
+                Text(verbatim: message)
+                    .font(BNBUFont.bodyMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                if let actionText {
+                    Text(verbatim: actionText)
+                        .font(BNBUFont.bodySmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+                if let requestId {
+                    Text(verbatim: BNBUL10n.text("诊断编号：\(requestId)"))
+                        .font(BNBUFont.labelSmall.monospaced())
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .textSelection(.enabled)
+                }
+            }
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let retryAction {
                 Button(action: retryAction) {
@@ -587,6 +637,255 @@ extension View {
 
     func bnbuKeyboardDismissToolbar() -> some View {
         modifier(BNBUKeyboardToolbarModifier())
+    }
+}
+
+/// Shared native SwiftUI form field. It standardizes information hierarchy and
+/// state semantics while retaining platform keyboard, focus, Dynamic Type and
+/// VoiceOver behavior.
+struct BNBUFormField: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    var required = false
+    var helperText: String?
+    var errorText: String?
+    var successText: String?
+    var characterLimit: Int?
+    var keyboardType: UIKeyboardType = .default
+    var textContentType: UITextContentType?
+    var isSecure = false
+    var enabled = true
+    var readOnly = false
+    var loading = false
+    var submitLabel: SubmitLabel = .done
+    var autocapitalization: TextInputAutocapitalization = .never
+    var disablesAutocorrection = true
+    var onSubmit: (() -> Void)?
+    var onFocusChanged: ((Bool) -> Void)?
+    var focusBinding: FocusState<Bool>.Binding?
+    let accessibilityIdentifier: String
+    @FocusState private var focused: Bool
+    @State private var revealsSecureText = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            HStack(alignment: .firstTextBaseline, spacing: BNBUSpacing.space8) {
+                Text(LocalizedStringKey(label))
+                    .font(BNBUFont.labelMedium)
+                    .foregroundStyle(BNBUTheme.onSurface)
+                if required {
+                    Text("必填")
+                        .font(BNBUFont.labelSmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+                Spacer(minLength: 0)
+                if let characterLimit, isFocused || text.count >= max(characterLimit - 16, 0) {
+                    Text(verbatim: "\(text.count)/\(characterLimit)")
+                        .font(BNBUFont.labelSmall.monospacedDigit())
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .accessibilityLabel("已输入 \(text.count) 个字符，共可输入 \(characterLimit) 个字符")
+                }
+            }
+
+            HStack(spacing: BNBUSpacing.space8) {
+                Group {
+                    if isSecure && !revealsSecureText {
+                        SecureField(LocalizedStringKey(placeholder), text: $text)
+                    } else {
+                        TextField(LocalizedStringKey(placeholder), text: $text)
+                    }
+                }
+                .bnbuInputText()
+                .keyboardType(keyboardType)
+                .textContentType(textContentType)
+                .submitLabel(submitLabel)
+                .textInputAutocapitalization(autocapitalization)
+                .autocorrectionDisabled(disablesAutocorrection)
+                .onSubmit { onSubmit?() }
+                .focused(resolvedFocusBinding)
+                .disabled(!enabled || readOnly || loading)
+                .accessibilityLabel(Text(LocalizedStringKey(label)))
+                .accessibilityHint(accessibilityHint)
+                .accessibilityIdentifier(accessibilityIdentifier)
+
+                if loading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("处理中")
+                }
+                if readOnly {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .accessibilityLabel("只读")
+                }
+                if isSecure, enabled, !readOnly, !loading {
+                    Button {
+                        revealsSecureText.toggle()
+                    } label: {
+                        Image(systemName: revealsSecureText ? "eye.slash" : "eye")
+                            .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                            .frame(width: BNBUSpacing.touchTarget, height: BNBUSpacing.touchTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(revealsSecureText ? "隐藏密码" : "显示密码")
+                    .accessibilityIdentifier("\(accessibilityIdentifier).visibility")
+                }
+            }
+            .padding(.horizontal, BNBUSpacing.space12)
+            .frame(minHeight: BNBUSpacing.primaryControlHeight)
+            .background(enabled ? BNBUTheme.surfaceContainerLow : BNBUTheme.surfaceVariant)
+            .overlay(fieldBorder)
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+            .onChange(of: text) { _, value in
+                guard let characterLimit, value.count > characterLimit else { return }
+                text = String(value.prefix(characterLimit))
+            }
+            .onChange(of: isFocused) { _, value in
+                onFocusChanged?(value)
+            }
+
+            supportingState
+        }
+    }
+
+    private var fieldBorder: some View {
+        RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous)
+            .stroke(
+                errorText != nil ? BNBUTheme.error : (isFocused ? BNBUTheme.primary : BNBUTheme.outlineVariant),
+                lineWidth: errorText != nil || isFocused ? 1.5 : 1
+            )
+    }
+
+    private var resolvedFocusBinding: FocusState<Bool>.Binding {
+        focusBinding ?? $focused
+    }
+
+    private var isFocused: Bool {
+        focusBinding?.wrappedValue ?? focused
+    }
+
+    @ViewBuilder
+    private var supportingState: some View {
+        if let errorText {
+            Label(errorText, systemImage: "exclamationmark.circle.fill")
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.error)
+                .accessibilityIdentifier("\(accessibilityIdentifier).error")
+        } else if let successText {
+            Label(successText, systemImage: "checkmark.circle.fill")
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.tertiary)
+        } else if let helperText {
+            Text(verbatim: helperText)
+                .font(BNBUFont.bodySmall)
+                .foregroundStyle(BNBUTheme.onSurfaceVariant)
+        }
+    }
+
+    private var accessibilityHint: Text {
+        if let errorText { return Text(verbatim: errorText) }
+        if readOnly { return Text("只读") }
+        if required { return Text("必填") }
+        return Text(verbatim: helperText ?? "")
+    }
+}
+
+struct BNBUTextArea: View {
+    let label: String
+    @Binding var text: String
+    var placeholder: String = ""
+    var required = false
+    var helperText: String?
+    var errorText: String?
+    var successText: String?
+    var characterLimit: Int?
+    var enabled = true
+    var readOnly = false
+    var loading = false
+    var onFocusChanged: ((Bool) -> Void)?
+    var focusBinding: FocusState<Bool>.Binding?
+    let accessibilityIdentifier: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BNBUSpacing.space8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(LocalizedStringKey(label))
+                    .font(BNBUFont.labelMedium)
+                if required {
+                    Text("必填")
+                        .font(BNBUFont.labelSmall)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+                Spacer(minLength: 0)
+                if let characterLimit {
+                    Text(verbatim: "\(text.count)/\(characterLimit)")
+                        .font(BNBUFont.labelSmall.monospacedDigit())
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                }
+            }
+
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty, !placeholder.isEmpty {
+                    Text(LocalizedStringKey(placeholder))
+                        .font(BNBUFont.bodyLarge)
+                        .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 9)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $text)
+                    .bnbuInputText()
+                    .scrollContentBackground(.hidden)
+                    .focused(resolvedFocusBinding)
+                    .disabled(!enabled || readOnly || loading)
+                    .accessibilityLabel(Text(LocalizedStringKey(label)))
+                    .accessibilityHint(Text(verbatim: errorText ?? (required ? "必填" : "")))
+                    .accessibilityIdentifier(accessibilityIdentifier)
+            }
+            .frame(minHeight: 112)
+            .padding(BNBUSpacing.space8)
+            .background(enabled && !readOnly ? BNBUTheme.surfaceContainerLow : BNBUTheme.surfaceVariant)
+            .overlay(
+                RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous)
+                    .stroke(
+                        errorText != nil ? BNBUTheme.error : (isFocused ? BNBUTheme.primary : BNBUTheme.outlineVariant),
+                        lineWidth: errorText != nil || isFocused ? 1.5 : 1
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: BNBURadius.medium, style: .continuous))
+            .onChange(of: text) { _, value in
+                guard let characterLimit, value.count > characterLimit else { return }
+                text = String(value.prefix(characterLimit))
+            }
+            .onChange(of: isFocused) { _, value in
+                onFocusChanged?(value)
+            }
+
+            if let errorText {
+                Label(errorText, systemImage: "exclamationmark.circle.fill")
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.error)
+                    .accessibilityIdentifier("\(accessibilityIdentifier).error")
+            } else if let successText {
+                Label(successText, systemImage: "checkmark.circle.fill")
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.tertiary)
+            } else if let helperText {
+                Text(verbatim: helperText)
+                    .font(BNBUFont.bodySmall)
+                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+            }
+        }
+    }
+
+    private var resolvedFocusBinding: FocusState<Bool>.Binding {
+        focusBinding ?? $focused
+    }
+
+    private var isFocused: Bool {
+        focusBinding?.wrappedValue ?? focused
     }
 }
 
@@ -1186,13 +1485,14 @@ private struct PermissionStatusLine: View {
 struct CameraCapturePicker: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
     var initialCaptureMode: UIImagePickerController.CameraCaptureMode? = nil
+    var videoMaximumDuration: TimeInterval = 30
     let completion: (ProofAttachment) -> Void
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.delegate = context.coordinator
-        picker.videoMaximumDuration = 30
+        picker.videoMaximumDuration = videoMaximumDuration
         picker.videoQuality = .typeMedium
 
         let availableTypes = UIImagePickerController.availableMediaTypes(for: .camera) ?? []

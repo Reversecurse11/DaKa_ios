@@ -1,3 +1,103 @@
+# iOS 学生端 R01 本地质量回归流程
+
+> 现行口径（2026-08-26）：本轮只使用本机隔离 Docker，不连接 Staging、Production、旧测试 IP 或远程数据库。唯一合同是 monorepo 根目录 `docs/backend-contracts/openapi.yaml`，当前本地候选为 `3.0.0-contract`。本文“历史附录”中的旧端口、旧路由、密码登录和远程测试步骤禁止执行。
+
+## A. Windows 静态门禁
+
+在 monorepo 根目录执行：
+
+```powershell
+npm --prefix backend run repo-layout:check
+node BNBU-Sports-iOS/scripts/p0-contract-flow-audit.mjs
+node BNBU-Sports-iOS/scripts/ios-contract-audit.mjs
+git diff --check -- BNBU-Sports-iOS
+```
+
+门禁会核对 iOS 快照与唯一 OpenAPI 的版本、字节和 SHA-256，并验证 `RemoteStudentRepository` 的每个实际 Method/Path 都属于 OpenAPI。唯一外部例外是 Backend 签发的对象存储上传 URL。
+
+Windows 没有 Xcode、iOS Simulator 和 Apple SDK。静态门禁通过不等于 Swift 编译、XCTest 或 XCUITest 通过。
+
+## B. 本地 Docker 与 Debug 配置
+
+```bash
+npm --prefix backend run local:env:check -- --r01
+docker compose \
+  --env-file backend/.env \
+  --env-file backend/docker/local-r01-ports.env \
+  -p bnbu-sports-r01-local \
+  -f backend/docker-compose.yml \
+  -f backend/docker-compose.local-full.yml \
+  up -d
+```
+
+必须确认 PostgreSQL、MinIO、Mailpit、Backend、Web Student、Web Teacher/Admin 均为 `Healthy`；migrator、seed、minio-init 为 `Exited 0`。不得删除 Volume，也不得输出 `.env`、OTP、Token、签名 URL 或对象存储 Key。
+
+- Backend：`http://127.0.0.1:13000/api/v1`
+- Mailpit：`http://127.0.0.1:18025`
+- MinIO API：`http://127.0.0.1:19000`
+- Debug 组织码：`BNBU`
+
+## C. macOS Debug build 与 XCTest
+
+```bash
+xcodebuild clean build \
+  -project BNBU-Sports-iOS/BNBUStudent.xcodeproj \
+  -scheme BNBUStudent \
+  -configuration Debug \
+  -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=<本机可用 iPhone>'
+
+xcodebuild test \
+  -project BNBU-Sports-iOS/BNBUStudent.xcodeproj \
+  -scheme BNBUStudent \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=<本机可用 iPhone>' \
+  -only-testing:BNBUStudentTests
+```
+
+两条命令退出码为 0，且 `.xcresult` 中失败、错误和跳过数量符合预期，才可记录为通过。
+
+## D. 本地 EMAIL OTP XCUITest
+
+真实 UI 用例只允许合成本地账号、回环 Backend 和本机 Mailpit。测试会先由 App 请求验证码，再从 Mailpit API 读取最新一次性验证码；不接受密码或固定 OTP。
+
+```bash
+BNBU_TEST_ACCOUNT='student.closure.local.synthetic@bnbu.invalid' \
+BNBU_TEST_API_BASE_URL='http://127.0.0.1:13000/api/v1' \
+BNBU_TEST_ORGANIZATION_CODE='BNBU' \
+BNBU_TEST_MAILPIT_URL='http://127.0.0.1:18025' \
+xcodebuild test \
+  -project BNBU-Sports-iOS/BNBUStudent.xcodeproj \
+  -scheme BNBUStudent \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=<本机可用 iPhone>' \
+  -only-testing:BNBUStudentUITests
+```
+
+若只手工启动 App：
+
+```bash
+xcrun simctl launch booted edu.bnbu.student.mvp --args \
+  -server-base-url http://127.0.0.1:13000/api/v1 \
+  -organization-code BNBU
+```
+
+## E. 业务闭环与停止条件
+
+同一套本地合成课程按“邀请预览 → Join Capability → 加入 → EMAIL OTP/FIRST_BIND → Session → 媒体 → Record → Web 教师审核/严格重开 → iOS 读回 Record 与 StudentScore”验证。不得用客户端本地时间、客户端自算分数或本地状态代替 Backend 事实。
+
+合同没有 operation 的能力不得由客户端补规则。当前“耐力成绩直接换算”必须失败关闭并标记 `CONTRACT DECISION REQUIRED`。
+
+Simulator 不能替代 iPhone 相机、扫码、麦克风、权限弹窗、Apple 签名、Provisioning、Archive 或真机媒体读回；未实际验证时写“待人工复测”。
+
+`scripts/run-macos-release-gate.sh` 是独立 Release 门禁，只接受学校确认的 HTTPS API，不属于本轮本地 Docker 联调。
+
+---
+
+# 历史附录（禁止作为当前执行口径）
+
+以下内容仅保留旧开发记录，不得执行其中的远程 IP、旧密码登录、旧路由或旧业务假设。
+
 # iOS 学生端质量回归流程
 
 ## 1. 每次提交都执行的 Windows 契约门禁

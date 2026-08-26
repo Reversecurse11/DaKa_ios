@@ -340,7 +340,7 @@ struct MockStudentRepository: StudentRepository {
                 id: "help-checkin-flow",
                 title: "如何完成一次运动打卡？",
                 category: "运动打卡",
-                content: "在首页或“运动”页选择打卡类型和运动项目后开始计时。运动中可暂停后继续；结束时确认时长，选择至少 1 张现场照片或 1 个现场视频作为凭证，再提交。",
+                content: "在首页或“运动”页选择打卡类型和运动项目后开始计时。运动中可暂停后继续；现场拍摄并确认保留至少 1 张照片或 1 个视频后，结束时全部已确认素材会自动进入本次凭证。",
                 sortOrder: 10,
                 updatedAt: "2026-07-28T09:12:00Z"
             ),
@@ -348,17 +348,9 @@ struct MockStudentRepository: StudentRepository {
                 id: "help-checkin-evidence",
                 title: "照片和视频凭证有什么限制？",
                 category: "运动打卡",
-                content: "凭证必须在运动过程中或提交环节用相机现场拍摄，不能从相册选择。每次最多 6 张照片和 1 个视频，且至少选择其中 1 项。",
+                content: "凭证必须现场拍摄，不能从相册选择；确认保留前可取消或重拍。每次最多 6 张照片和 1 个视频；确认保留后不能在最终提交时排除，处理中或处理失败的素材会阻止提交。",
                 sortOrder: 20,
                 updatedAt: "2026-07-28T09:12:00Z"
-            ),
-            HelpArticle(
-                id: "help-location-denied",
-                title: "为什么获取不到定位？",
-                category: "定位与权限",
-                content: "请在 iPhone“设置 → 隐私与安全性 → 定位服务”中允许本 App 使用定位。定位失败不会阻止计时和提交，记录会显示为“未获取位置”。",
-                sortOrder: 30,
-                updatedAt: "2026-07-20T02:00:00Z"
             ),
             HelpArticle(
                 id: "help-exemption-apply",
@@ -392,7 +384,7 @@ struct MockStudentRepository: StudentRepository {
             FeedbackTicket(
                 id: "fb-2026-0043",
                 ticketNumber: "FB-2026-0043",
-                category: FeedbackCategory.checkIn.title,
+                category: FeedbackCategory.bug.title,
                 description: "结束运动后提交打卡，凭证上传到一半就停住了，重试两次才成功。",
                 status: .processing,
                 createdAt: "2026 年 7 月 30 日 19:24",
@@ -401,7 +393,7 @@ struct MockStudentRepository: StudentRepository {
             FeedbackTicket(
                 id: "fb-2026-0031",
                 ticketNumber: "FB-2026-0031",
-                category: FeedbackCategory.grades.title,
+                category: FeedbackCategory.suggestion.title,
                 description: "耐力跑成绩换算结果和老师给的分数差 1 分。",
                 status: .resolved,
                 createdAt: "2026 年 7 月 21 日 10:05",

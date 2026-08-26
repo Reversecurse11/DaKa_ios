@@ -19,7 +19,6 @@
 		AA0000000000000000000010 /* CoursesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* CoursesView.swift */; };
 		AA0000000000000000000011 /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000011 /* CheckInView.swift */; };
 		AA0000000000000000000012 /* GradesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000012 /* GradesView.swift */; };
-		AA0000000000000000000031 /* JoinRequestStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000031 /* JoinRequestStatusView.swift */; };
 		AA0000000000000000000030 /* ProfileDetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000030 /* ProfileDetailViews.swift */; };
 		AA0000000000000000000029 /* AppShellViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000029 /* AppShellViews.swift */; };
 		AA0000000000000000000013 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000013 /* ProfileView.swift */; };
@@ -34,7 +33,6 @@
 		AA0000000000000000000028 /* CourseJoinViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000028 /* CourseJoinViews.swift */; };
 		AA0000000000000000000062 /* ContactManagementViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000062 /* ContactManagementViews.swift */; };
 		AA0000000000000000000061 /* FeedbackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000061 /* FeedbackViews.swift */; };
-		AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000024 /* ExerciseLocationProvider.swift */; };
 		AA0000000000000000000025 /* StudentExperienceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000025 /* StudentExperienceViews.swift */; };
 		AA0000000000000000000026 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000026 /* Localizable.xcstrings */; };
 		AA0000000000000000000091 /* privacy_policy_en.md in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000091 /* privacy_policy_en.md */; };
@@ -75,7 +73,6 @@
 		BB0000000000000000000010 /* CoursesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoursesView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000011 /* CheckInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000012 /* GradesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradesView.swift; sourceTree = "<group>"; };
-		BB0000000000000000000031 /* JoinRequestStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRequestStatusView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000030 /* ProfileDetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000029 /* AppShellViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000013 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -92,7 +89,6 @@
 		BB0000000000000000000028 /* CourseJoinViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseJoinViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000062 /* ContactManagementViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactManagementViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000061 /* FeedbackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackViews.swift; sourceTree = "<group>"; };
-		BB0000000000000000000024 /* ExerciseLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLocationProvider.swift; sourceTree = "<group>"; };
 		BB0000000000000000000025 /* StudentExperienceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudentExperienceViews.swift; sourceTree = "<group>"; };
 		BB0000000000000000000026 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		BB0000000000000000000091 /* privacy_policy_en.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = privacy_policy_en.md; sourceTree = "<group>"; };
@@ -159,7 +155,6 @@
 				BB0000000000000000000017 /* RemoteStudentRepository.swift */,
 				BB0000000000000000000020 /* SecureCredentialStore.swift */,
 				BB0000000000000000000016 /* AppLocalStore.swift */,
-				BB0000000000000000000024 /* ExerciseLocationProvider.swift */,
 				BB0000000000000000000004 /* AppState.swift */,
 				BB0000000000000000000005 /* Theme.swift */,
 			);
@@ -180,7 +175,6 @@
 				BB0000000000000000000062 /* ContactManagementViews.swift */,
 				BB0000000000000000000061 /* FeedbackViews.swift */,
 				BB0000000000000000000012 /* GradesView.swift */,
-				BB0000000000000000000031 /* JoinRequestStatusView.swift */,
 				BB0000000000000000000030 /* ProfileDetailViews.swift */,
 				BB0000000000000000000029 /* AppShellViews.swift */,
 				BB0000000000000000000013 /* ProfileView.swift */,
@@ -406,7 +400,6 @@
 				AA0000000000000000000062 /* ContactManagementViews.swift in Sources */,
 				AA0000000000000000000061 /* FeedbackViews.swift in Sources */,
 				AA0000000000000000000012 /* GradesView.swift in Sources */,
-				AA0000000000000000000031 /* JoinRequestStatusView.swift in Sources */,
 				AA0000000000000000000030 /* ProfileDetailViews.swift in Sources */,
 				AA0000000000000000000029 /* AppShellViews.swift in Sources */,
 				AA0000000000000000000013 /* ProfileView.swift in Sources */,
@@ -415,7 +408,6 @@
 				AA0000000000000000000018 /* SecureCredentialStore.swift in Sources */,
 				AA0000000000000000000015 /* DetailViews.swift in Sources */,
 				AA0000000000000000000016 /* AppLocalStore.swift in Sources */,
-				AA0000000000000000000024 /* ExerciseLocationProvider.swift in Sources */,
 				AA0000000000000000000025 /* StudentExperienceViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -573,7 +565,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				BNBU_API_BASE_URL = "http://123.207.5.70:82/api/v1";
+				BNBU_API_BASE_URL = "http://127.0.0.1:13000/api/v1";
+				BNBU_ORGANIZATION_CODE = BNBU;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";

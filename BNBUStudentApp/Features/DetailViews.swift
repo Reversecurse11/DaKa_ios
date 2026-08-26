@@ -128,7 +128,12 @@ private struct CourseDetailFactRow: View {
 }
 
 struct RecordDetailView: View {
+    @EnvironmentObject private var appState: AppState
     let record: CheckInRecord
+
+    private var currentRecord: CheckInRecord {
+        appState.workspace.records.first(where: { $0.id == record.id }) ?? record
+    }
 
     var body: some View {
         ZStack {
@@ -160,12 +165,37 @@ struct RecordDetailView: View {
                     if record.validity == .invalid {
                         SwissPanel {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("记录已被判定无效")
+                                Text("上一次提交已被拒绝")
                                     .font(BNBUFont.titleMedium)
                                 Text(record.invalidReason ?? "老师已将该记录标记为无效，本次学时不计入。")
                                     .font(BNBUFont.bodyMedium)
                                     .foregroundStyle(BNBUTheme.muted)
                                     .lineSpacing(3)
+                                Text("原记录和审核结果会永久保留；补交将从新的运动 Session 创建下一次正式尝试，不会覆盖本记录。")
+                                    .font(BNBUFont.bodySmall)
+                                    .foregroundStyle(BNBUTheme.onSurfaceVariant)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                if let attempt = currentRecord.attemptContext {
+                                    DetailFactRow(
+                                        label: "当前尝试",
+                                        value: "第 \(attempt.attemptNumber) 次提交"
+                                    )
+                                }
+
+                                OutlinedActionButton(
+                                    title: "重新补交 · 第 \((currentRecord.attemptContext?.attemptNumber ?? 1) + 1) 次",
+                                    systemImage: "arrow.clockwise.circle",
+                                    accessibilityIdentifier: "record.resubmission.start"
+                                ) {
+                                    guard appState.prepareExerciseRecordResubmission(from: currentRecord) else {
+                                        return
+                                    }
+                                    NotificationCenter.default.post(
+                                        name: .bnbuOpenDestination,
+                                        object: AppTab.checkin
+                                    )
+                                }
                             }
                         }
                     }
@@ -222,6 +252,9 @@ struct RecordDetailView: View {
         }
         .navigationTitle("记录详情")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: record.id) {
+            await appState.refreshExerciseRecordAttemptContext(recordId: record.id)
+        }
     }
 }
 
